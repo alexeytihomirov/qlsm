@@ -115,6 +115,6 @@ export const uploadDraftHook = async (draftId, file) => {
 };
 
 export const deleteDraftHook = async (draftId, filename) => {
-  const response = await apiClient.delete(`/drafts/${draftId}/hooks/${encodeURIComponent(filename)}`);
-  return response.data.data;
+  // 204 No Content — no body to read.
+  await apiClient.delete(`/drafts/${draftId}/hooks/${encodeURIComponent(filename)}`);
 };

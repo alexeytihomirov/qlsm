@@ -59,9 +59,14 @@ def upload_draft_hook(draft_id):
     hooks_dir = _get_draft_user_hooks_path(draft_id)
     os.makedirs(hooks_dir, exist_ok=True)
     target = os.path.join(hooks_dir, filename)
-    if os.path.exists(target):
+    # Atomic exclusive create so two concurrent same-name uploads can't race
+    # past an os.path.exists() check and silently overwrite each other.
+    try:
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
         return jsonify({"error": {"message": f"{filename} already exists"}}), 409
-    upload.save(target)
+    with os.fdopen(fd, "wb") as handle:
+        upload.save(handle)
     os.utime(_get_draft_base_path(draft_id), None)
 
     return jsonify({"data": {

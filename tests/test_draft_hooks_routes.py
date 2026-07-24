@@ -130,3 +130,9 @@ def test_delete_missing_file_404(client, headers, draft_id):
 def test_delete_bad_draft_id_400(client, headers):
     res = client.delete("/api/drafts/not-a-uuid/hooks/a.so", headers=headers)
     assert res.status_code == 400
+
+
+def test_delete_requires_auth(client, headers, draft_id):
+    _upload(client, headers, draft_id, "gone.so", ELF)
+    res = client.delete(f"/api/drafts/{draft_id}/hooks/gone.so")
+    assert res.status_code == 401
