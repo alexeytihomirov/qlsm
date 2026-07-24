@@ -4,6 +4,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.16.0` | 2026-07-24 | [#155](https://github.com/dngrtech/qlsm/pull/155) | Upload and delete user hooks (`.so`) directly in the Add Instance modal. |
 | `v1.15.2` | 2026-07-23 | [#154](https://github.com/dngrtech/qlsm/pull/154) | Upload multiple files at once from the Configuration Files, Plugins, and Factories tabs. |
 | `v1.15.1` | 2026-07-23 | [#153](https://github.com/dngrtech/qlsm/pull/153) | Fix replacing a hook binary via the Hooks tab's "..." actions menu not flagging the instance for restart. |
 | `v1.15.0` | 2026-07-22 | [#152](https://github.com/dngrtech/qlsm/pull/152) | Add a Global RCON page for sending one command to many instances, with persistent target selection, per-target readiness, and grouped per-target output. |

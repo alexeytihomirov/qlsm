@@ -512,6 +512,8 @@ lock and return `200` immediately.
 | `/drafts/<draft_id>/commit` | POST | Commit the draft to an instance or preset and delete the draft |
 | `/drafts/<draft_id>/binary-meta` | GET | Get the description for a `.so` file in a preset or instance context |
 | `/drafts/<draft_id>/binary-meta` | PATCH | Create or update the description for a `.so` file in a preset or instance context |
+| `/drafts/<draft_id>/hooks` | POST | Upload a `.so` `LD_PRELOAD` user-hook into the draft's `user-hooks/` dir |
+| `/drafts/<draft_id>/hooks/<filename>` | DELETE | Remove a `.so` user-hook from the draft's `user-hooks/` dir |
 
 Drafts are temporary server-side plugin workspaces under `/tmp/qlds-drafts/<uuid>/scripts/`. They are used by the unified plugin file manager so file changes can be staged before an instance or preset save commits them. Stale drafts are cleaned up after one hour unless touched.
 
@@ -631,6 +633,41 @@ Returns an empty description when no row exists.
 ```
 
 Descriptions are trimmed, may be empty, must be 1000 characters or fewer, and cannot contain `<`, `>`, `{`, `}`, or `"`. `context_type` must be `preset` or `instance`; `context_key` cannot contain path separators or `..`; `path` must end in `.so`.
+
+### Upload Draft User-Hook Request
+
+```
+POST /drafts/<draft_id>/hooks
+Content-Type: multipart/form-data
+
+file=<binary .so upload>
+```
+
+Stages an `LD_PRELOAD` `.so` hook in the draft's `user-hooks/` directory before an instance exists (the directory is copied into the instance on create). Reuses the same filename rules as instance hook uploads (`.so` extension, no path/control characters, not one of `RESERVED_HOOK_FILENAMES`) and the same 10 MB / ELF-header validation as other draft binary uploads.
+
+### Upload Draft User-Hook Response (201 Created)
+```json
+{
+  "data": {
+    "filename": "hook.so",
+    "size": 4096,
+    "modified": 1772870000,
+    "enabled": false,
+    "order": null,
+    "description": ""
+  }
+}
+```
+
+Errors: `400` (invalid draft id, bad filename/extension, non-ELF content, empty file, oversize file), `404` (draft not found), `409` (a hook with that filename already exists in the draft).
+
+### Delete Draft User-Hook
+
+```
+DELETE /drafts/<draft_id>/hooks/<filename>
+```
+
+Removes a `.so` file from the draft's `user-hooks/` directory. Returns `204 No Content` on success, `400` for an invalid draft id or filename, `404` if the draft or the file does not exist.
 
 ## Factory Files
 

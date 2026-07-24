@@ -232,6 +232,9 @@ def create_app(test_config=None):
     from ui.routes.binary_meta_routes import binary_meta_bp
     api_bp.register_blueprint(binary_meta_bp, url_prefix='/drafts')
 
+    from ui.routes.draft_hooks_routes import draft_hooks_bp
+    api_bp.register_blueprint(draft_hooks_bp, url_prefix='/drafts')
+
     from ui.routes.factory_routes import factory_api_bp
     api_bp.register_blueprint(factory_api_bp, url_prefix='/factories')
 

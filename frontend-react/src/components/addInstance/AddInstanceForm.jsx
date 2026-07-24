@@ -3,7 +3,7 @@ import { LoaderCircle, Save, FolderOpen, Settings, Code2, LayoutGrid, Webhook, C
 import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
 import { getAvailablePortsForHost, getFactoryContent, getFactoryTree, getPresetById, getPresets, savePreset, updatePreset } from '../../services/api';
-import { getBinaryMeta, saveBinaryMeta } from '../../services/draftApi';
+import { getBinaryMeta, saveBinaryMeta, uploadDraftHook, deleteDraftHook } from '../../services/draftApi';
 import InstanceBasicInfoForm from './InstanceBasicInfoForm';
 import HooksTab from '../instances/HooksTab';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
@@ -754,6 +754,20 @@ function AddInstanceForm({
   const handleRemoveMissingHook = useCallback((filename) => {
     setEnabledHookOrder((cur) => cur.filter((name) => name !== filename));
   }, []);
+  const handleUploadHook = useCallback(async (file) => {
+    if (!pluginDraftId) throw new Error('Draft not ready');
+    const meta = await uploadDraftHook(pluginDraftId, file);
+    setAvailableHooks((cur) => (
+      cur.some((h) => h.filename === meta.filename) ? cur : [...cur, meta]
+    ));
+    return meta;
+  }, [pluginDraftId]);
+  const handleDeleteHook = useCallback(async (filename) => {
+    if (!pluginDraftId) throw new Error('Draft not ready');
+    await deleteDraftHook(pluginDraftId, filename);
+    setAvailableHooks((cur) => cur.filter((h) => h.filename !== filename));
+    setEnabledHookOrder((cur) => cur.filter((name) => name !== filename));
+  }, [pluginDraftId]);
 
   const handleConfigContentUpdate = useCallback((fileName, newContent) => {
     syncConfigFile(fileName, newContent);
@@ -1009,6 +1023,8 @@ function AddInstanceForm({
                   onToggleHook={handleToggleHook}
                   onReorderHooks={handleReorderHooks}
                   onRemoveMissing={handleRemoveMissingHook}
+                  uploadHook={pluginDraftId ? handleUploadHook : undefined}
+                  deleteHook={pluginDraftId ? handleDeleteHook : undefined}
                 />
               </div>
             )}

@@ -106,7 +106,7 @@ function DescriptionCell({ hook, instanceId, onChanged, readOnly }) {
   );
 }
 
-function HookRowContent({ hook, onToggle, dragHandleProps = null, style = undefined, readOnly = false, instanceId, onChanged, onDelete }) {
+function HookRowContent({ hook, onToggle, dragHandleProps = null, style = undefined, readOnly = false, instanceId, onChanged, onDelete, deletable = false }) {
   const [localEnabled, setLocalEnabled] = useState(hook.enabled);
   useEffect(() => { setLocalEnabled(hook.enabled); }, [hook.enabled]);
 
@@ -239,6 +239,18 @@ function HookRowContent({ hook, onToggle, dragHandleProps = null, style = undefi
       <span className="w-16 flex-shrink-0 text-right font-mono text-xs text-[var(--text-muted)]">
         {formatSize(hook.size)}
       </span>
+      {!readOnly && !instanceId && deletable && (
+        <div className="flex flex-shrink-0 items-center">
+          <button
+            type="button"
+            onClick={() => onDelete?.(hook)}
+            aria-label={`Delete ${hook.filename}`}
+            className="flex h-7 w-7 items-center justify-center rounded text-[var(--accent-danger)] hover:bg-[var(--surface-elevated)]"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
       {!readOnly && instanceId && (
         <div className="relative flex flex-shrink-0 items-center">
           <input ref={fileInputRef} type="file" accept=".so" className="hidden" onChange={onReplaceFile} />
@@ -276,7 +288,7 @@ function HookRowContent({ hook, onToggle, dragHandleProps = null, style = undefi
   );
 }
 
-export function SortableHookRow({ hook, onToggle, instanceId, onChanged, onDelete }) {
+export function SortableHookRow({ hook, onToggle, instanceId, onChanged, onDelete, deletable }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: hook.filename,
   });
@@ -295,6 +307,7 @@ export function SortableHookRow({ hook, onToggle, instanceId, onChanged, onDelet
         instanceId={instanceId}
         onChanged={onChanged}
         onDelete={onDelete}
+        deletable={deletable}
       />
     </div>
   );
@@ -362,6 +375,6 @@ export function MissingHookRow({ hook, onRemove }) {
   );
 }
 
-export default function HookRow({ hook, onToggle, instanceId, onChanged, onDelete }) {
-  return <HookRowContent hook={hook} onToggle={onToggle} instanceId={instanceId} onChanged={onChanged} onDelete={onDelete} />;
+export default function HookRow({ hook, onToggle, instanceId, onChanged, onDelete, deletable }) {
+  return <HookRowContent hook={hook} onToggle={onToggle} instanceId={instanceId} onChanged={onChanged} onDelete={onDelete} deletable={deletable} />;
 }

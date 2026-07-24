@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   saveBinaryMeta: vi.fn(),
   updatePreset: vi.fn(),
   useDraftWorkspace: vi.fn(),
+  uploadDraftHook: vi.fn(),
+  deleteDraftHook: vi.fn(),
 }));
 
 vi.mock('../../../hooks/useDraftWorkspace', () => ({
@@ -37,6 +39,8 @@ vi.mock('../../../services/api', () => ({
 vi.mock('../../../services/draftApi', () => ({
   getBinaryMeta: mocks.getBinaryMeta,
   saveBinaryMeta: mocks.saveBinaryMeta,
+  uploadDraftHook: mocks.uploadDraftHook,
+  deleteDraftHook: mocks.deleteDraftHook,
 }));
 
 vi.mock('../../fileManager', () => ({
@@ -182,6 +186,8 @@ describe('AddInstanceForm draft lifecycle', () => {
     mocks.savePreset.mockResolvedValue({ message: 'saved' });
     mocks.saveBinaryMeta.mockResolvedValue({});
     mocks.updatePreset.mockResolvedValue({ message: 'updated' });
+    mocks.uploadDraftHook.mockResolvedValue({});
+    mocks.deleteDraftHook.mockResolvedValue({});
     mocks.useDraftWorkspace.mockReturnValue({
       draftId: 'draft-123',
       tree: [],
@@ -543,8 +549,8 @@ describe('AddInstanceForm draft lifecycle', () => {
     // Reflects the (default) preset config: a.so enabled, b.so disabled.
     expect(screen.getByRole('button', { name: /enable a.so/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /enable b.so/i })).toHaveAttribute('aria-pressed', 'false');
-    // No instance yet -> no upload/delete affordances.
-    expect(screen.queryByRole('button', { name: /upload \.so/i })).not.toBeInTheDocument();
+    // No instance yet, but the draft is ready -> upload affordance is available.
+    expect(screen.getByRole('button', { name: /upload \.so/i })).toBeInTheDocument();
 
     // Enabling b.so appends it to the LD_PRELOAD order sent on create. Once the
     // toggle commits, b.so moves into the enabled (sortable) section and gains a
@@ -558,6 +564,45 @@ describe('AddInstanceForm draft lifecycle', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0].enabled_hooks).toEqual(['a.so', 'b.so']);
+  });
+
+  it('uploads a user hook into the draft and shows it in the Hooks tab', async () => {
+    mocks.uploadDraftHook.mockResolvedValue({
+      filename: 'newhook.so', size: 128, modified: 1, enabled: false, order: null, description: '',
+    });
+
+    render(
+      <AddInstanceForm
+        initialData={{
+          hosts: [],
+          presets: [],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={null}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^hooks$/i }));
+    const uploadBtn = await screen.findByRole('button', { name: /upload \.so/i });
+    expect(uploadBtn).toBeInTheDocument();
+
+    const input = document.querySelector('[data-testid="hook-upload-input"]');
+    const file = new File([new Uint8Array([0x7f, 0x45, 0x4c, 0x46])], 'newhook.so');
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(mocks.uploadDraftHook).toHaveBeenCalledWith('draft-123', file));
+    expect(await screen.findByText('newhook')).toBeInTheDocument();
   });
 
   it('uses JSON highlighting and linting for factory files', async () => {
