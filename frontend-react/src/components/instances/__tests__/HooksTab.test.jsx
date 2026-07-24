@@ -241,8 +241,7 @@ describe('HooksTab', () => {
     expect(api.uploadInstanceHook).not.toHaveBeenCalled();
   });
 
-  // un-skip in Task 3 once HookRow renders the draft-mode delete button
-  it.skip('calls deleteHook (not the instance API) when confirming a delete in draft mode', async () => {
+  it('calls deleteHook (not the instance API) when confirming a delete in draft mode', async () => {
     const deleteHook = vi.fn().mockResolvedValue();
     renderTab({
       instanceId: null,
