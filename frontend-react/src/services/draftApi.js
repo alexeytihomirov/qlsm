@@ -104,3 +104,17 @@ export const renameDraftFolder = async (draftId, oldPath, newPath) => {
   });
   return response.data.data;
 };
+
+export const uploadDraftHook = async (draftId, file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await apiClient.post(`/drafts/${draftId}/hooks`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data.data;
+};
+
+export const deleteDraftHook = async (draftId, filename) => {
+  const response = await apiClient.delete(`/drafts/${draftId}/hooks/${encodeURIComponent(filename)}`);
+  return response.data.data;
+};
