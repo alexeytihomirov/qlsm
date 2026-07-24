@@ -219,4 +219,40 @@ describe('HooksTab', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.deleteInstanceHook).not.toHaveBeenCalled();
   });
+
+  it('shows the upload button in draft mode (no instanceId) when uploadHook is provided', () => {
+    const uploadHook = vi.fn().mockResolvedValue({});
+    renderTab({ instanceId: null, uploadHook });
+    expect(screen.getByRole('button', { name: /upload \.so/i })).toBeInTheDocument();
+  });
+
+  it('hides the upload button with no instanceId and no uploadHook', () => {
+    renderTab({ instanceId: null });
+    expect(screen.queryByRole('button', { name: /upload \.so/i })).not.toBeInTheDocument();
+  });
+
+  it('calls uploadHook (not the instance API) when uploading in draft mode', async () => {
+    const uploadHook = vi.fn().mockResolvedValue({ filename: 'new.so' });
+    const { container } = renderTab({ instanceId: null, uploadHook });
+    const input = container.querySelector('[data-testid="hook-upload-input"]');
+    const file = new File([new Uint8Array([0x7f, 0x45, 0x4c, 0x46])], 'new.so');
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(uploadHook).toHaveBeenCalledWith(file));
+    expect(api.uploadInstanceHook).not.toHaveBeenCalled();
+  });
+
+  // un-skip in Task 3 once HookRow renders the draft-mode delete button
+  it.skip('calls deleteHook (not the instance API) when confirming a delete in draft mode', async () => {
+    const deleteHook = vi.fn().mockResolvedValue();
+    renderTab({
+      instanceId: null,
+      deleteHook,
+      available: [{ filename: 'c.so', size: 3072, modified: 1, enabled: false, order: null, description: '' }],
+      enabledOrder: [],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /delete c\.so/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(deleteHook).toHaveBeenCalledWith('c.so'));
+    expect(api.deleteInstanceHook).not.toHaveBeenCalled();
+  });
 });

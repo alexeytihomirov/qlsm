@@ -21,6 +21,8 @@ export default function HooksTab({
   onReorderHooks,
   onRemoveMissing,
   onRefresh,
+  uploadHook,
+  deleteHook,
 }) {
   const uploadRef = useRef(null);
   const scrollRef = useRef(null);
@@ -43,6 +45,7 @@ export default function HooksTab({
       .sort((a, b) => a.filename.localeCompare(b.filename)),
     [available, enabledSet],
   );
+  const deletable = !!deleteHook;
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -50,7 +53,11 @@ export default function HooksTab({
     setUploading(true);
     setError(null);
     try {
-      await uploadInstanceHook(instanceId, file);
+      if (uploadHook) {
+        await uploadHook(file);
+      } else {
+        await uploadInstanceHook(instanceId, file);
+      }
       onRefresh?.({ hooksChanged: enabledSet.has(file.name) });
     } catch (err) {
       setError(errorMessage(err, 'Upload failed.'));
@@ -61,7 +68,11 @@ export default function HooksTab({
 
   const confirmDelete = async () => {
     try {
-      await deleteInstanceHook(instanceId, pendingDelete.filename);
+      if (deleteHook) {
+        await deleteHook(pendingDelete.filename);
+      } else {
+        await deleteInstanceHook(instanceId, pendingDelete.filename);
+      }
       setPendingDelete(null);
       onRefresh?.();
     } catch (err) {
@@ -121,7 +132,7 @@ export default function HooksTab({
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex items-center justify-between px-4 pt-2 pb-3">
           <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">User hooks</span>
-          {instanceId && (
+          {(instanceId || uploadHook) && (
             <>
               <input ref={uploadRef} data-testid="hook-upload-input" type="file" accept=".so" className="hidden" onChange={handleUpload} />
               <button
@@ -146,6 +157,7 @@ export default function HooksTab({
                   instanceId={instanceId}
                   onChanged={onRefresh}
                   onDelete={setPendingDelete}
+                  deletable={deletable}
                 />
               ))}
             </SortableContext>
@@ -158,6 +170,7 @@ export default function HooksTab({
               instanceId={instanceId}
               onChanged={onRefresh}
               onDelete={setPendingDelete}
+              deletable={deletable}
             />
           ))}
           {missing.map((filename) => (
