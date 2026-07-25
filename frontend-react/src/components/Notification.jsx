@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 
 const VARIANTS = {
@@ -41,34 +41,41 @@ function Notification({ message, variant = 'info', onClose, autoClose = true, au
   const variantConfig = VARIANTS[variant] || VARIANTS.info;
   const IconComponent = variantConfig.icon;
 
+  // Keep the latest onClose in a ref so the auto-close timer below doesn't
+  // depend on its identity. Parents typically pass an inline arrow, which would
+  // otherwise restart every visible notification's timer whenever a new one is
+  // added — making old notifications outlive their delay.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   // Entrance animation on mount
   useEffect(() => {
     requestAnimationFrame(() => setIsVisible(true));
   }, []);
 
   useEffect(() => {
-    let autoCloseTimer;
-    let exitTimer;
+    if (!autoClose) return undefined;
 
-    if (autoClose) {
-      autoCloseTimer = setTimeout(() => {
-        setIsExiting(true);
-        exitTimer = setTimeout(() => {
-          if (onClose) onClose();
-        }, 300);
-      }, autoCloseDelay);
-    }
+    let exitTimer;
+    const autoCloseTimer = setTimeout(() => {
+      setIsExiting(true);
+      exitTimer = setTimeout(() => {
+        if (onCloseRef.current) onCloseRef.current();
+      }, 300);
+    }, autoCloseDelay);
 
     return () => {
       clearTimeout(autoCloseTimer);
       clearTimeout(exitTimer);
     };
-  }, [autoClose, autoCloseDelay, onClose]);
+  }, [autoClose, autoCloseDelay]);
 
   const handleClose = () => {
     setIsExiting(true);
     setTimeout(() => {
-      if (onClose) onClose();
+      if (onCloseRef.current) onCloseRef.current();
     }, 300);
   };
 
