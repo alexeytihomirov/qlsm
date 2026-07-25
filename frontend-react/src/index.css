@@ -850,7 +850,10 @@ body {
   justify-content: center;
 }
 
-.server-card.expanded .expand-icon {
+/* .is-expanded is the standalone form for expanders outside a .server-card
+   (e.g. the Global RCON per-target output headers). */
+.server-card.expanded .expand-icon,
+.expand-icon.is-expanded {
   transform: rotate(90deg);
 }
 

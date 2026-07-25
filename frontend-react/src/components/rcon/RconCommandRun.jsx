@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Copy } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronUp, Copy } from 'lucide-react';
 
 import { useNotification } from '../NotificationProvider';
 import { copyToClipboard } from '../../utils/clipboard';
@@ -90,6 +90,23 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
     <section className={`rounded-md border p-3 ${tone}`} aria-label={`${result.name} output`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-left text-sm">
+          {/* Same chevron affordance as the Servers page host row: shared
+              .expand-icon rotation/easing, muted tone, points right when
+              collapsed and down when open. Non-expandable results keep an
+              equal-width spacer so every target name stays on one gutter. */}
+          {expandable ? (
+            <button
+              type="button"
+              aria-label={`${showAll ? 'Collapse' : 'Expand'} output for ${result.name}`}
+              aria-expanded={showAll}
+              onClick={() => onExpandedChange(!showAll)}
+              className="flex h-5 w-5 flex-none items-center justify-center rounded text-theme-muted hover:bg-black/10 dark:hover:bg-white/10"
+            >
+              <span className={`expand-icon${showAll ? ' is-expanded' : ''}`}>
+                <ChevronRight size={16} />
+              </span>
+            </button>
+          ) : <span className="h-5 w-5 flex-none" aria-hidden="true" />}
           {onFilterChange ? (
             <button
               type="button"

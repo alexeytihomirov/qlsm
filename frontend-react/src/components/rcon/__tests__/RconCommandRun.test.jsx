@@ -220,6 +220,27 @@ describe('RconCommandRun', () => {
     expect(screen.getByRole('button', { name: 'Bravo, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('toggles a single target from its chevron, rotating it like the Servers page host expander', () => {
+    render(<RconCommandRun run={makeRun([
+      result('1:11', 'Alpha', { content: 'one\ntwo\nthree\nfour\nfive\nsix' }),
+      result('2:22', 'Bravo', { content: 'short' }),
+    ])} />);
+    const chevron = screen.getByRole('button', { name: 'Expand output for Alpha' });
+    expect(chevron).toHaveAttribute('aria-expanded', 'false');
+    expect(chevron.querySelector('.expand-icon')).not.toHaveClass('is-expanded');
+
+    fireEvent.click(chevron);
+    const expanded = screen.getByRole('button', { name: 'Collapse output for Alpha' });
+    expect(expanded).toHaveAttribute('aria-expanded', 'true');
+    expect(expanded.querySelector('.expand-icon')).toHaveClass('is-expanded');
+    expect(screen.getByRole('button', { name: 'Alpha, 6 lines' })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(expanded);
+    expect(screen.getByRole('button', { name: 'Expand output for Alpha' })).toHaveAttribute('aria-expanded', 'false');
+    // Output that fits without collapsing has nothing to expand, so no chevron.
+    expect(screen.queryByRole('button', { name: /^(Expand|Collapse) output for Bravo$/ })).toBeNull();
+  });
+
   it('copies exact multiline target content, confirms via toast, and safely absorbs clipboard rejection', async () => {
     const user = userEvent.setup();
     // Defined after userEvent.setup(), which installs its own clipboard stub
