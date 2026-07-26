@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app # Removed render_template, redirect, url_for, flash, abort. Added jsonify, current_app
 from ui import db, rq
+from ui.constants import GAME_UDP_PORTS
 from ui.models import Host, HostStatus, InstanceStatus # Added InstanceStatus
 from ui.database import (
     get_hosts, get_host, get_host_by_name, create_host, update_host, delete_host # delete_host might be used by delete_host_route
@@ -868,7 +869,7 @@ def view_host_logs_api(host_id): # Renamed function
 def get_available_ports_api(host_id):
     """Returns a list of available ports for a given host."""
     # This logic is moved from the old instance_routes.py
-    POSSIBLE_PORTS = [27960, 27961, 27962, 27963] # Define or get from config
+    POSSIBLE_PORTS = GAME_UDP_PORTS
 
     host = get_host(host_id)
     if not host:
