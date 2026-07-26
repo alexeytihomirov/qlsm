@@ -27,7 +27,7 @@ export const RCON_TEXT_COLOR = '#abb2bf';
  * Custom CodeMirror theme for RCON/Terminal consoles.
  * Provides a dark, transparent background with specific styling for Quake Live colors.
  */
-export const rconTheme = EditorView.theme({
+export const rconThemeSpec = {
     '&': {
         height: '100%',
         backgroundColor: 'transparent !important',
@@ -38,6 +38,14 @@ export const rconTheme = EditorView.theme({
     '& .cm-scroller': {
         backgroundColor: 'transparent !important',
         overflow: 'auto',
+        // CodeMirror's base theme sets font-family: monospace and
+        // line-height: 1.4 directly on .cm-scroller, and a direct declaration
+        // beats the one inherited from '&' above no matter how specific that
+        // selector is. Without repeating them here the editor silently renders
+        // in the browser's default monospace — which is what made a collapsed
+        // one-line preview look nothing like the same text expanded.
+        fontFamily: RCON_FONT_FAMILY,
+        lineHeight: RCON_LINE_HEIGHT,
     },
     '& .cm-content': {
         backgroundColor: 'transparent !important',
@@ -80,4 +88,6 @@ export const rconTheme = EditorView.theme({
     '& .cm-cursor': { borderLeftColor: '#528bff' },
     '& .cm-selectionBackground': { backgroundColor: 'rgba(82, 139, 255, 0.2) !important' },
     '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(82, 139, 255, 0.3) !important' },
-});
+};
+
+export const rconTheme = EditorView.theme(rconThemeSpec);
