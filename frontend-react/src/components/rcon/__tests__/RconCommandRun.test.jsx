@@ -232,6 +232,14 @@ describe('RconCommandRun', () => {
     expect(screen.getByRole('button', { name: 'Bravo, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('keeps the run-level control mounted but disabled when nothing is expandable', () => {
+    const { rerender } = render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content: 'one' })])} />);
+    expect(screen.getByRole('button', { name: 'Expand all target output' })).toBeDisabled();
+
+    rerender(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content: '1\n2\n3' })])} />);
+    expect(screen.getByRole('button', { name: 'Expand all target output' })).toBeEnabled();
+  });
+
   it('sizes an expanded target to every line instead of capping it', async () => {
     const content = Array.from({ length: 40 }, (_, i) => `line-${i}`).join('\n');
     render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
@@ -290,6 +298,36 @@ describe('RconCommandRun', () => {
     expect(screen.getByRole('button', { name: 'Expand output for Alpha' })).toHaveAttribute('aria-expanded', 'false');
     // Output that fits without collapsing has nothing to expand, so no chevron.
     expect(screen.queryByRole('button', { name: /^(Expand|Collapse) output for Bravo$/ })).toBeNull();
+  });
+
+  it('collapses the whole command block from its header chevron, like a target block', () => {
+    render(<RconCommandRun run={makeRun([
+      result('1:11', 'Alpha', { content: 'one\ntwo\nthree\nfour\nfive\nsix' }),
+    ])} />);
+    const chevron = screen.getByRole('button', { name: 'Collapse command output for status' });
+    expect(chevron).toHaveAttribute('aria-expanded', 'true');
+    expect(chevron.querySelector('.expand-icon')).toHaveClass('is-expanded');
+    const body = document.getElementById(chevron.getAttribute('aria-controls'));
+    expect(body).toHaveTextContent('Alpha');
+    expect(body).not.toHaveAttribute('inert');
+    // 1fr keeps the row intrinsic, so a target expanding underneath grows the
+    // run instead of being clipped by a fixed height.
+    expect(body.parentElement).toHaveClass('grid-rows-[1fr]');
+
+    fireEvent.click(chevron);
+    const collapsed = screen.getByRole('button', { name: 'Expand command output for status' });
+    expect(collapsed).toHaveAttribute('aria-expanded', 'false');
+    expect(collapsed.querySelector('.expand-icon')).not.toHaveClass('is-expanded');
+    expect(body.parentElement).toHaveClass('grid-rows-[0fr]');
+    // Clipped-but-mounted content would still take tab focus without this.
+    expect(body).toHaveAttribute('inert');
+
+    fireEvent.click(collapsed);
+    expect(screen.getByRole('button', { name: 'Collapse command output for status' }))
+      .toHaveAttribute('aria-expanded', 'true');
+    expect(body).not.toHaveAttribute('inert');
+    // Collapsing the run leaves the per-target state alone.
+    expect(screen.getByRole('button', { name: 'Alpha, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('copies exact multiline target content, confirms via toast, and safely absorbs clipboard rejection', async () => {

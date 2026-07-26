@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, ChevronUp, Copy } from 'lucide-react';
 
 import { useNotification } from '../NotificationProvider';
@@ -20,6 +20,11 @@ const LABELS = {
   rejected: 'Rejected',
   failed: 'Failed',
 };
+
+// Shared by the run header and the per-target headers so both expanders sit on
+// the same gutter and rotate identically (see .expand-icon in index.css).
+const CHEVRON_CLASS = 'expand-icon h-5 w-5 flex-none rounded text-theme-muted'
+  + ' group-hover:bg-black/10 dark:group-hover:bg-white/10';
 
 // A fleet-wide command answers from every selected server at once, so each
 // target block collapses down to a single preview line. Anything longer than
@@ -146,9 +151,9 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
               aria-label={`${showAll ? 'Collapse' : 'Expand'} output for ${result.name}`}
               aria-expanded={showAll}
               onClick={() => onExpandedChange(!showAll)}
-              className="flex h-5 w-5 flex-none items-center justify-center rounded text-theme-muted hover:bg-black/10 dark:hover:bg-white/10"
+              className="group flex flex-none"
             >
-              <span className={`expand-icon${showAll ? ' is-expanded' : ''}`}>
+              <span className={`${CHEVRON_CLASS}${showAll ? ' is-expanded' : ''}`}>
                 <ChevronRight size={16} />
               </span>
             </button>
@@ -231,6 +236,8 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
 
 export default function RconCommandRun({ run, onFilterChange }) {
   const [expandedByKey, setExpandedByKey] = useState({});
+  const [runExpanded, setRunExpanded] = useState(true);
+  const bodyId = useId();
   const results = run.results ?? [];
   const expandableResults = results.filter(
     (result) => physicalLines(result.lines).length > PREVIEW_LINES,
@@ -252,31 +259,62 @@ export default function RconCommandRun({ run, onFilterChange }) {
 
   return (
     <article className="rounded-lg border border-theme bg-theme-base p-4">
-      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-mono font-semibold text-theme-primary">&gt; {run.command}</h3>
+      <header className="flex flex-wrap items-baseline justify-between gap-2">
+        {/* Same chevron affordance as the per-target headers below: shared
+            .expand-icon rotation/easing, muted tone, right when collapsed. */}
+        <h3 className="min-w-0">
+          <button
+            type="button"
+            aria-label={`${runExpanded ? 'Collapse' : 'Expand'} command output for ${run.command}`}
+            aria-expanded={runExpanded}
+            aria-controls={bodyId}
+            onClick={() => setRunExpanded(!runExpanded)}
+            className="group flex min-w-0 items-center gap-2 text-left font-mono font-semibold text-theme-primary"
+          >
+            <span className={`${CHEVRON_CLASS}${runExpanded ? ' is-expanded' : ''}`}>
+              <ChevronRight size={16} />
+            </span>
+            <span className="truncate">&gt; {run.command}</span>
+          </button>
+        </h3>
         <span className="text-xs text-theme-muted">
           {run.timestamp} · {targetCount} {targetCount === 1 ? 'target' : 'targets'}
         </span>
       </header>
-      {expandableResults.length > 0 && (
-        <div className="mb-2 flex justify-end">
-          <button type="button" aria-label={allExpanded ? 'Collapse all target output' : 'Expand all target output'}
-            onClick={() => setAllExpanded(!allExpanded)} className="btn btn-secondary gap-1.5">
-            {allExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {allExpanded ? 'Collapse All' : 'Expand All'}
-          </button>
+      {/* Same reveal as a target block, but driven by grid-template-rows rather
+          than max-height: a run's height is whatever its targets currently add
+          up to, and those are animating their own max-height underneath. 1fr
+          stays intrinsic, so an inner expansion grows the run instead of being
+          clipped by a stale measurement. Durations/easings match the target
+          blocks so nested collapses read as one motion. */}
+      <div className={`grid transition-[grid-template-rows] ${runExpanded
+        ? 'grid-rows-[1fr] duration-[450ms] ease-in' : 'grid-rows-[0fr] duration-300 ease-out'}`}>
+        {/* The top spacing lives inside the clipped wrapper so a collapsed run
+            closes flush against its header instead of leaving a gap. */}
+        <div id={bodyId} inert={runExpanded ? undefined : true} className="min-h-0 overflow-hidden pt-3">
+          {/* Always rendered so the control doesn't pop in mid-run as output
+              arrives; disabled until at least one target has more than the
+              preview line to expand. */}
+          <div className="mb-2 flex justify-end">
+            <button type="button" aria-label={allExpanded ? 'Collapse all target output' : 'Expand all target output'}
+              disabled={expandableResults.length === 0}
+              onClick={() => setAllExpanded(!allExpanded)} className="btn btn-secondary gap-1.5">
+              {allExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {allExpanded ? 'Collapse All' : 'Expand All'}
+            </button>
+          </div>
+          <div className="space-y-2">
+            {results.map((result) => (
+              <ResultOutput
+                key={result.key}
+                result={result}
+                expanded={expandedByKey[result.key]}
+                onExpandedChange={(expanded) => setExpanded(result.key, expanded)}
+                onFilterChange={onFilterChange}
+              />
+            ))}
+          </div>
         </div>
-      )}
-      <div className="space-y-2">
-        {results.map((result) => (
-          <ResultOutput
-            key={result.key}
-            result={result}
-            expanded={expandedByKey[result.key]}
-            onExpandedChange={(expanded) => setExpanded(result.key, expanded)}
-            onFilterChange={onFilterChange}
-          />
-        ))}
       </div>
     </article>
   );

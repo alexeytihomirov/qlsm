@@ -2,6 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Run blocks reach for the notification context through their copy button, so
+// rendering the all-view without this stub throws before anything asserts.
+vi.mock('../../NotificationProvider', () => ({ useNotification: () => ({ addNotification: vi.fn() }) }));
+
 const viewer = vi.hoisted(() => ({ events: [], appendCalls: 0, clearCalls: 0, mounts: 0 }));
 vi.mock('../RconRawOutputViewer', async () => {
   const React = await import('react');
@@ -16,6 +20,8 @@ vi.mock('../RconRawOutputViewer', async () => {
       }), []);
       return <div data-testid="raw-viewer" />;
     }),
+    // Run blocks size an expanded target against the viewer's retention cap.
+    MAX_LINES: 1000,
   };
 });
 
