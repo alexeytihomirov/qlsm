@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import subprocess
@@ -5,6 +6,7 @@ from rq import get_current_job
 
 # Import database and models - requires app context
 from ui import db
+from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.models import Host, HostStatus, QLFilterStatus
 from .common import append_log # Import from the common module
 # Note: No need to import _run_ansible_playbook as this task uses direct subprocess calls
@@ -141,6 +143,14 @@ def setup_host_ansible_logic(host_id, rerun=False):
         ]
         if host.timezone:
             ansible_command_args += ['-e', f'host_timezone={host.timezone}']
+        # Derived from MAX_INSTANCES_PER_HOST -- keeps the rendered iptables
+        # allow-list in step with the number of instances the backend accepts.
+        # Must be one JSON object: the bare `-e key=[...]` form is parsed by
+        # Ansible as a whitespace-split string, not a list.
+        ansible_command_args += ['-e', json.dumps({
+            'game_udp_ports': GAME_UDP_PORTS,
+            'rcon_tcp_ports': RCON_TCP_PORTS,
+        })]
         ansible_command_args.append(ansible_playbook_path)
 
         log.info(f"Executing Ansible command: {' '.join(ansible_command_args)}")
