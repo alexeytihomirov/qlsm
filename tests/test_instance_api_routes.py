@@ -186,8 +186,9 @@ def test_add_instance_rejects_when_host_is_at_the_instance_limit(mock_enqueue, c
     mock_enqueue.assert_not_called()
 
 
+@patch('ui.routes.instance_routes.acquire_lock', return_value=True)
 @patch('ui.routes.instance_routes.enqueue_task')
-def test_add_instance_allows_a_fifth_instance(mock_enqueue, client, app, tmp_path, monkeypatch):
+def test_add_instance_allows_a_fifth_instance(mock_enqueue, mock_lock, client, app, tmp_path, monkeypatch):
     """A host with 4 instances is no longer full -- the old limit must not apply."""
     monkeypatch.chdir(tmp_path)
 
@@ -208,9 +209,11 @@ def test_add_instance_allows_a_fifth_instance(mock_enqueue, client, app, tmp_pat
         'configs': {'server.cfg': '', 'mappool.txt': '', 'access.txt': '', 'workshop.txt': ''},
     }
 
+    mock_enqueue.return_value = type('Job', (), {'id': 'fake-job-id'})()
     response = client.post('/api/instances/', json=payload, headers=headers)
 
-    assert response.status_code != 400, response.get_json()
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()['data']['port'] == GAME_UDP_PORTS[4]
 
 
 @patch('ui.routes.instance_routes.enqueue_task')
