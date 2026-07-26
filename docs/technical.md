@@ -171,7 +171,7 @@ For `provider=self`, `Host.ip_address` remains the client-facing server address 
 ### Self-Host Redis Contract
 
 For `provider=self`, game instances reuse the QLSM Docker Redis on `127.0.0.1:6379`.
-QLSM reserves Redis `DB 0`; minqlx instances use `DB 1..4` derived from `port - 27959`.
+QLSM reserves Redis `DB 0`; minqlx instances use `DB 1..8` derived from `port - 27959` (Redis ships 16 databases by default, so a ceiling of 15 is available). `MAX_INSTANCES_PER_HOST` and `BASE_GAME_PORT` in `ui/constants.py` are the single source of truth for the per-host instance limit and the derived game/ZMQ port pools.
 Self-host minqlx services receive `qlx_redisAddress`, `qlx_redisPassword`, and `qlx_redisDatabase` explicitly at deploy time.
 
 **QLInstance Model:** Represents a Quake Live server instance running on a specific `Host`.
