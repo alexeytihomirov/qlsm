@@ -85,7 +85,11 @@ export default function GlobalRconPage() {
     return true;
   }, [dispatchTargets, runs, runtimeStates, session]);
 
-  if (loading) return <div className="global-rcon-page"><p className="global-rcon-state">Loading Global RCON inventory…</p></div>;
+  if (loading) return (
+    <div className="global-rcon-page">
+      <div className="card flex items-center justify-center py-16"><div className="loader-tech" /></div>
+    </div>
+  );
   if (error) return (
     <div className="global-rcon-page"><div className="global-rcon-state global-rcon-error">
       <AlertTriangle size={20} /><span>Unable to load server inventory: {inventoryErrorText(error)}</span>

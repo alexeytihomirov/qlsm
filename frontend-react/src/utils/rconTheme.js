@@ -1,20 +1,51 @@
 import { EditorView } from '@codemirror/view';
 
 /**
+ * Shared chrome for the RCON output surface. Exported so static one-line
+ * previews can wear the same frame, gutter and font metrics as a live
+ * CodeMirror viewer without mounting one — collapsing a target block then
+ * swaps the content inside the rectangle instead of dropping the rectangle.
+ */
+export const RCON_FRAME_CLASS = 'rounded-lg border-2 border-theme-strong overflow-hidden';
+export const RCON_SURFACE_BACKGROUND = 'rgba(0,0,0,0.4)';
+export const RCON_FONT_FAMILY = "'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'Cascadia Code', 'Consolas', monospace";
+export const RCON_FONT_SIZE = '13.5px';
+export const RCON_LINE_HEIGHT = '1.6';
+// CodeMirror's own defaults for the pieces a replica has to line up with:
+// .cm-content padding, .cm-line padding, and the line-number gutter.
+export const RCON_CONTENT_PADDING = '8px 2px 8px 6px';
+export const RCON_GUTTER = {
+    background: '#0a0e14',
+    borderRight: '1px solid rgba(255,255,255,0.08)',
+    color: '#64748b',
+    minWidth: '20px',
+    padding: '8px 3px 8px 5px',
+};
+export const RCON_TEXT_COLOR = '#abb2bf';
+
+/**
  * Custom CodeMirror theme for RCON/Terminal consoles.
  * Provides a dark, transparent background with specific styling for Quake Live colors.
  */
-export const rconTheme = EditorView.theme({
+export const rconThemeSpec = {
     '&': {
         height: '100%',
         backgroundColor: 'transparent !important',
-        fontSize: '13.5px',
-        fontFamily: "'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'Cascadia Code', 'Consolas', monospace",
-        lineHeight: '1.6',
+        fontSize: RCON_FONT_SIZE,
+        fontFamily: RCON_FONT_FAMILY,
+        lineHeight: RCON_LINE_HEIGHT,
     },
     '& .cm-scroller': {
         backgroundColor: 'transparent !important',
         overflow: 'auto',
+        // CodeMirror's base theme sets font-family: monospace and
+        // line-height: 1.4 directly on .cm-scroller, and a direct declaration
+        // beats the one inherited from '&' above no matter how specific that
+        // selector is. Without repeating them here the editor silently renders
+        // in the browser's default monospace — which is what made a collapsed
+        // one-line preview look nothing like the same text expanded.
+        fontFamily: RCON_FONT_FAMILY,
+        lineHeight: RCON_LINE_HEIGHT,
     },
     '& .cm-content': {
         backgroundColor: 'transparent !important',
@@ -22,15 +53,15 @@ export const rconTheme = EditorView.theme({
         padding: '8px 0',
     },
     '& .cm-gutters': {
-        backgroundColor: '#0a0e14 !important',
-        borderRight: '1px solid rgba(255,255,255,0.08)',
-        color: '#64748b !important',
+        backgroundColor: `${RCON_GUTTER.background} !important`,
+        borderRight: RCON_GUTTER.borderRight,
+        color: `${RCON_GUTTER.color} !important`,
     },
     '& .cm-gutter': {
-        backgroundColor: '#0a0e14 !important',
+        backgroundColor: `${RCON_GUTTER.background} !important`,
     },
     '& .cm-lineNumbers .cm-gutterElement': {
-        color: '#64748b !important',
+        color: `${RCON_GUTTER.color} !important`,
         opacity: '1 !important',
     },
     '& .cm-activeLineGutter': {
@@ -40,7 +71,7 @@ export const rconTheme = EditorView.theme({
         backgroundColor: 'rgba(255, 255, 255, 0.03) !important',
     },
     '& .cm-line': {
-        color: '#abb2bf', // Warm off-white matching oneDark foreground
+        color: RCON_TEXT_COLOR, // Warm off-white matching oneDark foreground
     },
     // Search panel styling
     '& .cm-panels': { backgroundColor: '#1e1e1e', zIndex: '100' },
@@ -57,4 +88,6 @@ export const rconTheme = EditorView.theme({
     '& .cm-cursor': { borderLeftColor: '#528bff' },
     '& .cm-selectionBackground': { backgroundColor: 'rgba(82, 139, 255, 0.2) !important' },
     '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(82, 139, 255, 0.3) !important' },
-});
+};
+
+export const rconTheme = EditorView.theme(rconThemeSpec);

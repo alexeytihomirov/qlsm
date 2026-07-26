@@ -9,9 +9,13 @@ vi.mock('../../NotificationProvider', () => ({
 }));
 
 const viewer = vi.hoisted(() => ({ mounts: 0, appendCalls: 0, clearCalls: 0 }));
-vi.mock('../RconRawOutputViewer', async () => {
+vi.mock('../RconRawOutputViewer', async (importOriginal) => {
   const React = await import('react');
+  // Real MAX_LINES, so the block-sizing expectations below cannot drift from
+  // the number of lines a viewer actually retains.
+  const { MAX_LINES } = await importOriginal();
   return {
+    MAX_LINES,
     default: React.forwardRef(function Viewer({ showMetadata }, ref) {
       const [events, setEvents] = React.useState([]);
       React.useEffect(() => {
@@ -55,11 +59,11 @@ beforeEach(() => {
 });
 
 describe('RconCommandRun', () => {
-  it.each([1, 5])('shows %i physical output lines in a lightweight color view with opt-in search', async (count) => {
-    const content = Array.from({ length: count }, (_, i) => `^2line-${i}`).join('\n');
+  it('shows single-line output in a lightweight color view with opt-in search', async () => {
+    const content = '^2line-0';
     const user = userEvent.setup();
     render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
-    const header = screen.getByRole('button', { name: `Alpha, ${count} ${count === 1 ? 'line' : 'lines'}` });
+    const header = screen.getByRole('button', { name: 'Alpha, 1 line' });
     expect(header).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByTestId('run-viewer')).not.toBeInTheDocument();
     expect(screen.getByText(/line-0/)).toHaveStyle({ color: '#44ff44' });
@@ -73,35 +77,43 @@ describe('RconCommandRun', () => {
     expect(screen.getByText(/line-0/)).toBeInTheDocument();
   });
 
-  it('collapses over-five-line output to one physical preview and toggles from its accessible header', async () => {
-    const content = 'one\ntwo\nthree\nfour\nfive\nsix';
-    render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
-    const header = screen.getByRole('button', { name: 'Alpha, 6 lines' });
-    expect(header).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByText('one')).toBeInTheDocument();
-    expect(screen.queryByText(/six/)).not.toBeInTheDocument();
-    expect(screen.queryByTestId('run-viewer')).not.toBeInTheDocument();
-    fireEvent.click(header);
-    expect(header).toHaveAttribute('aria-expanded', 'true');
-    await waitFor(() => expect(screen.getByTestId('run-viewer')).toHaveTextContent('six'));
-    fireEvent.click(header);
-    expect(header).toHaveAttribute('aria-expanded', 'false');
-    // The viewer stays mounted through the collapse transition so max-height
-    // has real content to clip (otherwise the collapse animation looked
-    // instant), then unmounts once the transition finishes.
-    const viewerNode = screen.getByTestId('run-viewer');
-    expect(viewerNode).toBeInTheDocument();
-    fireEvent.transitionEnd(viewerNode.parentElement.parentElement, { propertyName: 'max-height' });
-    expect(screen.queryByTestId('run-viewer')).not.toBeInTheDocument();
-  });
+  // Collapsed is the default for anything past the first physical line, so a
+  // run across the whole fleet stays one line per target however much each
+  // server replies. Five lines used to render inline in full.
+  it.each([
+    ['two-line', 'one\ntwo', 2, 'two'],
+    ['five-line', 'one\ntwo\nthree\nfour\nfive', 5, 'five'],
+  ])('collapses %s output to one physical preview and toggles from its accessible header',
+    async (_label, content, count, lastLine) => {
+      render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
+      const header = screen.getByRole('button', { name: `Alpha, ${count} lines` });
+      expect(header).toHaveAttribute('aria-expanded', 'false');
+      // Truncated, not wrapped, so a long reply can't spill into a second row
+      // that the collapsed max-height then clips mid-line.
+      expect(screen.getByText('one').closest('pre')).toHaveClass('truncate');
+      expect(screen.queryByText(new RegExp(lastLine))).not.toBeInTheDocument();
+      expect(screen.queryByTestId('run-viewer')).not.toBeInTheDocument();
+      fireEvent.click(header);
+      expect(header).toHaveAttribute('aria-expanded', 'true');
+      await waitFor(() => expect(screen.getByTestId('run-viewer')).toHaveTextContent(lastLine));
+      fireEvent.click(header);
+      expect(header).toHaveAttribute('aria-expanded', 'false');
+      // The viewer stays mounted through the collapse transition so max-height
+      // has real content to clip (otherwise the collapse animation looked
+      // instant), then unmounts once the transition finishes.
+      const viewerNode = screen.getByTestId('run-viewer');
+      expect(viewerNode).toBeInTheDocument();
+      fireEvent.transitionEnd(viewerNode.parentElement.parentElement, { propertyName: 'max-height' });
+      expect(screen.queryByTestId('run-viewer')).not.toBeInTheDocument();
+    });
 
-  it('lands on the light preview when streaming crosses the five-line threshold without a user override', async () => {
+  it('lands on the light preview when streaming crosses the one-line threshold without a user override', async () => {
     const events = Array.from({ length: 8 }, (_, index) => ({
       type: 'response', content: `line-${index}`, timestamp: `${index}`,
     }));
     const runWith = (lines) => makeRun([result('1:11', 'Alpha', { lines })]);
-    const { rerender } = render(<RconCommandRun run={runWith(events.slice(0, 3))} />);
-    for (let count = 4; count <= 8; count += 1) {
+    const { rerender } = render(<RconCommandRun run={runWith(events.slice(0, 1))} />);
+    for (let count = 2; count <= 8; count += 1) {
       rerender(<RconCommandRun run={runWith(events.slice(0, count))} />);
     }
     expect(screen.getByRole('button', { name: 'Alpha, 8 lines' })).toHaveAttribute('aria-expanded', 'false');
@@ -218,6 +230,104 @@ describe('RconCommandRun', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Collapse all target output' }));
     expect(screen.getByRole('button', { name: 'Alpha, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Bravo, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps the run-level control mounted but disabled when nothing is expandable', () => {
+    const { rerender } = render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content: 'one' })])} />);
+    expect(screen.getByRole('button', { name: 'Expand all target output' })).toBeDisabled();
+
+    rerender(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content: '1\n2\n3' })])} />);
+    expect(screen.getByRole('button', { name: 'Expand all target output' })).toBeEnabled();
+  });
+
+  it('sizes an expanded target to every line instead of capping it', async () => {
+    const content = Array.from({ length: 40 }, (_, i) => `line-${i}`).join('\n');
+    render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand output for Alpha' }));
+
+    // 40 rows of 13.5px x 1.6 line-height, plus 8px padding and a 2px border
+    // either side. The old cap stopped at 360px, roughly 15 lines.
+    const viewerBox = (await screen.findByTestId('run-viewer')).parentElement;
+    expect(viewerBox).toHaveStyle({ height: '884px' });
+    expect(viewerBox.parentElement).toHaveStyle({ maxHeight: '892px' });
+  });
+
+  it('stops sizing past what one target block retains', async () => {
+    const content = Array.from({ length: 1200 }, (_, i) => `line-${i}`).join('\n');
+    render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand output for Alpha' }));
+
+    // The viewer keeps the last 1000 lines, so sizing for 1200 would leave
+    // 200 lines of empty box below the output.
+    const viewerBox = (await screen.findByTestId('run-viewer')).parentElement;
+    expect(viewerBox).toHaveStyle({ height: '21620px' });
+  });
+
+  it('keeps the viewer frame around the collapsed one-line preview', () => {
+    render(<RconCommandRun run={makeRun([
+      result('1:11', 'Alpha', { content: 'map: thunderstruck\ntwo\nthree\nfour\nfive\nsix' }),
+    ])} />);
+    const preview = screen.getByText('map: thunderstruck').closest('pre');
+    const frame = preview.parentElement;
+    expect(frame).toHaveClass('rounded-lg', 'border-2', 'border-theme-strong');
+    expect(frame).toHaveStyle({ background: 'rgba(0,0,0,0.4)' });
+    // A gutter digit, so the collapsed block reads as line 1 of the viewer.
+    expect(frame.firstChild).toHaveTextContent('1');
+    // Metrics match the CodeMirror surface, otherwise expanding visibly
+    // reflows the same text into a different font and size.
+    expect(preview).toHaveStyle({ fontSize: '13.5px', lineHeight: '1.6' });
+    expect(preview).toHaveClass('truncate');
+  });
+
+  it('toggles a single target from its chevron, rotating it like the Servers page host expander', () => {
+    render(<RconCommandRun run={makeRun([
+      result('1:11', 'Alpha', { content: 'one\ntwo\nthree\nfour\nfive\nsix' }),
+      result('2:22', 'Bravo', { content: 'short' }),
+    ])} />);
+    const chevron = screen.getByRole('button', { name: 'Expand output for Alpha' });
+    expect(chevron).toHaveAttribute('aria-expanded', 'false');
+    expect(chevron.querySelector('.expand-icon')).not.toHaveClass('is-expanded');
+
+    fireEvent.click(chevron);
+    const expanded = screen.getByRole('button', { name: 'Collapse output for Alpha' });
+    expect(expanded).toHaveAttribute('aria-expanded', 'true');
+    expect(expanded.querySelector('.expand-icon')).toHaveClass('is-expanded');
+    expect(screen.getByRole('button', { name: 'Alpha, 6 lines' })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(expanded);
+    expect(screen.getByRole('button', { name: 'Expand output for Alpha' })).toHaveAttribute('aria-expanded', 'false');
+    // Output that fits without collapsing has nothing to expand, so no chevron.
+    expect(screen.queryByRole('button', { name: /^(Expand|Collapse) output for Bravo$/ })).toBeNull();
+  });
+
+  it('collapses the whole command block from its header chevron, like a target block', () => {
+    render(<RconCommandRun run={makeRun([
+      result('1:11', 'Alpha', { content: 'one\ntwo\nthree\nfour\nfive\nsix' }),
+    ])} />);
+    const chevron = screen.getByRole('button', { name: 'Collapse command output for status' });
+    expect(chevron).toHaveAttribute('aria-expanded', 'true');
+    expect(chevron.querySelector('.expand-icon')).toHaveClass('is-expanded');
+    const body = document.getElementById(chevron.getAttribute('aria-controls'));
+    expect(body).toHaveTextContent('Alpha');
+    expect(body).not.toHaveAttribute('inert');
+    // 1fr keeps the row intrinsic, so a target expanding underneath grows the
+    // run instead of being clipped by a fixed height.
+    expect(body.parentElement).toHaveClass('grid-rows-[1fr]');
+
+    fireEvent.click(chevron);
+    const collapsed = screen.getByRole('button', { name: 'Expand command output for status' });
+    expect(collapsed).toHaveAttribute('aria-expanded', 'false');
+    expect(collapsed.querySelector('.expand-icon')).not.toHaveClass('is-expanded');
+    expect(body.parentElement).toHaveClass('grid-rows-[0fr]');
+    // Clipped-but-mounted content would still take tab focus without this.
+    expect(body).toHaveAttribute('inert');
+
+    fireEvent.click(collapsed);
+    expect(screen.getByRole('button', { name: 'Collapse command output for status' }))
+      .toHaveAttribute('aria-expanded', 'true');
+    expect(body).not.toHaveAttribute('inert');
+    // Collapsing the run leaves the per-target state alone.
+    expect(screen.getByRole('button', { name: 'Alpha, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('copies exact multiline target content, confirms via toast, and safely absorbs clipboard rejection', async () => {

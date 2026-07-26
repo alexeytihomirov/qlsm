@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Copy } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Check, ChevronDown, ChevronRight, ChevronUp, Copy } from 'lucide-react';
 
 import { useNotification } from '../NotificationProvider';
 import { copyToClipboard } from '../../utils/clipboard';
+import {
+  RCON_CONTENT_PADDING, RCON_FONT_FAMILY, RCON_FONT_SIZE, RCON_FRAME_CLASS,
+  RCON_GUTTER, RCON_LINE_HEIGHT, RCON_SURFACE_BACKGROUND, RCON_TEXT_COLOR,
+} from '../../utils/rconTheme';
 import QuakeColoredText, { QuakeEventText } from './QuakeColoredText';
-import RconRawOutputViewer from './RconRawOutputViewer';
+import RconRawOutputViewer, { MAX_LINES } from './RconRawOutputViewer';
 import useIncrementalViewerReplay from './useIncrementalViewerReplay';
 
 const LABELS = {
@@ -16,6 +20,16 @@ const LABELS = {
   rejected: 'Rejected',
   failed: 'Failed',
 };
+
+// Shared by the run header and the per-target headers so both expanders sit on
+// the same gutter and rotate identically (see .expand-icon in index.css).
+const CHEVRON_CLASS = 'expand-icon h-5 w-5 flex-none rounded text-theme-muted'
+  + ' group-hover:bg-black/10 dark:group-hover:bg-white/10';
+
+// A fleet-wide command answers from every selected server at once, so each
+// target block collapses down to a single preview line. Anything longer than
+// that is expandable rather than shown inline.
+const PREVIEW_LINES = 1;
 
 function physicalLines(lines = []) {
   return lines.flatMap((line) => String(line.content ?? '').split('\n'));
@@ -30,14 +44,51 @@ function isDefaultExpanded(result) {
   return result.state === 'failed' || (result.lines ?? []).some((line) => line.type === 'error');
 }
 
+// An expanded block is sized to its own content rather than capped, so the
+// viewer never scrolls internally — the run feed scrolls instead and the whole
+// response is readable in one pass. Derived from the shared metrics because
+// CodeMirror draws no wrapping: one physical line is exactly one row.
+const LINE_PX = parseFloat(RCON_FONT_SIZE) * parseFloat(RCON_LINE_HEIGHT);
+const FRAME_PX = 20; // 8px content padding top and bottom, 2px border either side
+const MARGIN_PX = 8; // the mt-2 above the frame, inside the clipped container
+
+function framedHeight(lineCount) {
+  return Math.ceil(Math.min(lineCount, MAX_LINES) * LINE_PX) + FRAME_PX;
+}
+
 function OutputViewer({ events, lineCount, resultKey }) {
   const viewerRef = useRef(null);
   useIncrementalViewerReplay(viewerRef, events, resultKey);
 
-  const height = Math.min(360, Math.max(96, lineCount * 22 + 48));
   return (
-    <div className="mt-2" style={{ height }}>
+    <div className="mt-2" style={{ height: framedHeight(lineCount) }}>
       <RconRawOutputViewer ref={viewerRef} showMetadata={false} />
+    </div>
+  );
+}
+
+// Collapsed output keeps the viewer's rectangle rather than falling back to
+// naked text: same frame, fill, gutter and font metrics, just one line of it.
+// CodeMirror stays unmounted — a run holds a block per target, so the static
+// replica is what makes the collapsed state cheap in the first place.
+// Truncated rather than wrapped: a long line would otherwise flow onto a
+// second row that the max-height cap clips through the middle.
+function CollapsedLine({ line }) {
+  return (
+    <div className={`mt-2 flex ${RCON_FRAME_CLASS}`} style={{ background: RCON_SURFACE_BACKGROUND }}>
+      <span aria-hidden="true" className="flex-none select-none text-right" style={{
+        ...RCON_GUTTER, fontFamily: RCON_FONT_FAMILY, fontSize: RCON_FONT_SIZE, lineHeight: RCON_LINE_HEIGHT,
+      }}>1</span>
+      <QuakeColoredText
+        singleLine
+        text={String(line?.content ?? '').split('\n')[0]}
+        error={line?.type === 'error'}
+        className="min-w-0 flex-1"
+        style={{
+          fontFamily: RCON_FONT_FAMILY, fontSize: RCON_FONT_SIZE, lineHeight: RCON_LINE_HEIGHT,
+          padding: RCON_CONTENT_PADDING, color: RCON_TEXT_COLOR,
+        }}
+      />
     </div>
   );
 }
@@ -50,7 +101,7 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
   const flattened = physicalLines(lines);
   const count = flattened.length;
   const defaultExpanded = isDefaultExpanded(result);
-  const expandable = count > 5;
+  const expandable = count > PREVIEW_LINES;
   const showAll = !expandable || (expanded ?? defaultExpanded);
   const tone = ['failed', 'rejected'].includes(result.state) ? 'border-red-500/40 bg-red-500/5'
     : result.state === 'skipped' ? 'border-amber-500/40 bg-amber-500/5'
@@ -90,6 +141,23 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
     <section className={`rounded-md border p-3 ${tone}`} aria-label={`${result.name} output`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-left text-sm">
+          {/* Same chevron affordance as the Servers page host row: shared
+              .expand-icon rotation/easing, muted tone, points right when
+              collapsed and down when open. Non-expandable results keep an
+              equal-width spacer so every target name stays on one gutter. */}
+          {expandable ? (
+            <button
+              type="button"
+              aria-label={`${showAll ? 'Collapse' : 'Expand'} output for ${result.name}`}
+              aria-expanded={showAll}
+              onClick={() => onExpandedChange(!showAll)}
+              className="group flex flex-none"
+            >
+              <span className={`${CHEVRON_CLASS}${showAll ? ' is-expanded' : ''}`}>
+                <ChevronRight size={16} />
+              </span>
+            </button>
+          ) : <span className="h-5 w-5 flex-none" aria-hidden="true" />}
           {onFilterChange ? (
             <button
               type="button"
@@ -133,12 +201,16 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
         </div>
       </div>
       {count > 0 && (expandable ? (
-        // Same reveal animation as the Targets tree's host expand/collapse
-        // and the Servers page's instance list: a generous max-height cap
-        // that transitions instead of snapping between the one-line preview
-        // and the full viewer.
-        <div className={`overflow-hidden transition-[max-height] ${showAll
-          ? 'max-h-[420px] duration-[450ms] ease-in' : 'max-h-9 duration-300 ease-out'}`}
+        // Same reveal animation as the Targets tree's host expand/collapse and
+        // the Servers page's instance list, but both ends of the transition are
+        // measured rather than fixed: expanded is the full block's height so
+        // nothing is clipped, collapsed is one framed line, so the mid-collapse
+        // viewer shrinks into exactly the rectangle the replica then takes over.
+        // Inline because a max-height transition needs a concrete target — there
+        // is nothing for `none` to animate to.
+        <div style={{ maxHeight: (showAll ? framedHeight(count) : framedHeight(1)) + MARGIN_PX }}
+          className={`overflow-hidden transition-[max-height] ${showAll
+            ? 'duration-[450ms] ease-in' : 'duration-300 ease-out'}`}
           onTransitionEnd={(event) => {
             if (event.target === event.currentTarget && event.propertyName === 'max-height' && !showAll) {
               setRenderFull(false);
@@ -146,11 +218,7 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
           }}>
           {renderFull
             ? <OutputViewer events={lines} lineCount={count} resultKey={result.key} />
-            : <QuakeColoredText
-                text={String(lines[0]?.content ?? '').split('\n')[0]}
-                error={lines[0]?.type === 'error'}
-                className="mt-2"
-              />}
+            : <CollapsedLine line={lines[0]} />}
         </div>
       ) : (searching
         ? <OutputViewer events={lines} lineCount={count} resultKey={result.key} />
@@ -168,8 +236,12 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
 
 export default function RconCommandRun({ run, onFilterChange }) {
   const [expandedByKey, setExpandedByKey] = useState({});
+  const [runExpanded, setRunExpanded] = useState(true);
+  const bodyId = useId();
   const results = run.results ?? [];
-  const expandableResults = results.filter((result) => physicalLines(result.lines).length > 5);
+  const expandableResults = results.filter(
+    (result) => physicalLines(result.lines).length > PREVIEW_LINES,
+  );
   const setExpanded = (key, expanded) => {
     setExpandedByKey((current) => ({ ...current, [key]: expanded }));
   };
@@ -187,31 +259,62 @@ export default function RconCommandRun({ run, onFilterChange }) {
 
   return (
     <article className="rounded-lg border border-theme bg-theme-base p-4">
-      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-mono font-semibold text-theme-primary">&gt; {run.command}</h3>
+      <header className="flex flex-wrap items-baseline justify-between gap-2">
+        {/* Same chevron affordance as the per-target headers below: shared
+            .expand-icon rotation/easing, muted tone, right when collapsed. */}
+        <h3 className="min-w-0">
+          <button
+            type="button"
+            aria-label={`${runExpanded ? 'Collapse' : 'Expand'} command output for ${run.command}`}
+            aria-expanded={runExpanded}
+            aria-controls={bodyId}
+            onClick={() => setRunExpanded(!runExpanded)}
+            className="group flex min-w-0 items-center gap-2 text-left font-mono font-semibold text-theme-primary"
+          >
+            <span className={`${CHEVRON_CLASS}${runExpanded ? ' is-expanded' : ''}`}>
+              <ChevronRight size={16} />
+            </span>
+            <span className="truncate">&gt; {run.command}</span>
+          </button>
+        </h3>
         <span className="text-xs text-theme-muted">
           {run.timestamp} · {targetCount} {targetCount === 1 ? 'target' : 'targets'}
         </span>
       </header>
-      {expandableResults.length > 0 && (
-        <div className="mb-2 flex justify-end">
-          <button type="button" aria-label={allExpanded ? 'Collapse all target output' : 'Expand all target output'}
-            onClick={() => setAllExpanded(!allExpanded)} className="btn btn-secondary gap-1.5">
-            {allExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {allExpanded ? 'Collapse All' : 'Expand All'}
-          </button>
+      {/* Same reveal as a target block, but driven by grid-template-rows rather
+          than max-height: a run's height is whatever its targets currently add
+          up to, and those are animating their own max-height underneath. 1fr
+          stays intrinsic, so an inner expansion grows the run instead of being
+          clipped by a stale measurement. Durations/easings match the target
+          blocks so nested collapses read as one motion. */}
+      <div className={`grid transition-[grid-template-rows] ${runExpanded
+        ? 'grid-rows-[1fr] duration-[450ms] ease-in' : 'grid-rows-[0fr] duration-300 ease-out'}`}>
+        {/* The top spacing lives inside the clipped wrapper so a collapsed run
+            closes flush against its header instead of leaving a gap. */}
+        <div id={bodyId} inert={runExpanded ? undefined : true} className="min-h-0 overflow-hidden pt-3">
+          {/* Always rendered so the control doesn't pop in mid-run as output
+              arrives; disabled until at least one target has more than the
+              preview line to expand. */}
+          <div className="mb-2 flex justify-end">
+            <button type="button" aria-label={allExpanded ? 'Collapse all target output' : 'Expand all target output'}
+              disabled={expandableResults.length === 0}
+              onClick={() => setAllExpanded(!allExpanded)} className="btn btn-secondary gap-1.5">
+              {allExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {allExpanded ? 'Collapse All' : 'Expand All'}
+            </button>
+          </div>
+          <div className="space-y-2">
+            {results.map((result) => (
+              <ResultOutput
+                key={result.key}
+                result={result}
+                expanded={expandedByKey[result.key]}
+                onExpandedChange={(expanded) => setExpanded(result.key, expanded)}
+                onFilterChange={onFilterChange}
+              />
+            ))}
+          </div>
         </div>
-      )}
-      <div className="space-y-2">
-        {results.map((result) => (
-          <ResultOutput
-            key={result.key}
-            result={result}
-            expanded={expandedByKey[result.key]}
-            onExpandedChange={(expanded) => setExpanded(result.key, expanded)}
-            onFilterChange={onFilterChange}
-          />
-        ))}
       </div>
     </article>
   );

@@ -44,9 +44,16 @@ export function QuakeEventText({ events }) {
   ));
 }
 
-export default function QuakeColoredText({ text, error = false, className = '' }) {
+export default function QuakeColoredText({ text, error = false, className = '', singleLine = false, style }) {
+  // singleLine truncates with an ellipsis instead of wrapping, for callers that
+  // clip the block to one line's height and would otherwise cut a wrapped row
+  // through the middle.
+  const flow = singleLine ? 'truncate' : 'whitespace-pre-wrap break-words';
+  // style lets a caller override the default font/colour to match a
+  // neighbouring surface (the CodeMirror viewer's metrics, say); uncoloured
+  // spans inherit it, Quake-coloured ones still win with their own colour.
   return (
-    <pre className={`whitespace-pre-wrap break-words font-mono text-sm text-theme-primary ${className}`}>
+    <pre className={`${flow} font-mono text-sm text-theme-primary ${className}`} style={style}>
       <QuakeColorSpans text={text} error={error} />
     </pre>
   );

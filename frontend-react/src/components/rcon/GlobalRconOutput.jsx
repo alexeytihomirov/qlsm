@@ -35,7 +35,7 @@ export default function GlobalRconOutput({
       />
       {/* Content pane continues the tab strip's border, flush underneath it —
           same tab-then-panel frame as EditInstanceConfigModal. */}
-      <div className="flex min-h-0 flex-1 flex-col rounded-b-xl border-x border-b border-[var(--surface-border)] bg-[var(--surface-base)]">
+      <div className="flex min-h-0 flex-1 flex-col rounded-b-xl border-x border-b border-[var(--surface-border)] bg-[var(--surface-raised)]">
         <div className="scrollbar-thin min-h-0 flex-1 overflow-auto p-3">
           {active === 'all' ? (runs.length ? (
             <div className="space-y-3" role="tabpanel" aria-label="All command runs">
