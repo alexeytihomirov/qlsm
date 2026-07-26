@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import subprocess
@@ -5,6 +6,7 @@ from rq import get_current_job
 
 # Import database and models - requires app context
 from ui import db
+from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.models import Host, HostStatus, QLFilterStatus
 from .common import append_log # Import from the common module
 # Note: No need to import _run_ansible_playbook as this task uses direct subprocess calls
@@ -16,6 +18,14 @@ def _mark_host_migrated_to_hook(host):
     """Single source of truth for marking a host as using the LD_PRELOAD
     hook mechanism. Called from both initial-setup and rerun-setup paths."""
     host.lan_rate_uses_hook = True
+
+
+def _mark_host_firewall_pool_current(host):
+    """The host's firewall has just been rendered with the current game/RCON
+    port pool from ui.constants, so every instance slot the backend offers is
+    reachable. Only call this after a successful setup run -- a host that has
+    never completed one keeps the flag False and the UI advises a re-run."""
+    host.firewall_pool_v2 = True
 
 
 def setup_host_ansible_logic(host_id, rerun=False):
@@ -141,6 +151,14 @@ def setup_host_ansible_logic(host_id, rerun=False):
         ]
         if host.timezone:
             ansible_command_args += ['-e', f'host_timezone={host.timezone}']
+        # Derived from MAX_INSTANCES_PER_HOST -- keeps the rendered iptables
+        # allow-list in step with the number of instances the backend accepts.
+        # Must be one JSON object: the bare `-e key=[...]` form is parsed by
+        # Ansible as a whitespace-split string, not a list.
+        ansible_command_args += ['-e', json.dumps({
+            'game_udp_ports': GAME_UDP_PORTS,
+            'rcon_tcp_ports': RCON_TCP_PORTS,
+        })]
         ansible_command_args.append(ansible_playbook_path)
 
         log.info(f"Executing Ansible command: {' '.join(ansible_command_args)}")
@@ -176,6 +194,8 @@ def setup_host_ansible_logic(host_id, rerun=False):
             # --- Final Success ---
             host.qlfilter_status = QLFilterStatus.NOT_INSTALLED
             host.redis_unix_socket = True
+            # Both paths re-render iptables from the current port pool.
+            _mark_host_firewall_pool_current(host)
             if rerun:
                 from .common import _reconcile_host_instances_after_setup
                 ok, failed = _reconcile_host_instances_after_setup(host)

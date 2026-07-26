@@ -21,6 +21,7 @@ import { formatVultrRegion } from '../utils/formatters';
 import { useNotification } from '../components/NotificationProvider';
 import { useQlfilterActions } from '../hooks/useQlfilterActions';
 import InfoTooltip from '../components/common/InfoTooltip';
+import { MAX_INSTANCES_PER_HOST, FIREWALL_REFRESH_INSTANCE_THRESHOLD } from '../constants/hostLimits';
 import { useHostRestart } from '../hooks/useHostRestart';
 import LiveServerStatusModal from '../components/instances/LiveServerStatusModal';
 import { useInstanceLanRate } from '../hooks/useInstanceLanRate';
@@ -345,12 +346,18 @@ export default function ServersPage() {
                                     <button
                                         onClick={() => { setAddInstanceModalHostId(host.id); setIsAddInstanceModalOpen(true); }}
                                         className="add-instance-btn"
-                                        disabled={host.instances.length >= 4}
+                                        disabled={host.instances.length >= MAX_INSTANCES_PER_HOST}
                                     >
                                         <Plus size={14} /> Add QLDS Instance to {host.name}
                                     </button>
-                                    {host.instances.length >= 4 && (
-                                        <InfoTooltip text="Maximum of 4 instances per host" variant="warning" size={14} />
+                                    {host.instances.length >= MAX_INSTANCES_PER_HOST && (
+                                        <InfoTooltip text={`Maximum of ${MAX_INSTANCES_PER_HOST} instances per host`} variant="warning" size={14} />
+                                    )}
+                                    {host.instances.length < MAX_INSTANCES_PER_HOST
+                                        && host.instances.length >= FIREWALL_REFRESH_INSTANCE_THRESHOLD
+                                        && !host.firewall_pool_v2
+                                        && !['self', 'standalone'].includes(host.provider) && (
+                                        <InfoTooltip text="Hosts set up on an older platform version may need host setup re-run before additional instances are reachable." variant="info" size={14} />
                                     )}
                                 </div>
                             </div>

@@ -149,6 +149,7 @@ class Host(db.Model):
     cpu_count = db.Column(db.Integer, nullable=True)
     auto_restart_schedule = db.Column(db.String(100), nullable=True)  # cron expression
     lan_rate_uses_hook = db.Column(db.Boolean, default=False, nullable=False)  # uses hook mechanism (True) vs. legacy iptables/sysctl (False)
+    firewall_pool_v2 = db.Column(db.Boolean, default=False, nullable=False)  # firewall rendered with the current game/RCON port pool
     status = db.Column(db.Enum(HostStatus), default=HostStatus.PENDING, nullable=False)
     qlfilter_status = db.Column(db.Enum(QLFilterStatus), default=QLFilterStatus.UNKNOWN, nullable=True)
     logs = db.Column(db.Text, nullable=True)
@@ -164,6 +165,10 @@ class Host(db.Model):
 
 `lan_rate_uses_hook: bool` — defaults to `False`; set to `True` automatically on successful initial host setup or after a successful Re-run Host Setup. When `True`, the host uses the LD_PRELOAD hook mechanism for 99k LAN Rate; when `False`, the legacy iptables NAT + sysctl `route_localnet` mechanism is used.
 
+### Firewall Port Pool Flag
+
+`firewall_pool_v2: bool` — defaults to `False`; set to `True` on a successful host setup run (initial or Re-run Host Setup, cloud and helper-firewall hosts alike), which is the point at which the host's allow-list is rendered from the current `GAME_UDP_PORTS` / `RCON_TCP_PORTS` in `ui/constants.py`. Hosts set up before the pool was widened keep `False`, and the Servers page uses that to advise a Re-run Host Setup before the extra instance slots become reachable. Helper-firewall hosts (`provider` `self` / `standalone`) re-push the rules on every instance operation and so never need the advisory. A failed setup run leaves the flag untouched.
+
 ### Self-Host Address Contract
 
 For `provider=self`, `Host.ip_address` remains the client-facing server address shown in the UI and used in connect links. Automation does not SSH to that stored address. QLSM resolves a hidden management target inside the Docker deployment and uses that target for self-host Ansible runs and status polling.
@@ -171,7 +176,7 @@ For `provider=self`, `Host.ip_address` remains the client-facing server address 
 ### Self-Host Redis Contract
 
 For `provider=self`, game instances reuse the QLSM Docker Redis on `127.0.0.1:6379`.
-QLSM reserves Redis `DB 0`; minqlx instances use `DB 1..4` derived from `port - 27959`.
+QLSM reserves Redis `DB 0`; minqlx instances use `DB 1..8` derived from `port - REDIS_DB_PORT_OFFSET` (Redis ships 16 databases by default, so a ceiling of 15 is available). `MAX_INSTANCES_PER_HOST`, `BASE_GAME_PORT` and the derived `REDIS_DB_PORT_OFFSET` in `ui/constants.py` are the single source of truth for the per-host instance limit and the derived game/ZMQ port pools.
 Self-host minqlx services receive `qlx_redisAddress`, `qlx_redisPassword`, and `qlx_redisDatabase` explicitly at deploy time.
 
 **QLInstance Model:** Represents a Quake Live server instance running on a specific `Host`.

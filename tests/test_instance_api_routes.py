@@ -8,6 +8,7 @@ from flask_jwt_extended import create_access_token
 from ui.models import QLInstance, Host, HostStatus, InstanceStatus, ConfigPreset
 from ui import db
 from ui.database import create_instance, create_host
+from ui.constants import GAME_UDP_PORTS, MAX_INSTANCES_PER_HOST
 
 
 @pytest.fixture
@@ -157,13 +158,43 @@ def test_read_default_config_uses_builtin_default_path(app, tmp_path, monkeypatc
 
 
 @patch('ui.routes.instance_routes.enqueue_task')
-def test_add_instance_rejects_when_host_has_4_instances(mock_enqueue, client, app, tmp_path, monkeypatch):
-    """POST /api/instances must return 400 when the host already has 4 instances."""
+def test_add_instance_rejects_when_host_is_at_the_instance_limit(mock_enqueue, client, app, tmp_path, monkeypatch):
+    """POST /api/instances must return 400 when the host is already at MAX_INSTANCES_PER_HOST."""
     monkeypatch.chdir(tmp_path)
 
     with app.app_context():
         host = create_host(name='full-host', provider='vultr', status=HostStatus.ACTIVE)
-        for port in [27960, 27961, 27962, 27963]:
+        for port in GAME_UDP_PORTS:
+            create_instance(name=f'inst-{port}', host_id=host.id, port=port, hostname='test.host')
+        db.session.commit()
+        host_id = host.id
+        token = create_access_token(identity='testuser')
+
+    headers = {'Authorization': f'Bearer {token}'}
+    payload = {
+        'name': 'one-too-many',
+        'host_id': host_id,
+        'port': GAME_UDP_PORTS[-1] + 1,
+        'hostname': 'test.host',
+        'configs': {'server.cfg': '', 'mappool.txt': '', 'access.txt': '', 'workshop.txt': ''},
+    }
+
+    response = client.post('/api/instances/', json=payload, headers=headers)
+
+    assert response.status_code == 400
+    assert f'maximum of {MAX_INSTANCES_PER_HOST} instances' in response.get_json()['error']['message']
+    mock_enqueue.assert_not_called()
+
+
+@patch('ui.routes.instance_routes.acquire_lock', return_value=True)
+@patch('ui.routes.instance_routes.enqueue_task')
+def test_add_instance_allows_a_fifth_instance(mock_enqueue, mock_lock, client, app, tmp_path, monkeypatch):
+    """A host with 4 instances is no longer full -- the old limit must not apply."""
+    monkeypatch.chdir(tmp_path)
+
+    with app.app_context():
+        host = create_host(name='half-host', provider='vultr', status=HostStatus.ACTIVE)
+        for port in GAME_UDP_PORTS[:4]:
             create_instance(name=f'inst-{port}', host_id=host.id, port=port, hostname='test.host')
         db.session.commit()
         host_id = host.id
@@ -173,16 +204,16 @@ def test_add_instance_rejects_when_host_has_4_instances(mock_enqueue, client, ap
     payload = {
         'name': 'fifth-instance',
         'host_id': host_id,
-        'port': 27964,
+        'port': GAME_UDP_PORTS[4],
         'hostname': 'test.host',
         'configs': {'server.cfg': '', 'mappool.txt': '', 'access.txt': '', 'workshop.txt': ''},
     }
 
+    mock_enqueue.return_value = type('Job', (), {'id': 'fake-job-id'})()
     response = client.post('/api/instances/', json=payload, headers=headers)
 
-    assert response.status_code == 400
-    assert 'maximum of 4 instances' in response.get_json()['error']['message']
-    mock_enqueue.assert_not_called()
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()['data']['port'] == GAME_UDP_PORTS[4]
 
 
 @patch('ui.routes.instance_routes.enqueue_task')

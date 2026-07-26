@@ -5,6 +5,7 @@ import uuid
 from flask import Blueprint, request, current_app, jsonify
 import sqlalchemy
 from ui import db
+from ui.constants import MAX_INSTANCES_PER_HOST
 from ui.models import QLInstance, Host, HostStatus, InstanceStatus
 from ui.lan_rate_policy import (
     lan_rate_unsupported_message,
@@ -369,8 +370,8 @@ def add_instance_api():
         ):
             return jsonify({"error": {"message": lan_rate_unsupported_message(selected_host)}}), 400
 
-        if len(selected_host.instances) >= 4:
-            return jsonify({"error": {"message": "Host has reached the maximum of 4 instances."}}), 400
+        if len(selected_host.instances) >= MAX_INSTANCES_PER_HOST:
+            return jsonify({"error": {"message": f"Host has reached the maximum of {MAX_INSTANCES_PER_HOST} instances."}}), 400
 
         # --- Validate draft before creating the instance ---
         draft_id = data.get('draft_id')

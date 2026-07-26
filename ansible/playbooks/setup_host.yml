@@ -13,16 +13,18 @@
     minqlx_shared_dir: "/home/ql/minqlx-shared"
     common_assets_dir: "/home/ql/assets/common"
 
-    # Firewall vars (can be kept if needed, or simplified if static)
-    game_udp_ports: [27960, 27961, 27962, 27963]
-    rcon_tcp_ports: [28888, 28889, 28890, 28891, 29999, 30000, 30001, 30002]
+    # Firewall vars -- fallback defaults for manual playbook runs. QLSM overrides
+    # game_udp_ports / rcon_tcp_ports via --extra-vars derived from
+    # ui/constants.py (MAX_INSTANCES_PER_HOST). Keep these in sync with it.
+    game_udp_ports: [27960, 27961, 27962, 27963, 27964, 27965, 27966, 27967]
+    rcon_tcp_ports: [28888, 28889, 28890, 28891, 28892, 28893, 28894, 28895, 29999, 30000, 30001, 30002, 30003, 30004, 30005, 30006]
     remote_rules_path: /tmp/iptables.new.v4
     firewall_mode: full
     firewall_mode_effective: "{{ firewall_mode | default('full') }}"
     qlsm_network_rules:
       filter:
-        udp_accept: [27960, 27961, 27962, 27963]
-        tcp_accept: [28888, 28889, 28890, 28891, 29999, 30000, 30001, 30002]
+        udp_accept: "{{ game_udp_ports }}"
+        tcp_accept: "{{ rcon_tcp_ports }}"
       lan_rate:
         udp_ports: []
 

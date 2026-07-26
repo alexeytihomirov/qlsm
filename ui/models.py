@@ -59,6 +59,7 @@ class Host(db.Model):
     cpu_count = db.Column(db.Integer, nullable=True) # Detected/inferred Linux CPU count for affinity assignment
     redis_unix_socket = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
     lan_rate_uses_hook = db.Column(db.Boolean, default=False, nullable=False, server_default='0') # True = LD_PRELOAD hook mechanism; False = legacy iptables/sysctl path
+    firewall_pool_v2 = db.Column(db.Boolean, default=False, nullable=False, server_default='0') # True = firewall rendered with the current game/RCON port pool; False = narrower legacy allow-list
     status = db.Column(db.Enum(HostStatus), default=HostStatus.PENDING, nullable=False)
     qlfilter_status = db.Column(db.Enum(QLFilterStatus), default=QLFilterStatus.UNKNOWN, nullable=True) # New field for QLFilter
     auto_restart_schedule = db.Column(db.String(100), nullable=True) # Cron expression for auto-restart
@@ -95,6 +96,7 @@ class Host(db.Model):
             'cpu_count': self.cpu_count,
             'redis_unix_socket': bool(self.redis_unix_socket),
             'lan_rate_uses_hook': bool(self.lan_rate_uses_hook),
+            'firewall_pool_v2': bool(self.firewall_pool_v2),
             'status': self.status.value if self.status else None,
             'qlfilter_status': self.qlfilter_status.value if self.qlfilter_status else QLFilterStatus.UNKNOWN.value, # Include QLFilter status
             'auto_restart_schedule': self.auto_restart_schedule,
@@ -122,9 +124,9 @@ class QLInstance(db.Model):
     logs = db.Column(db.Text, nullable=True) # Stores logs from background tasks (e.g., Ansible)
     
     # ZMQ RCON and stats settings (for remote console access and remote stats)
-    zmq_rcon_port = db.Column(db.Integer, nullable=True)  # Port for ZMQ RCON (28960 + id - 1)
+    zmq_rcon_port = db.Column(db.Integer, nullable=True)  # Port for ZMQ RCON (28888 + (port - 27960))
     zmq_rcon_password = db.Column(db.String(64), nullable=True)  # Password for ZMQ RCON
-    zmq_stats_port = db.Column(db.Integer, nullable=True) # Port for ZMQ Stats (29999 + id - 1)
+    zmq_stats_port = db.Column(db.Integer, nullable=True) # Port for ZMQ Stats (29999 + (port - 27960))
     zmq_stats_password = db.Column(db.String(64), nullable=True)  # Password for ZMQ stats socket
     
     last_updated = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

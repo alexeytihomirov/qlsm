@@ -3,8 +3,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-GAME_UDP_PORTS = [27960, 27961, 27962, 27963]
-RCON_TCP_PORTS = [28888, 28889, 28890, 28891, 29999, 30000, 30001, 30002]
+from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS  # noqa: F401  (re-exported)
 
 
 def _detect_gateway_from_proc_route(route_path):
@@ -92,10 +91,12 @@ def build_self_host_network_rules(host, exclude_instance_id=None):
         if getattr(instance, "lan_rate_enabled", False) and not uses_hook:
             lan_ports.append(int(instance.port))
 
+    # Copies: these lists are the module-level constants that also back the
+    # /available-ports pool, so callers must not be able to mutate them.
     return {
         "filter": {
-            "udp_accept": GAME_UDP_PORTS,
-            "tcp_accept": RCON_TCP_PORTS,
+            "udp_accept": list(GAME_UDP_PORTS),
+            "tcp_accept": list(RCON_TCP_PORTS),
         },
         "lan_rate": {
             "udp_ports": sorted(set(lan_ports)),

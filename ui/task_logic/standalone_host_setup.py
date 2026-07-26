@@ -1,9 +1,11 @@
+import json
 import logging
 import os
 import subprocess
 from rq import get_current_job
 
 from ui import db
+from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.models import Host, HostStatus
 from ui.task_logic.self_host_network import resolve_self_host_management_target
 from .common import append_log
@@ -105,6 +107,9 @@ def setup_standalone_host_logic(host_id, rerun=False):
         # Success
         if host.provider != 'self':
             host.redis_unix_socket = True
+        # The helper-firewall rules were rendered from the current port pool.
+        from .ansible_host_setup import _mark_host_firewall_pool_current
+        _mark_host_firewall_pool_current(host)
         if rerun:
             from .common import _reconcile_host_instances_after_setup
             ok, failed = _reconcile_host_instances_after_setup(host)
@@ -203,6 +208,13 @@ def _setup_playbook_extra_vars(host):
         'ssh_port': str(host.ssh_port),
         'firewall_mode': 'helper',
         'static_network_hardening': 'false',
+        # Derived from MAX_INSTANCES_PER_HOST so the firewall allow-list on the
+        # host always matches the number of instances the backend will accept.
+        # Native lists -- _run_setup_playbook serialises the whole dict as one
+        # JSON --extra-vars argument, which is the only form Ansible parses as
+        # a real list.
+        'game_udp_ports': GAME_UDP_PORTS,
+        'rcon_tcp_ports': RCON_TCP_PORTS,
     }
     if host.provider == 'self':
         extra_vars['use_host_redis'] = 'false'
@@ -219,8 +231,10 @@ def _run_setup_playbook(host, inventory_path):
         'ansible-playbook',
         '-i', inventory_path,
     ]
-    for key, value in _setup_playbook_extra_vars(host).items():
-        ansible_command_args += ['-e', f'{key}={value}']
+    # One JSON --extra-vars object: the bare `-e key=value` form stringifies
+    # (and whitespace-splits) list values, which silently corrupts the firewall
+    # port lists. Scalars stay strings here, exactly as the old form produced.
+    ansible_command_args += ['-e', json.dumps(_setup_playbook_extra_vars(host))]
     ansible_command_args.append(ansible_playbook_path)
 
     log.info(f"Executing Ansible command: {' '.join(ansible_command_args)}")

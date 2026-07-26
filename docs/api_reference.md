@@ -243,6 +243,7 @@ Example success response:
     "cpu_count": 1,
     "auto_restart_schedule": null,
     "lan_rate_uses_hook": false,
+    "firewall_pool_v2": false,
     "status": "active",
     "qlfilter_status": "unknown",
     "logs": "...",
@@ -261,6 +262,8 @@ Example success response:
 ```
 
 `lan_rate_uses_hook: false` means the host uses the legacy iptables/sysctl mechanism for 99k LAN Rate. After running "Re-run Host Setup", `lan_rate_uses_hook` becomes `true` and instances can use the new hook-based mechanism on any OS.
+
+`firewall_pool_v2: false` means the host's firewall allow-list was rendered before the game/RCON port pool was widened, so the higher instance slots may not be reachable. A successful host setup run — initial or "Re-run Host Setup" — sets it to `true`.
 
 ## Instances
 
