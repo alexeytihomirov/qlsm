@@ -9,9 +9,13 @@ vi.mock('../../NotificationProvider', () => ({
 }));
 
 const viewer = vi.hoisted(() => ({ mounts: 0, appendCalls: 0, clearCalls: 0 }));
-vi.mock('../RconRawOutputViewer', async () => {
+vi.mock('../RconRawOutputViewer', async (importOriginal) => {
   const React = await import('react');
+  // Real MAX_LINES, so the block-sizing expectations below cannot drift from
+  // the number of lines a viewer actually retains.
+  const { MAX_LINES } = await importOriginal();
   return {
+    MAX_LINES,
     default: React.forwardRef(function Viewer({ showMetadata }, ref) {
       const [events, setEvents] = React.useState([]);
       React.useEffect(() => {
@@ -226,6 +230,29 @@ describe('RconCommandRun', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Collapse all target output' }));
     expect(screen.getByRole('button', { name: 'Alpha, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Bravo, 6 lines' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('sizes an expanded target to every line instead of capping it', async () => {
+    const content = Array.from({ length: 40 }, (_, i) => `line-${i}`).join('\n');
+    render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand output for Alpha' }));
+
+    // 40 rows of 13.5px x 1.6 line-height, plus 8px padding and a 2px border
+    // either side. The old cap stopped at 360px, roughly 15 lines.
+    const viewerBox = (await screen.findByTestId('run-viewer')).parentElement;
+    expect(viewerBox).toHaveStyle({ height: '884px' });
+    expect(viewerBox.parentElement).toHaveStyle({ maxHeight: '892px' });
+  });
+
+  it('stops sizing past what one target block retains', async () => {
+    const content = Array.from({ length: 1200 }, (_, i) => `line-${i}`).join('\n');
+    render(<RconCommandRun run={makeRun([result('1:11', 'Alpha', { content })])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand output for Alpha' }));
+
+    // The viewer keeps the last 1000 lines, so sizing for 1200 would leave
+    // 200 lines of empty box below the output.
+    const viewerBox = (await screen.findByTestId('run-viewer')).parentElement;
+    expect(viewerBox).toHaveStyle({ height: '21620px' });
   });
 
   it('keeps the viewer frame around the collapsed one-line preview', () => {

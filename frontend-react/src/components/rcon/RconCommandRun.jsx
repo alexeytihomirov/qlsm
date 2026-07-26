@@ -8,7 +8,7 @@ import {
   RCON_GUTTER, RCON_LINE_HEIGHT, RCON_SURFACE_BACKGROUND, RCON_TEXT_COLOR,
 } from '../../utils/rconTheme';
 import QuakeColoredText, { QuakeEventText } from './QuakeColoredText';
-import RconRawOutputViewer from './RconRawOutputViewer';
+import RconRawOutputViewer, { MAX_LINES } from './RconRawOutputViewer';
 import useIncrementalViewerReplay from './useIncrementalViewerReplay';
 
 const LABELS = {
@@ -39,13 +39,24 @@ function isDefaultExpanded(result) {
   return result.state === 'failed' || (result.lines ?? []).some((line) => line.type === 'error');
 }
 
+// An expanded block is sized to its own content rather than capped, so the
+// viewer never scrolls internally — the run feed scrolls instead and the whole
+// response is readable in one pass. Derived from the shared metrics because
+// CodeMirror draws no wrapping: one physical line is exactly one row.
+const LINE_PX = parseFloat(RCON_FONT_SIZE) * parseFloat(RCON_LINE_HEIGHT);
+const FRAME_PX = 20; // 8px content padding top and bottom, 2px border either side
+const MARGIN_PX = 8; // the mt-2 above the frame, inside the clipped container
+
+function framedHeight(lineCount) {
+  return Math.ceil(Math.min(lineCount, MAX_LINES) * LINE_PX) + FRAME_PX;
+}
+
 function OutputViewer({ events, lineCount, resultKey }) {
   const viewerRef = useRef(null);
   useIncrementalViewerReplay(viewerRef, events, resultKey);
 
-  const height = Math.min(360, Math.max(96, lineCount * 22 + 48));
   return (
-    <div className="mt-2" style={{ height }}>
+    <div className="mt-2" style={{ height: framedHeight(lineCount) }}>
       <RconRawOutputViewer ref={viewerRef} showMetadata={false} />
     </div>
   );
@@ -185,16 +196,16 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
         </div>
       </div>
       {count > 0 && (expandable ? (
-        // Same reveal animation as the Targets tree's host expand/collapse
-        // and the Servers page's instance list: a generous max-height cap
-        // that transitions instead of snapping between the one-line preview
-        // and the full viewer.
-        // The collapsed cap is the framed one-liner's exact height (8px top
-        // margin + 2px borders + 8px padding either side of a 21.6px line),
-        // so the mid-collapse viewer clips to the same rectangle the replica
-        // then takes over — the swap is invisible.
-        <div className={`overflow-hidden transition-[max-height] ${showAll
-          ? 'max-h-[420px] duration-[450ms] ease-in' : 'max-h-[52px] duration-300 ease-out'}`}
+        // Same reveal animation as the Targets tree's host expand/collapse and
+        // the Servers page's instance list, but both ends of the transition are
+        // measured rather than fixed: expanded is the full block's height so
+        // nothing is clipped, collapsed is one framed line, so the mid-collapse
+        // viewer shrinks into exactly the rectangle the replica then takes over.
+        // Inline because a max-height transition needs a concrete target — there
+        // is nothing for `none` to animate to.
+        <div style={{ maxHeight: (showAll ? framedHeight(count) : framedHeight(1)) + MARGIN_PX }}
+          className={`overflow-hidden transition-[max-height] ${showAll
+            ? 'duration-[450ms] ease-in' : 'duration-300 ease-out'}`}
           onTransitionEnd={(event) => {
             if (event.target === event.currentTarget && event.propertyName === 'max-height' && !showAll) {
               setRenderFull(false);

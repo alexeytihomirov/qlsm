@@ -15,7 +15,9 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { quakeColorPlugin } from '../../utils/quakeColorExtension';
 import { RCON_FRAME_CLASS, RCON_SURFACE_BACKGROUND, rconTheme } from '../../utils/rconTheme';
 
-const MAX_LINES = 1000;
+// Hard ceiling on what one target block retains; callers sizing a block to
+// its content need the same number or they size past what the doc can hold.
+export const MAX_LINES = 1000;
 
 function formatEvent({ type, content, timestamp }, showMetadata) {
   const prefix = showMetadata ? `[${timestamp}] ` : '';
