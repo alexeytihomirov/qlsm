@@ -3,6 +3,10 @@ import { Check, ChevronDown, ChevronRight, ChevronUp, Copy } from 'lucide-react'
 
 import { useNotification } from '../NotificationProvider';
 import { copyToClipboard } from '../../utils/clipboard';
+import {
+  RCON_CONTENT_PADDING, RCON_FONT_FAMILY, RCON_FONT_SIZE, RCON_FRAME_CLASS,
+  RCON_GUTTER, RCON_LINE_HEIGHT, RCON_SURFACE_BACKGROUND, RCON_TEXT_COLOR,
+} from '../../utils/rconTheme';
 import QuakeColoredText, { QuakeEventText } from './QuakeColoredText';
 import RconRawOutputViewer from './RconRawOutputViewer';
 import useIncrementalViewerReplay from './useIncrementalViewerReplay';
@@ -16,6 +20,11 @@ const LABELS = {
   rejected: 'Rejected',
   failed: 'Failed',
 };
+
+// A fleet-wide command answers from every selected server at once, so each
+// target block collapses down to a single preview line. Anything longer than
+// that is expandable rather than shown inline.
+const PREVIEW_LINES = 1;
 
 function physicalLines(lines = []) {
   return lines.flatMap((line) => String(line.content ?? '').split('\n'));
@@ -42,6 +51,32 @@ function OutputViewer({ events, lineCount, resultKey }) {
   );
 }
 
+// Collapsed output keeps the viewer's rectangle rather than falling back to
+// naked text: same frame, fill, gutter and font metrics, just one line of it.
+// CodeMirror stays unmounted — a run holds a block per target, so the static
+// replica is what makes the collapsed state cheap in the first place.
+// Truncated rather than wrapped: a long line would otherwise flow onto a
+// second row that the max-height cap clips through the middle.
+function CollapsedLine({ line }) {
+  return (
+    <div className={`mt-2 flex ${RCON_FRAME_CLASS}`} style={{ background: RCON_SURFACE_BACKGROUND }}>
+      <span aria-hidden="true" className="flex-none select-none text-right" style={{
+        ...RCON_GUTTER, fontFamily: RCON_FONT_FAMILY, fontSize: RCON_FONT_SIZE, lineHeight: RCON_LINE_HEIGHT,
+      }}>1</span>
+      <QuakeColoredText
+        singleLine
+        text={String(line?.content ?? '').split('\n')[0]}
+        error={line?.type === 'error'}
+        className="min-w-0 flex-1"
+        style={{
+          fontFamily: RCON_FONT_FAMILY, fontSize: RCON_FONT_SIZE, lineHeight: RCON_LINE_HEIGHT,
+          padding: RCON_CONTENT_PADDING, color: RCON_TEXT_COLOR,
+        }}
+      />
+    </div>
+  );
+}
+
 function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
   const { addNotification } = useNotification();
   const [searching, setSearching] = useState(false);
@@ -50,7 +85,7 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
   const flattened = physicalLines(lines);
   const count = flattened.length;
   const defaultExpanded = isDefaultExpanded(result);
-  const expandable = count > 5;
+  const expandable = count > PREVIEW_LINES;
   const showAll = !expandable || (expanded ?? defaultExpanded);
   const tone = ['failed', 'rejected'].includes(result.state) ? 'border-red-500/40 bg-red-500/5'
     : result.state === 'skipped' ? 'border-amber-500/40 bg-amber-500/5'
@@ -154,8 +189,12 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
         // and the Servers page's instance list: a generous max-height cap
         // that transitions instead of snapping between the one-line preview
         // and the full viewer.
+        // The collapsed cap is the framed one-liner's exact height (8px top
+        // margin + 2px borders + 8px padding either side of a 21.6px line),
+        // so the mid-collapse viewer clips to the same rectangle the replica
+        // then takes over — the swap is invisible.
         <div className={`overflow-hidden transition-[max-height] ${showAll
-          ? 'max-h-[420px] duration-[450ms] ease-in' : 'max-h-9 duration-300 ease-out'}`}
+          ? 'max-h-[420px] duration-[450ms] ease-in' : 'max-h-[52px] duration-300 ease-out'}`}
           onTransitionEnd={(event) => {
             if (event.target === event.currentTarget && event.propertyName === 'max-height' && !showAll) {
               setRenderFull(false);
@@ -163,11 +202,7 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
           }}>
           {renderFull
             ? <OutputViewer events={lines} lineCount={count} resultKey={result.key} />
-            : <QuakeColoredText
-                text={String(lines[0]?.content ?? '').split('\n')[0]}
-                error={lines[0]?.type === 'error'}
-                className="mt-2"
-              />}
+            : <CollapsedLine line={lines[0]} />}
         </div>
       ) : (searching
         ? <OutputViewer events={lines} lineCount={count} resultKey={result.key} />
@@ -186,7 +221,9 @@ function ResultOutput({ result, expanded, onExpandedChange, onFilterChange }) {
 export default function RconCommandRun({ run, onFilterChange }) {
   const [expandedByKey, setExpandedByKey] = useState({});
   const results = run.results ?? [];
-  const expandableResults = results.filter((result) => physicalLines(result.lines).length > 5);
+  const expandableResults = results.filter(
+    (result) => physicalLines(result.lines).length > PREVIEW_LINES,
+  );
   const setExpanded = (key, expanded) => {
     setExpandedByKey((current) => ({ ...current, [key]: expanded }));
   };

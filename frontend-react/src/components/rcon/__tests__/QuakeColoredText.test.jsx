@@ -23,6 +23,14 @@ describe('QuakeColoredText', () => {
     expect(container.querySelector('pre')).toHaveClass('whitespace-pre-wrap');
   });
 
+  it('truncates instead of wrapping when the caller asks for a single line', () => {
+    const { container } = render(<QuakeColoredText text="^2a very long status line" singleLine />);
+    const block = container.querySelector('pre');
+    expect(block).toHaveClass('truncate');
+    expect(block).not.toHaveClass('whitespace-pre-wrap');
+    expect(screen.getByText(/very long/)).toHaveStyle({ color: '#44ff44' });
+  });
+
   it('retains an error tone when no explicit Quake color overrides it', () => {
     render(<QuakeColoredText text="failure" error />);
     expect(screen.getByText('failure')).toHaveClass('text-red-500');

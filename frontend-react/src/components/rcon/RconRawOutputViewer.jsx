@@ -13,7 +13,7 @@ import {
 import { oneDark } from '@codemirror/theme-one-dark';
 
 import { quakeColorPlugin } from '../../utils/quakeColorExtension';
-import { rconTheme } from '../../utils/rconTheme';
+import { RCON_FRAME_CLASS, RCON_SURFACE_BACKGROUND, rconTheme } from '../../utils/rconTheme';
 
 const MAX_LINES = 1000;
 
@@ -94,8 +94,8 @@ const RconRawOutputViewer = forwardRef(function RconRawOutputViewer({ showMetada
   return (
     <div
       ref={containerRef}
-      className="h-full rounded-lg border-2 border-theme-strong overflow-hidden [&_.cm-editor]:h-full"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
+      className={`h-full ${RCON_FRAME_CLASS} [&_.cm-editor]:h-full`}
+      style={{ background: RCON_SURFACE_BACKGROUND }}
     />
   );
 });
