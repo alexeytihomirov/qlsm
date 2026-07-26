@@ -107,6 +107,9 @@ def setup_standalone_host_logic(host_id, rerun=False):
         # Success
         if host.provider != 'self':
             host.redis_unix_socket = True
+        # The helper-firewall rules were rendered from the current port pool.
+        from .ansible_host_setup import _mark_host_firewall_pool_current
+        _mark_host_firewall_pool_current(host)
         if rerun:
             from .common import _reconcile_host_instances_after_setup
             ok, failed = _reconcile_host_instances_after_setup(host)

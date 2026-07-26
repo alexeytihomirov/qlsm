@@ -55,6 +55,8 @@ The action is available when the host status is **Active** or **Error**. While i
 
 > **Self-hosted hosts** — Re-run Host Setup is available but does not modify Redis connectivity (self-host always uses TCP). On **cloud** and **standalone** hosts it applies the full setup, including any Redis configuration changes introduced in a platform update.
 
+Re-running host setup also refreshes the host's game and RCON port allow-list, so run it if a host set up on an older platform version needs the full range of instance slots to be reachable.
+
 After the playbook completes, the host returns to **Active** status.
 
 > **Running instances are automatically restarted** after a successful run. Plan for brief server downtime if you run this on a live host.

@@ -9,13 +9,17 @@ repeating literal port lists, so the layers cannot drift apart.
 # Maximum number of QLDS instances that may run on a single host.
 #
 # Bounded by the Redis DB index used for per-instance state, which
-# ui/task_logic/server_status_poll.py derives as (game_port - 27959). Redis ships
+# ui/task_logic/server_status_poll.py derives as (game_port - REDIS_DB_PORT_OFFSET). Redis ships
 # with 16 databases by default, so the hard ceiling is 15 instances. 8 leaves
 # comfortable headroom.
 MAX_INSTANCES_PER_HOST = 8
 
 # First game port; instance N listens on BASE_GAME_PORT + N.
 BASE_GAME_PORT = 27960
+
+# Per-instance Redis DB index is (game_port - REDIS_DB_PORT_OFFSET), so the
+# first instance lands on DB 1 and DB 0 stays free for QLSM's own state.
+REDIS_DB_PORT_OFFSET = BASE_GAME_PORT - 1
 
 # ZMQ RCON and stats ports are derived deterministically from the game port,
 # matching ui/task_logic/zmq_utils.ensure_zmq_rcon_setup().

@@ -20,6 +20,14 @@ def _mark_host_migrated_to_hook(host):
     host.lan_rate_uses_hook = True
 
 
+def _mark_host_firewall_pool_current(host):
+    """The host's firewall has just been rendered with the current game/RCON
+    port pool from ui.constants, so every instance slot the backend offers is
+    reachable. Only call this after a successful setup run -- a host that has
+    never completed one keeps the flag False and the UI advises a re-run."""
+    host.firewall_pool_v2 = True
+
+
 def setup_host_ansible_logic(host_id, rerun=False):
     """
     Task logic to perform initial host setup using Ansible after Terraform provisioning.
@@ -186,6 +194,8 @@ def setup_host_ansible_logic(host_id, rerun=False):
             # --- Final Success ---
             host.qlfilter_status = QLFilterStatus.NOT_INSTALLED
             host.redis_unix_socket = True
+            # Both paths re-render iptables from the current port pool.
+            _mark_host_firewall_pool_current(host)
             if rerun:
                 from .common import _reconcile_host_instances_after_setup
                 ok, failed = _reconcile_host_instances_after_setup(host)

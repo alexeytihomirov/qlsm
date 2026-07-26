@@ -355,6 +355,7 @@ export default function ServersPage() {
                                     )}
                                     {host.instances.length < MAX_INSTANCES_PER_HOST
                                         && host.instances.length >= FIREWALL_REFRESH_INSTANCE_THRESHOLD
+                                        && !host.firewall_pool_v2
                                         && !['self', 'standalone'].includes(host.provider) && (
                                         <InfoTooltip text="Hosts set up on an older platform version may need host setup re-run before additional instances are reachable." variant="info" size={14} />
                                     )}

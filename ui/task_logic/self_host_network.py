@@ -91,10 +91,12 @@ def build_self_host_network_rules(host, exclude_instance_id=None):
         if getattr(instance, "lan_rate_enabled", False) and not uses_hook:
             lan_ports.append(int(instance.port))
 
+    # Copies: these lists are the module-level constants that also back the
+    # /available-ports pool, so callers must not be able to mutate them.
     return {
         "filter": {
-            "udp_accept": GAME_UDP_PORTS,
-            "tcp_accept": RCON_TCP_PORTS,
+            "udp_accept": list(GAME_UDP_PORTS),
+            "tcp_accept": list(RCON_TCP_PORTS),
         },
         "lan_rate": {
             "udp_ports": sorted(set(lan_ports)),
