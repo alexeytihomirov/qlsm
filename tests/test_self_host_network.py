@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.task_logic.self_host_network import (
     build_self_host_network_rules,
     uses_helper_firewall,
@@ -25,8 +26,8 @@ def _host(provider='self'):
 def test_build_network_rules_includes_enabled_lan_ports():
     rules = build_self_host_network_rules(_host())
 
-    assert rules['filter']['udp_accept'] == [27960, 27961, 27962, 27963]
-    assert rules['filter']['tcp_accept'] == [28888, 28889, 28890, 28891, 29999, 30000, 30001, 30002]
+    assert rules['filter']['udp_accept'] == GAME_UDP_PORTS
+    assert rules['filter']['tcp_accept'] == RCON_TCP_PORTS
     assert rules['lan_rate']['udp_ports'] == [27960, 27962]
 
 

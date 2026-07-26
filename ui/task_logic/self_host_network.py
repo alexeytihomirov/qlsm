@@ -3,8 +3,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-GAME_UDP_PORTS = [27960, 27961, 27962, 27963]
-RCON_TCP_PORTS = [28888, 28889, 28890, 28891, 29999, 30000, 30001, 30002]
+from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS  # noqa: F401  (re-exported)
 
 
 def _detect_gateway_from_proc_route(route_path):
