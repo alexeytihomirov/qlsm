@@ -149,19 +149,73 @@ vi.mock('../../fileManager', () => ({
     useImperativeHandle(ref, () => ({
       flushEdits: mocks.flushEdits,
     }));
-    return <div>file-manager</div>;
+    const [newFolderStep, setNewFolderStep] = React.useState(null); // { parent } | { parent, opening: true }
+    const [newFolderName, setNewFolderName] = React.useState('');
+    const folders = props.adapter?.folders ?? [];
+    return (
+      <div>
+        file-manager
+        {folders.map((folderPath) => (
+          <div key={folderPath}>
+            <span>{folderPath}</span>
+            <button
+              type="button"
+              aria-label={`folder actions for ${folderPath}`}
+              onClick={() => setNewFolderStep({ parent: folderPath, opening: true })}
+            >
+              folder actions
+            </button>
+            {newFolderStep?.parent === folderPath && newFolderStep.opening && (
+              <button
+                type="button"
+                onClick={() => setNewFolderStep({ parent: folderPath, opening: false })}
+              >
+                New Folder
+              </button>
+            )}
+            {newFolderStep?.parent === folderPath && newFolderStep.opening === false && (
+              <div>
+                <label htmlFor="mock-new-folder-name">Folder Name</label>
+                <input
+                  id="mock-new-folder-name"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    props.adapter.createFolder(`${folderPath}/${newFolderName}`);
+                    setNewFolderStep(null);
+                    setNewFolderName('');
+                  }}
+                >
+                  Create
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
   }),
   useDraftAdapter: () => ({
     ...mocks.useDraftWorkspace(),
     hasChanges: false,
   }),
-  useStateAdapter: ({ initialFiles = {}, serverTree = [] } = {}) => {
+  useStateAdapter: ({ initialFiles = {}, initialFolders = [], serverTree = [] } = {}) => {
     const [files, setFiles] = React.useState(initialFiles);
-    const reset = React.useCallback((nextFiles = {}) => {
+    const [folders, setFolders] = React.useState(initialFolders);
+    const reset = React.useCallback((nextFiles = {}, nextFolders = []) => {
       setFiles(nextFiles);
+      setFolders(nextFolders);
+    }, []);
+    const createFolder = React.useCallback((path) => {
+      setFolders(prev => (prev.includes(path) ? prev : [...prev, path]));
     }, []);
     return React.useMemo(() => ({
       tree: serverTree,
+      folders,
+      createFolder,
       readContent: vi.fn().mockResolvedValue(''),
       writeContent: vi.fn().mockResolvedValue(undefined),
       upload: vi.fn().mockResolvedValue({}),
@@ -170,11 +224,11 @@ vi.mock('../../fileManager', () => ({
       checkedFiles: new Set(Object.keys(files)),
       setChecked: vi.fn().mockResolvedValue(undefined),
       hasChanges: false,
-      serialize: () => ({ files: { ...files }, folders: [] }),
+      serialize: () => ({ files: { ...files }, folders: [...folders] }),
       reset,
       loading: false,
       error: null,
-    }), [files, reset, serverTree]);
+    }), [files, folders, createFolder, reset, serverTree]);
   },
 }));
 
@@ -394,6 +448,40 @@ describe('EditInstanceConfigModal preset saving', () => {
       }),
       true,
     );
+  });
+
+  it('creates a nested subfolder via the row menu and includes it in the config_folders payload', async () => {
+    mocks.getInstanceConfig.mockResolvedValue({
+      'server.cfg': 'set sv_hostname "Test123"',
+      'mappool.txt': '',
+      'access.txt': '',
+      'workshop.txt': '',
+      factories: {},
+      config_folders: ['existingFolder'],
+    });
+
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /save configuration/i })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /folder actions for existingFolder/i })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /folder actions for existingFolder/i }));
+    fireEvent.click(screen.getByRole('button', { name: /new folder/i }));
+    fireEvent.change(screen.getByLabelText(/folder name/i), { target: { value: 'newSubfolder' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+
+    await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalledTimes(1));
+    expect(mocks.updateInstanceConfig.mock.calls[0][1].config_folders).toContain('existingFolder/newSubfolder');
   });
 
   it('shows the Save Configuration button on the Hooks tab', async () => {
