@@ -751,50 +751,73 @@ def view_instance_logs_api(instance_id): # Renamed function
 @instance_api_bp.route('/<int:instance_id>/remote-logs', methods=['GET'], endpoint='fetch_remote_logs_api')
 @jwt_required()
 def fetch_remote_logs_api(instance_id):
-    """Fetches logs from the remote QLDS instance via Ansible journalctl.
+    """Fetches logs from the remote QLDS instance.
+
+    'lines' and 'all' read the exported server-log file (current or an
+    archive), which is size-bounded by logrotate. 'time' still queries
+    journald directly, since the window is inherently bounded and archives
+    are not time-filterable.
 
     Query parameters:
         filter_mode: 'time', 'lines', or 'all' (default: 'lines')
         since: Time period for time-based filtering (default: '1 hour ago')
         lines: Number of lines for line-based filtering (default: 500)
+        filename: Server log file to read (default: 'server.log')
     """
     from ui.task_logic.ansible_instance_mgmt import fetch_instance_remote_logs
-    
+    from ui.task_logic.ansible_server_log_archives import (
+        CURRENT_SERVER_LOG, SERVER_LOG_FILENAME_RE, fetch_instance_server_log,
+    )
+
     instance = get_instance(instance_id)
     if not instance:
         return jsonify({"error": {"message": "Instance not found."}}), 404
 
-    # Check if instance has a host
     if not instance.host:
         return jsonify({"error": {"message": "Instance has no associated host."}}), 400
 
-    # Get query parameters
     filter_mode = request.args.get('filter_mode', 'lines')
     since = request.args.get('since', '1 hour ago')
     lines = request.args.get('lines', 500, type=int)
-    
-    # Validate filter_mode
+    filename = request.args.get('filename', CURRENT_SERVER_LOG)
+
     if filter_mode not in ('time', 'lines', 'all'):
         return jsonify({"error": {"message": "filter_mode must be 'time', 'lines', or 'all'"}}), 400
 
-    # Validate lines (sensible range) — not applicable for 'all' mode
+    # This value reaches a remote shell command, so restrict it to the exact
+    # set of canonical filenames to prevent path traversal / command injection.
+    if not SERVER_LOG_FILENAME_RE.fullmatch(filename):
+        return jsonify({"error": {"message": "Invalid server log filename."}}), 400
+
+    if filter_mode == 'time' and filename != CURRENT_SERVER_LOG:
+        return jsonify({"error": {"message": "Time range filtering is not supported for archived logs."}}), 400
+
     if filter_mode != 'all' and (lines < 10 or lines > 10000):
         return jsonify({"error": {"message": "lines must be between 10 and 10000"}}), 400
 
-    current_app.logger.info(f"Fetching remote logs for instance {instance_id} ({instance.name}) - mode: {filter_mode}, since: {since}, lines: {lines}")
-
-    success, logs, error_msg = fetch_instance_remote_logs(
-        instance_id, 
-        filter_mode=filter_mode, 
-        since=since, 
-        lines=lines
+    current_app.logger.info(
+        f"Fetching remote logs for instance {instance_id} ({instance.name}) - "
+        f"mode: {filter_mode}, since: {since}, lines: {lines}, filename: {filename}"
     )
 
-    if success:
-        return jsonify({"data": {"logs": logs, "instance_name": instance.name, "port": instance.port, "filter_mode": filter_mode, "lines": lines, "since": since}})
+    if filter_mode == 'time':
+        success, logs, error_msg = fetch_instance_remote_logs(
+            instance_id, filter_mode='time', since=since, lines=lines
+        )
     else:
-        current_app.logger.error(f"Failed to fetch remote logs for instance {instance_id}: {error_msg}")
-        return jsonify({"error": {"message": error_msg}}), 500
+        success, logs, error_msg = fetch_instance_server_log(
+            instance_id, filename=filename, filter_mode=filter_mode, lines=lines
+        )
+
+    if success:
+        return jsonify({"data": {
+            "logs": logs, "instance_name": instance.name, "port": instance.port,
+            "filter_mode": filter_mode, "lines": lines, "since": since,
+            "filename": filename,
+        }})
+
+    current_app.logger.error(f"Failed to fetch remote logs for instance {instance_id}: {error_msg}")
+    return jsonify({"error": {"message": error_msg}}), 500
 
 @instance_api_bp.route('/<int:instance_id>/remote-logs/list', methods=['GET'], endpoint='list_remote_server_logs_api')
 @jwt_required()

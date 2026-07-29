@@ -21,7 +21,14 @@ from ui.task_logic.common import log
 # Canonical archive names produced by logrotate with
 # `dateext` + `dateformat -%Y%m%d-%H%M%S`. `delaycompress` leaves the newest
 # archive uncompressed, so the .gz suffix is optional.
-SERVER_LOG_FILENAME_RE = re.compile(r'server\.log(-\d{8}-\d{6}(\.gz)?)?')
+#
+# Anchored with \A...\Z rather than ^...$: this value reaches a remote shell
+# command, and $ matches just before a trailing newline even under
+# .fullmatch(), so 'server.log\n' (and injected content after it) would
+# otherwise slip through. \A...\Z has no such exception. Call sites must
+# still use .fullmatch() — these anchors are defense-in-depth, not a
+# substitute for it.
+SERVER_LOG_FILENAME_RE = re.compile(r'\Aserver\.log(-\d{8}-\d{6}(\.gz)?)?\Z')
 
 CURRENT_SERVER_LOG = 'server.log'
 
@@ -133,3 +140,98 @@ def list_instance_server_log_archives(instance_id):
     except Exception as e:
         log.exception(f"Exception listing server log archives for instance {instance_id}: {e}")
         return False, [], str(e)
+
+
+def fetch_instance_server_log(instance_id, filename=CURRENT_SERVER_LOG,
+                              filter_mode='lines', lines=500):
+    """Read a server-log file (current or archived) from the remote host.
+
+    Content is transported via ansible.builtin.fetch into a local temp file
+    rather than being scraped out of Ansible's console output, so multi-MB
+    reads stay reliable.
+
+    Returns a tuple: (success: bool, logs: str, error_msg: str or None)
+    """
+    import shutil
+    import tempfile
+    import uuid
+
+    if not SERVER_LOG_FILENAME_RE.fullmatch(filename or ''):
+        return False, "", "Invalid server log filename."
+
+    if filter_mode not in ('lines', 'all'):
+        return False, "", "filter_mode must be 'lines' or 'all'"
+
+    if filter_mode == 'lines':
+        if not isinstance(lines, int):
+            return False, "", "lines must be an integer"
+        if lines < 10 or lines > 10000:
+            return False, "", "lines must be between 10 and 10000"
+
+    process = None
+    local_dir = None
+
+    try:
+        instance, host, instance_error = _resolve_instance(instance_id)
+        if instance_error:
+            log.error(f"Cannot fetch server log for instance {instance_id}: {instance_error}")
+            return False, "", instance_error
+
+        local_dir = tempfile.mkdtemp(prefix='qlsm-serverlog-')
+        local_dest = os.path.join(local_dir, 'server-log.txt')
+
+        playbook_path = os.path.abspath('ansible/playbooks/fetch_server_log_archive.yml')
+        inventory_path = os.path.abspath('ansible/inventory/')
+
+        extravars = {
+            'port': instance.port,
+            'ansible_ssh_user': host.ssh_user,
+            'ansible_ssh_private_key_file': os.path.abspath(host.ssh_key_path),
+            'filter_mode': filter_mode,
+            'lines': lines,
+            'filename': filename,
+            'fetch_token': uuid.uuid4().hex,
+            'local_dest': local_dest,
+        }
+
+        cmd = ['ansible-playbook', playbook_path, '-i', inventory_path,
+               '-l', host.name, '-e', json.dumps(extravars)]
+
+        log.info(f"Fetching server log for instance {instance_id} on host {host.name} "
+                 f"(file: {filename}, mode: {filter_mode}, lines: {lines})...")
+
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, env=_ansible_env())
+        stdout, stderr = process.communicate(timeout=ANSIBLE_TIMEOUT_SECONDS)
+        rc = process.returncode
+
+        if rc != 0:
+            log.error(f"Ansible failed to fetch server log for instance {instance_id}. "
+                      f"RC: {rc}. stderr: {stderr[-500:]}")
+            return False, "", f"Failed to fetch server logs (RC: {rc})."
+
+        if not os.path.exists(local_dest):
+            log.info(f"Server log file {filename} not present for instance {instance_id}")
+            return True, "-- Server log file not found --", None
+
+        with open(local_dest, 'r', errors='replace') as fh:
+            logs = fh.read()
+
+        if not logs.strip():
+            logs = "-- No entries --"
+
+        log.info(f"Fetched {len(logs)} bytes of server log for instance {instance_id}")
+        return True, logs, None
+
+    except subprocess.TimeoutExpired:
+        if process is not None:
+            process.kill()
+            process.communicate()
+        log.error(f"Timeout fetching server log for instance {instance_id}")
+        return False, "", "Timeout while fetching server logs from remote host."
+    except Exception as e:
+        log.exception(f"Exception fetching server log for instance {instance_id}: {e}")
+        return False, "", str(e)
+    finally:
+        if local_dir:
+            shutil.rmtree(local_dir, ignore_errors=True)

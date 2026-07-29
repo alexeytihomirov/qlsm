@@ -101,3 +101,103 @@ def test_filename_regex_rejects_traversal_and_malformed():
                 'server.log-20260729-0930', 'server.log-20260729-093000.zip',
                 'serverXlog', '/home/ql/server.log'):
         assert not SERVER_LOG_FILENAME_RE.fullmatch(bad), bad
+
+
+def test_filename_regex_rejects_injection_even_with_match():
+    from ui.task_logic.ansible_server_log_archives import SERVER_LOG_FILENAME_RE
+    for payload in ('server.log; rm -rf /', 'server.log/../../etc/passwd',
+                    'server.log\n', 'server.log\nrm -rf /'):
+        assert not SERVER_LOG_FILENAME_RE.match(payload), payload
+        assert not SERVER_LOG_FILENAME_RE.fullmatch(payload), payload
+
+
+def test_sort_archives_orders_current_first_then_newest_archive_first():
+    from ui.task_logic.ansible_server_log_archives import _sort_archives
+    files = [
+        'server.log-20260727-091500.gz',
+        'server.log',
+        'server.log-20260729-093000',
+        'server.log-20260728-091500.gz',
+    ]
+    assert _sort_archives(files) == [
+        'server.log',
+        'server.log-20260729-093000',
+        'server.log-20260728-091500.gz',
+        'server.log-20260727-091500.gz',
+    ]
+
+
+def _get_logs(client, instance_id, token, **params):
+    return client.get(
+        f'/api/instances/{instance_id}/remote-logs',
+        query_string=params,
+        headers=_headers(token),
+    )
+
+
+def test_path_traversal_filename_rejected_before_task_logic(client, app):
+    instance_id, token = _make_instance(app)
+    with patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log') as mock_fetch:
+        resp = _get_logs(client, instance_id, token, filter_mode='lines',
+                         filename='../../../../etc/passwd')
+    assert resp.status_code == 400
+    mock_fetch.assert_not_called()
+
+
+def test_malformed_filename_rejected_before_task_logic(client, app):
+    instance_id, token = _make_instance(app)
+    with patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log') as mock_fetch:
+        resp = _get_logs(client, instance_id, token, filter_mode='lines',
+                         filename='server.log.old')
+    assert resp.status_code == 400
+    mock_fetch.assert_not_called()
+
+
+def test_time_mode_rejected_for_archive_filename(client, app):
+    instance_id, token = _make_instance(app)
+    with patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log') as mock_fetch:
+        resp = _get_logs(client, instance_id, token, filter_mode='time',
+                         since='1 hour ago', filename='server.log-20260729-093000')
+    assert resp.status_code == 400
+    mock_fetch.assert_not_called()
+
+
+@patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log',
+       return_value=(True, 'archived line', None))
+def test_archive_lines_request_routed_to_archive_fetcher(mock_fetch, client, app):
+    instance_id, token = _make_instance(app)
+    resp = _get_logs(client, instance_id, token, filter_mode='lines', lines=250,
+                     filename='server.log-20260729-093000.gz')
+    assert resp.status_code == 200
+    assert resp.get_json()['data']['logs'] == 'archived line'
+    assert mock_fetch.call_args.kwargs['filename'] == 'server.log-20260729-093000.gz'
+    assert mock_fetch.call_args.kwargs['lines'] == 250
+
+
+@patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log',
+       return_value=(True, 'everything', None))
+def test_all_mode_reads_current_file_not_journald(mock_fetch, client, app):
+    instance_id, token = _make_instance(app)
+    resp = _get_logs(client, instance_id, token, filter_mode='all')
+    assert resp.status_code == 200
+    assert resp.get_json()['data']['logs'] == 'everything'
+    assert mock_fetch.call_args.kwargs['filename'] == 'server.log'
+    assert mock_fetch.call_args.kwargs['filter_mode'] == 'all'
+
+
+@patch('ui.task_logic.ansible_instance_mgmt.fetch_instance_remote_logs',
+       return_value=(True, 'journald window', None))
+def test_time_mode_on_current_still_uses_journald(mock_fetch, client, app):
+    instance_id, token = _make_instance(app)
+    resp = _get_logs(client, instance_id, token, filter_mode='time', since='1 hour ago')
+    assert resp.status_code == 200
+    assert resp.get_json()['data']['logs'] == 'journald window'
+    mock_fetch.assert_called_once()
+
+
+def test_lines_out_of_range_rejected_before_task_logic(client, app):
+    instance_id, token = _make_instance(app)
+    with patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log') as mock_fetch:
+        assert _get_logs(client, instance_id, token, filter_mode='lines', lines=9).status_code == 400
+        assert _get_logs(client, instance_id, token, filter_mode='lines', lines=10001).status_code == 400
+    mock_fetch.assert_not_called()

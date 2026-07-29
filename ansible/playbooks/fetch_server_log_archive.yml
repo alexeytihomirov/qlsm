@@ -1,0 +1,51 @@
+---
+- name: Fetch QLDS Server Log Archive
+  hosts: all
+  become: yes
+  gather_facts: false
+
+  vars:
+    game_port: "{{ port }}"
+    log_mode: "{{ filter_mode | default('lines') }}"
+    log_lines: "{{ lines | default(500) }}"
+    log_filename: "{{ filename | default('server.log') }}"
+    log_dir: "/home/ql/qlds-{{ game_port }}/serverlogs"
+    log_file: "{{ log_dir }}/{{ log_filename }}"
+    remote_tmp_file: "/tmp/qlsm-serverlog-{{ fetch_token }}.txt"
+
+  tasks:
+    # Flush pending journal entries so the current log is up to date at read
+    # time rather than lagging the 5-minute archive timer.
+    - name: Flush journal into the server log archive
+      ansible.builtin.command:
+        cmd: /usr/local/bin/qlsm-archive-serverlogs.sh
+      changed_when: false
+      failed_when: false
+
+    - name: Check if the requested server log file exists
+      ansible.builtin.stat:
+        path: "{{ log_file }}"
+      register: log_stat
+
+    - name: Extract requested content into a temp file
+      ansible.builtin.shell:
+        cmd: >-
+          {{ 'zcat' if log_filename.endswith('.gz') else 'cat' }} {{ log_file | quote }}
+          {{ ('| tail -n ' ~ log_lines) if log_mode == 'lines' else '' }}
+          > {{ remote_tmp_file | quote }}
+      when: log_stat.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Fetch the extracted content to the controller
+      ansible.builtin.fetch:
+        src: "{{ remote_tmp_file }}"
+        dest: "{{ local_dest }}"
+        flat: yes
+      when: log_stat.stat.exists
+      failed_when: false
+
+    - name: Remove the remote temp file
+      ansible.builtin.file:
+        path: "{{ remote_tmp_file }}"
+        state: absent
