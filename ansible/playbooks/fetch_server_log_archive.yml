@@ -27,14 +27,23 @@
     # setup_server_log_archiving.yml only runs when invoked explicitly and
     # setup_host.yml only runs at initial provisioning. Self-provision here so
     # a stale host serves an archive read instead of "file not found".
+    #
+    # Gate on the timer unit, not the archive script: the script is the
+    # *first* file tasks/server_log_archiving.yml deploys, so if provisioning
+    # fails partway after the script lands, gating on the script would read
+    # "already installed" and skip re-provisioning forever -- leaving the
+    # host with no logrotate policy, i.e. unbounded log growth, the exact bug
+    # this feature exists to fix. The timer unit is the last file deployed,
+    # so its presence implies the script, logrotate policy, and service unit
+    # all landed too.
     - name: Check whether server-log archiving is installed
       ansible.builtin.stat:
-        path: /usr/local/bin/qlsm-archive-serverlogs.sh
-      register: archive_script_stat
+        path: /etc/systemd/system/qlsm-archive-serverlogs.timer
+      register: archive_timer_stat
 
     - name: Install server-log archiving if missing
       ansible.builtin.include_tasks: tasks/server_log_archiving.yml
-      when: not archive_script_stat.stat.exists
+      when: not archive_timer_stat.stat.exists
 
     # Flush pending journal entries so the current log is up to date at read
     # time rather than lagging the 5-minute archive timer. Only meaningful

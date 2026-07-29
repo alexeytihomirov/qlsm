@@ -252,6 +252,12 @@
         state: absent
       when: service_action == 'delete' # Use renamed variable
 
+    - name: Remove QLSM server-log cursor (delete action)
+      ansible.builtin.file:
+        path: /var/lib/qlsm/logcursor-{{ game_port }}
+        state: absent
+      when: service_action == 'delete'
+
     - name: Write QLSM network rules config after delete
       template:
         src: ../templates/qlsm-network-rules.json.j2
