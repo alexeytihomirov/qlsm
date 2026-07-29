@@ -43,6 +43,14 @@ class TestCreateFolder:
         resp = client.post(f'/api/drafts/{empty_draft}/folders', json={'path': 'foo'}, headers=auth_headers)
         assert resp.status_code == 201
 
+    def test_accepts_three_levels_deep(self, client, auth_headers, empty_draft):
+        resp = client.post(f'/api/drafts/{empty_draft}/folders', json={'path': 'a/b/c'}, headers=auth_headers)
+        assert resp.status_code == 201
+
+    def test_rejects_four_levels_deep(self, client, auth_headers, empty_draft):
+        resp = client.post(f'/api/drafts/{empty_draft}/folders', json={'path': 'a/b/c/d'}, headers=auth_headers)
+        assert resp.status_code == 400
+
     def test_create_folder_conflict(self, client, auth_headers, empty_draft):
         client.post(f'/api/drafts/{empty_draft}/folders', json={'path': 'foo'}, headers=auth_headers)
         resp = client.post(f'/api/drafts/{empty_draft}/folders', json={'path': 'foo'}, headers=auth_headers)

@@ -224,6 +224,8 @@ def _normalize_draft_file_path(relative_path):
     if not stripped or os.path.isabs(stripped):
         return None
     parts = stripped.split('/')
+    if len(parts) > MAX_DRAFT_FILE_DEPTH:
+        return None
     if any(part in ('', '.', '..') for part in parts):
         return None
     return '/'.join(parts)
@@ -726,6 +728,8 @@ def commit_draft(draft_id):
 import re as _re
 
 _DRAFT_FOLDER_SEGMENT_RE = _re.compile(r'^[A-Za-z0-9._-]+$')
+MAX_DRAFT_FOLDER_DEPTH = 3
+MAX_DRAFT_FILE_DEPTH = 4
 
 
 def _normalize_draft_folder_path(rel_path):
@@ -733,7 +737,8 @@ def _normalize_draft_folder_path(rel_path):
 
     Returns the normalized relative path (forward-slash separated) or None if invalid.
     Rules: non-empty, no leading/trailing slash, each segment matches [A-Za-z0-9._-]+
-    and is ≤64 chars, reject '.' and '..' segments, reject segments starting with '.'.
+    and is ≤64 chars, reject '.' and '..' segments, reject segments starting with '.',
+    and cap total depth at MAX_DRAFT_FOLDER_DEPTH.
     """
     if not isinstance(rel_path, str):
         return None
@@ -741,6 +746,8 @@ def _normalize_draft_folder_path(rel_path):
     if not rel_path or rel_path.startswith('/') or rel_path.endswith('/'):
         return None
     segments = rel_path.split('/')
+    if len(segments) > MAX_DRAFT_FOLDER_DEPTH:
+        return None
     for seg in segments:
         if not seg or seg in ('.', '..') or seg.startswith('.'):
             return None
