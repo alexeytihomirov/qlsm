@@ -342,6 +342,22 @@ class TestDraftContent:
         }, headers=auth_headers)
         assert response.status_code == 200
 
+    def test_write_accepts_four_segment_path(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        response = client.put(f'/api/drafts/{draft_id}/content', json={
+            'path': 'a/b/c/deep.py',
+            'content': '# deep\n'
+        }, headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_write_rejects_five_segment_path(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        response = client.put(f'/api/drafts/{draft_id}/content', json={
+            'path': 'a/b/c/d/toodeep.py',
+            'content': '# too deep\n'
+        }, headers=auth_headers)
+        assert response.status_code == 400
+
     def test_path_traversal_rejected(self, client, auth_headers, preset_with_scripts, monkeypatch):
         draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
         response = client.get(
@@ -459,6 +475,33 @@ class TestDraftUpload:
         )
         assert response.status_code == 200
         assert os.path.exists(os.path.join(drafts_base, draft_id, 'scripts', 'subfolder', 'sub.py'))
+
+    def test_upload_accepts_three_folder_target_path(self, client, auth_headers, preset_with_scripts, monkeypatch, drafts_base):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        data = {
+            'file': (io.BytesIO(b'# deep plugin\n'), 'deep.py'),
+            'target_path': 'a/b/c'
+        }
+        response = client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data=data, content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert os.path.exists(os.path.join(drafts_base, draft_id, 'scripts', 'a', 'b', 'c', 'deep.py'))
+
+    def test_upload_rejects_four_folder_target_path(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        data = {
+            'file': (io.BytesIO(b'# too deep\n'), 'toodeep.py'),
+            'target_path': 'a/b/c/d'
+        }
+        response = client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data=data, content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        assert response.status_code == 400
 
 
 class TestDraftDeleteFile:

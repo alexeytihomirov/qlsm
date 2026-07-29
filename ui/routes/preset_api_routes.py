@@ -24,6 +24,8 @@ from ui.config_path_utils import (
     MAX_CONFIG_FILE_DEPTH,
     validate_path_segment as _shared_validate_path_segment,
     validate_config_folder_path as _shared_validate_config_folder_path,
+    list_folders_recursive,
+    prune_orphan_folders,
 )
 
 preset_api_bp = Blueprint('preset_api_routes', __name__)  # url_prefix will be /presets
@@ -678,7 +680,6 @@ def _list_preset_config_files(preset_path):
 
 def _list_preset_config_folders(preset_path):
     """Return all managed config folder paths (any depth) for a preset."""
-    from ui.config_path_utils import list_folders_recursive
     return sorted(list_folders_recursive(preset_path))
 
 
@@ -729,7 +730,6 @@ def _write_preset_configs(preset_path, config_data):
     if not config_folders_present:
         return
 
-    from ui.config_path_utils import prune_orphan_folders
     prune_orphan_folders(preset_path, desired_folders)
 
 

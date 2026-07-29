@@ -144,6 +144,8 @@ def _is_safe_name(value):
 ALLOWED_EXTENSIONS = {'.py', '.txt', '.so'}
 FILE_TYPE_MAP = {'.py': 'python', '.txt': 'text', '.so': 'binary'}
 VALID_BINARY_CONTEXT_TYPES = frozenset({'preset', 'instance'})
+MAX_DRAFT_FOLDER_DEPTH = 3
+MAX_DRAFT_FILE_DEPTH = 4
 
 
 def _get_file_type(filename):
@@ -390,6 +392,8 @@ def save_draft_content(draft_id):
     scripts_path = _get_draft_scripts_path(draft_id)
     if not _is_safe_draft_path(scripts_path, path):
         return jsonify({"error": {"message": "Invalid file path"}}), 400
+    if len(path.split('/')) > MAX_DRAFT_FILE_DEPTH:
+        return jsonify({"error": {"message": f"Path too deep (max depth {MAX_DRAFT_FILE_DEPTH})"}}), 400
 
     ext = os.path.splitext(path)[1].lower()
     if ext not in TEXT_EXTENSIONS:
@@ -458,6 +462,10 @@ def upload_to_draft(draft_id):
             return jsonify({"error": {"message": "Invalid target path"}}), 400
     else:
         dest_dir = scripts_path
+
+    full_relative_path = f"{target_path}/{filename}" if target_path else filename
+    if len(full_relative_path.split('/')) > MAX_DRAFT_FILE_DEPTH:
+        return jsonify({"error": {"message": f"Path too deep (max depth {MAX_DRAFT_FILE_DEPTH})"}}), 400
 
     os.makedirs(dest_dir, exist_ok=True)
     dest_file = os.path.join(dest_dir, filename)
@@ -728,8 +736,6 @@ def commit_draft(draft_id):
 import re as _re
 
 _DRAFT_FOLDER_SEGMENT_RE = _re.compile(r'^[A-Za-z0-9._-]+$')
-MAX_DRAFT_FOLDER_DEPTH = 3
-MAX_DRAFT_FILE_DEPTH = 4
 
 
 def _normalize_draft_folder_path(rel_path):

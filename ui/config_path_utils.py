@@ -2,8 +2,11 @@
 folders. Used by ui/routes/instance_routes.py and ui/routes/preset_api_routes.py
 to avoid duplicating path-depth and reserved-name logic in both files."""
 
+import logging
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 RESERVED_CONFIG_FOLDER_NAMES = {'scripts', 'factories', 'user-hooks'}
 MAX_CONFIG_FOLDER_DEPTH = 3  # pure folder paths, e.g. a/b/c
@@ -115,5 +118,5 @@ def prune_orphan_folders(base_dir, desired_folders, reserved_names=RESERVED_CONF
         folder_path = os.path.join(base_dir, *rel_path.split('/'))
         try:
             os.rmdir(folder_path)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.warning(f"Skipping orphan folder {folder_path}: {e}")
