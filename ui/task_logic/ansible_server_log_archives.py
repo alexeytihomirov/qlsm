@@ -11,7 +11,10 @@ project's file-size guideline.
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
+import uuid
 
 from ui import db
 from ui.models import QLInstance
@@ -152,10 +155,6 @@ def fetch_instance_server_log(instance_id, filename=CURRENT_SERVER_LOG,
 
     Returns a tuple: (success: bool, logs: str, error_msg: str or None)
     """
-    import shutil
-    import tempfile
-    import uuid
-
     if not SERVER_LOG_FILENAME_RE.fullmatch(filename or ''):
         return False, "", "Invalid server log filename."
 

@@ -14,36 +14,77 @@
     remote_tmp_file: "/tmp/qlsm-serverlog-{{ fetch_token }}.txt"
 
   tasks:
+    # A controller-side timeout skips the removal task below, stranding the
+    # extracted file. Sweep anything old enough to be orphaned rather than
+    # relying on every run finishing cleanly.
+    - name: Remove stale temp files from prior timed-out fetches
+      ansible.builtin.command:
+        cmd: find /tmp -maxdepth 1 -name 'qlsm-serverlog-*' -mmin +60 -delete
+      changed_when: false
+      failed_when: false
+
+    # Reads can land on hosts provisioned before archiving existed, since
+    # setup_server_log_archiving.yml only runs when invoked explicitly and
+    # setup_host.yml only runs at initial provisioning. Self-provision here so
+    # a stale host serves an archive read instead of "file not found".
+    - name: Check whether server-log archiving is installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/qlsm-archive-serverlogs.sh
+      register: archive_script_stat
+
+    - name: Install server-log archiving if missing
+      ansible.builtin.include_tasks: tasks/server_log_archiving.yml
+      when: not archive_script_stat.stat.exists
+
     # Flush pending journal entries so the current log is up to date at read
-    # time rather than lagging the 5-minute archive timer.
+    # time rather than lagging the 5-minute archive timer. Only meaningful
+    # for the live file: running this while an archive is requested risks a
+    # logrotate rotation deleting the very archive being read mid-request.
     - name: Flush journal into the server log archive
       ansible.builtin.command:
         cmd: /usr/local/bin/qlsm-archive-serverlogs.sh
+      when: log_filename == 'server.log'
       changed_when: false
       failed_when: false
 
     - name: Check if the requested server log file exists
       ansible.builtin.stat:
         path: "{{ log_file }}"
+        get_checksum: no
       register: log_stat
 
+    # set -o pipefail (and running under bash, since /bin/sh's pipefail
+    # support varies) makes this task fail if cat/zcat dies mid-stream --
+    # without it, tail's exit code alone determines success and a corrupt or
+    # truncated source is indistinguishable from a clean read. The chmod
+    # lets the fetch task below read the file without become.
     - name: Extract requested content into a temp file
       ansible.builtin.shell:
         cmd: >-
+          set -o pipefail;
           {{ 'zcat' if log_filename.endswith('.gz') else 'cat' }} {{ log_file | quote }}
           {{ ('| tail -n ' ~ log_lines) if log_mode == 'lines' else '' }}
-          > {{ remote_tmp_file | quote }}
+          > {{ remote_tmp_file | quote }} && chmod 0644 {{ remote_tmp_file | quote }}
+        executable: /bin/bash
       when: log_stat.stat.exists
+      register: extract_result
       changed_when: false
-      failed_when: false
 
+    # become: false here is load-bearing, not stylistic: ansible.builtin.fetch
+    # only uses the fast checksum+SFTP path when the connection is not using
+    # become (see fetch.py's "Don't bother if using become as slurp will be
+    # used" guard) -- under become it silently falls back to slurping the
+    # whole file through the module pipe as base64, ~1.33x the file size
+    # in-band over SSH, which is exactly the transport cost this design
+    # exists to avoid. The temp file is chmod 0644 above so the plain SSH
+    # login user can read it without become.
     - name: Fetch the extracted content to the controller
       ansible.builtin.fetch:
         src: "{{ remote_tmp_file }}"
         dest: "{{ local_dest }}"
         flat: yes
+      become: false
       when: log_stat.stat.exists
-      failed_when: false
 
     - name: Remove the remote temp file
       ansible.builtin.file:

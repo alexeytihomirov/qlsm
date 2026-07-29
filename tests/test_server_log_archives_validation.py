@@ -6,13 +6,18 @@ restricted to the canonical server.log rotation pattern, time mode is
 rejected for archives, and missing instance/host state is classified
 before any Ansible execution.
 """
-from unittest.mock import patch
+import os
+import shutil
+import tempfile
+from unittest.mock import MagicMock, patch
 
 from flask_jwt_extended import create_access_token
 
 from ui import db
 from ui.database import create_host, create_instance
 from ui.models import HostStatus, QLInstance
+
+FETCH_MODULE = 'ui.task_logic.ansible_server_log_archives'
 
 
 def _make_instance(app):
@@ -24,6 +29,29 @@ def _make_instance(app):
         db.session.commit()
         token = create_access_token(identity='testuser')
         return instance.id, token
+
+
+def _make_instance_with_host_details(app):
+    """A host with full SSH details, so _resolve_instance succeeds and
+    fetch_instance_server_log proceeds past validation into the (mocked)
+    subprocess path."""
+    with app.app_context():
+        host = create_host(
+            name='srvlog-host-full', provider='vultr', status=HostStatus.ACTIVE,
+            ip_address='10.0.0.5', ssh_key_path='/fake/key', ssh_user='ansible',
+        )
+        instance = create_instance(
+            name='srvlog-inst-full', host_id=host.id, port=27970, hostname='srvlog-full.host',
+        )
+        db.session.commit()
+        return instance.id
+
+
+def _mock_ansible_process(rc=0):
+    process = MagicMock()
+    process.communicate.return_value = ('', '')
+    process.returncode = rc
+    return process
 
 
 def _make_instance_without_host(app):
@@ -201,3 +229,118 @@ def test_lines_out_of_range_rejected_before_task_logic(client, app):
         assert _get_logs(client, instance_id, token, filter_mode='lines', lines=9).status_code == 400
         assert _get_logs(client, instance_id, token, filter_mode='lines', lines=10001).status_code == 400
     mock_fetch.assert_not_called()
+
+
+# Direct coverage of fetch_instance_server_log itself, rather than through the
+# route with the function mocked out. The four guard clauses below return
+# before ever constructing an ansible-playbook command, so they need no
+# subprocess mocking. The three "resolved" tests below them do need it, since
+# they exercise the local-temp-file read path past _resolve_instance.
+
+
+def test_fetch_rejects_invalid_filename_without_touching_subprocess():
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+        success, logs, error = fetch_instance_server_log(1, filename='../../../etc/passwd')
+    assert success is False
+    assert error == "Invalid server log filename."
+    mock_popen.assert_not_called()
+
+
+def test_fetch_rejects_invalid_filter_mode_without_touching_subprocess():
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+        success, logs, error = fetch_instance_server_log(1, filter_mode='time')
+    assert success is False
+    assert error == "filter_mode must be 'lines' or 'all'"
+    mock_popen.assert_not_called()
+
+
+def test_fetch_rejects_non_integer_lines_without_touching_subprocess():
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+        success, logs, error = fetch_instance_server_log(1, lines='500')
+    assert success is False
+    assert error == "lines must be an integer"
+    mock_popen.assert_not_called()
+
+
+def test_fetch_rejects_out_of_range_lines_without_touching_subprocess():
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+        assert fetch_instance_server_log(1, lines=9)[0] is False
+        assert fetch_instance_server_log(1, lines=10001)[0] is False
+    mock_popen.assert_not_called()
+
+
+def test_fetch_returns_not_found_message_when_temp_file_absent(app):
+    instance_id = _make_instance_with_host_details(app)
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+
+    real_dir = tempfile.mkdtemp(prefix='qlsm-serverlog-test-')
+    try:
+        with app.app_context(), \
+             patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=_mock_ansible_process()), \
+             patch('tempfile.mkdtemp', return_value=real_dir), \
+             patch('shutil.rmtree'):
+            success, logs, error = fetch_instance_server_log(instance_id)
+    finally:
+        shutil.rmtree(real_dir, ignore_errors=True)
+
+    assert success is True
+    assert logs == "-- Server log file not found --"
+    assert error is None
+
+
+def test_fetch_returns_no_entries_message_when_file_is_empty(app):
+    instance_id = _make_instance_with_host_details(app)
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+
+    real_dir = tempfile.mkdtemp(prefix='qlsm-serverlog-test-')
+    with open(os.path.join(real_dir, 'server-log.txt'), 'w') as fh:
+        fh.write('   \n')
+    try:
+        with app.app_context(), \
+             patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=_mock_ansible_process()), \
+             patch('tempfile.mkdtemp', return_value=real_dir), \
+             patch('shutil.rmtree'):
+            success, logs, error = fetch_instance_server_log(instance_id)
+    finally:
+        shutil.rmtree(real_dir, ignore_errors=True)
+
+    assert success is True
+    assert logs == "-- No entries --"
+    assert error is None
+
+
+def test_fetch_returns_file_contents_when_present(app):
+    instance_id = _make_instance_with_host_details(app)
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+
+    real_dir = tempfile.mkdtemp(prefix='qlsm-serverlog-test-')
+    with open(os.path.join(real_dir, 'server-log.txt'), 'w') as fh:
+        fh.write('line one\nline two\n')
+    try:
+        with app.app_context(), \
+             patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=_mock_ansible_process()), \
+             patch('tempfile.mkdtemp', return_value=real_dir), \
+             patch('shutil.rmtree'):
+            success, logs, error = fetch_instance_server_log(instance_id, filter_mode='all')
+    finally:
+        shutil.rmtree(real_dir, ignore_errors=True)
+
+    assert success is True
+    assert logs == 'line one\nline two\n'
+    assert error is None
+
+
+def test_fetch_surfaces_nonzero_rc_as_error_not_fake_success(app):
+    instance_id = _make_instance_with_host_details(app)
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+
+    with app.app_context(), \
+         patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=_mock_ansible_process(rc=2)):
+        success, logs, error = fetch_instance_server_log(instance_id)
+
+    assert success is False
+    assert 'RC: 2' in error
