@@ -418,3 +418,104 @@ describe('useFileManagerController multi-file upload', () => {
     expect(result.current.selectedFile?.path).toBe('scripts/b.cfg');
   });
 });
+
+function createStateLikeAdapter(overrides = {}) {
+  const folderPaths = new Set(overrides.initialFolderPaths || []);
+  return {
+    tree: overrides.tree || [],
+    readContent: vi.fn().mockResolvedValue(''),
+    writeContent: vi.fn().mockResolvedValue(undefined),
+    upload: vi.fn(),
+    deleteFile: vi.fn(),
+    renameFile: vi.fn(),
+    createFolder: vi.fn((path) => folderPaths.add(path)),
+    renameFolder: vi.fn(),
+    refreshTree: vi.fn().mockResolvedValue(undefined),
+    loading: false,
+    error: null,
+  };
+}
+
+describe('useFileManagerController nested folder creation', () => {
+  it('creates a subfolder using the parent path as the target directory', async () => {
+    const adapter = createStateLikeAdapter();
+
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.cfg'], canFolders: true },
+    }));
+
+    act(() => {
+      result.current.handleNewFolderInFolder({ path: 'parent', name: 'parent', type: 'folder' });
+    });
+    expect(result.current.newModalMode).toBe('folder');
+    expect(result.current.newModalTargetDir).toBe('parent');
+
+    await act(async () => {
+      await result.current.handleCreateFromModal('child');
+    });
+
+    expect(adapter.createFolder).toHaveBeenCalledWith('parent/child');
+  });
+
+  it('reports a folder at max depth so the row menu can hide New Folder', () => {
+    const adapter = createStateLikeAdapter();
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.cfg'], canFolders: true },
+    }));
+
+    expect(result.current.isFolderAtMaxDepth('a')).toBe(false);
+    expect(result.current.isFolderAtMaxDepth('a/b')).toBe(false);
+    expect(result.current.isFolderAtMaxDepth('a/b/c')).toBe(true);
+  });
+
+  it('computes rename-target folder siblings from the actual parent directory, not root', async () => {
+    const tree = [
+      {
+        type: 'folder', name: 'a', path: 'a', children: [
+          { type: 'folder', name: 'existing', path: 'a/existing', children: [] },
+          { type: 'folder', name: 'target', path: 'a/target', children: [] },
+        ],
+      },
+      { type: 'folder', name: 'unrelated-root', path: 'unrelated-root', children: [] },
+    ];
+    const adapter = createStateLikeAdapter({ tree });
+
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.cfg'], canFolders: true },
+    }));
+
+    act(() => {
+      result.current.openRenameModal({ type: 'folder', path: 'a/target' });
+    });
+
+    expect(result.current.renameTargetSiblings).toEqual(['existing']);
+  });
+
+  it('renames a nested folder in place, keeping it under the same parent', async () => {
+    const tree = [
+      {
+        type: 'folder', name: 'a', path: 'a', children: [
+          { type: 'folder', name: 'old', path: 'a/old', children: [] },
+        ],
+      },
+    ];
+    const adapter = createStateLikeAdapter({ tree });
+
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.cfg'], canFolders: true },
+    }));
+
+    act(() => {
+      result.current.openRenameModal({ type: 'folder', path: 'a/old' });
+    });
+    await act(async () => {
+      await result.current.handleRename('new');
+    });
+
+    expect(adapter.renameFolder).toHaveBeenCalledWith('a/old', 'a/new');
+  });
+});
