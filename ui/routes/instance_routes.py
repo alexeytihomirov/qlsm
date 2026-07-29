@@ -19,6 +19,17 @@ from ui.database import (
 from ui.tasks import deploy_instance, apply_instance_config, restart_instance, stop_instance, start_instance, delete_instance as delete_instance_task, reconfigure_instance_lan_rate, enqueue_task
 from ui.task_logic.job_failure_handlers import instance_job_failure_handler
 from ui.task_lock import acquire_lock, release_lock
+from ui.config_path_utils import (
+    RESERVED_CONFIG_FOLDER_NAMES,
+    MAX_CONFIG_FOLDER_DEPTH,
+    MAX_CONFIG_FILE_DEPTH,
+    validate_path_segment as _validate_path_segment,
+    validate_relative_config_path as _validate_relative_path,
+    validate_config_folder_path,
+    expand_with_ancestors,
+    list_folders_recursive,
+    prune_orphan_folders,
+)
 from flask_jwt_extended import jwt_required # Import the decorator from Flask-JWT-Extended
 
 # Create a Blueprint for instance API routes
@@ -28,9 +39,6 @@ _QLX_PLUGINS_RE = re.compile(r'^[a-zA-Z0-9_, ]*$')
 PROTECTED_CONFIG_FILES = {'server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt'}
 ALLOWED_CONFIG_EXTENSIONS = {'.cfg', '.txt', '.ent'}
 ALLOWED_FACTORY_EXTENSIONS = {'.factories'}
-RESERVED_CONFIG_FOLDER_NAMES = {'scripts', 'factories', 'user-hooks'}
-_FOLDER_NAME_RE = re.compile(r'^[A-Za-z0-9._-]+$')
-MAX_CONFIG_PATH_DEPTH = 2  # one folder + filename
 
 
 def _reject_mutation_while_host_configuring(host):
@@ -46,54 +54,13 @@ def _reject_mutation_while_host_configuring(host):
     return None
 
 
-def _validate_path_segment(name, allowed_extensions=None):
-    """Validate a single path segment (file or folder name).
-
-    When allowed_extensions is None, treat name as a folder segment and skip
-    the extension check.
-    """
-    if not isinstance(name, str) or not name:
-        return "Invalid name"
-    if '/' in name or '\\' in name or '..' in name or name.startswith('.'):
-        return f"Invalid name: {name}"
-    if not _FOLDER_NAME_RE.match(name):
-        return f"Invalid characters in: {name}"
-    if len(name) > 64:
-        return f"Name too long: {name}"
-    if allowed_extensions is not None:
-        ext = os.path.splitext(name)[1].lower()
-        if ext not in allowed_extensions:
-            return f"Disallowed extension {ext} for {name}"
-    return None
-
-
-def _validate_relative_path(path, allowed_extensions, max_depth=MAX_CONFIG_PATH_DEPTH):
-    """Validate a relative file path. Each segment is validated; depth is capped."""
-    if not isinstance(path, str) or not path:
-        return "Invalid path"
-    if path.startswith('/') or path.endswith('/'):
-        return f"Invalid path: {path}"
-    segments = path.split('/')
-    if len(segments) > max_depth:
-        return f"Path too deep: {path} (max depth {max_depth})"
-    for i, segment in enumerate(segments):
-        is_last = (i == len(segments) - 1)
-        err = _validate_path_segment(
-            segment,
-            allowed_extensions if is_last else None,
-        )
-        if err:
-            return err
-    return None
-
-
 def _validate_filename(name, allowed_extensions):
     """Backwards-compatible flat-name validator (no `/`)."""
     return _validate_relative_path(name, allowed_extensions, max_depth=1)
 
 
 def _validate_configs_map(configs_data, require_protected=True):
-    """Validate configs map. Keys may be relative paths up to MAX_CONFIG_PATH_DEPTH.
+    """Validate configs map. Keys may be relative paths up to MAX_CONFIG_FILE_DEPTH.
 
     Returns (error_message, status_code) or (None, None).
     """
@@ -105,11 +72,6 @@ def _validate_configs_map(configs_data, require_protected=True):
             return err, 400
         if content is not None and not isinstance(content, str):
             return f"Config content for {path} must be a string", 400
-        # Reject reserved-folder collisions
-        if '/' in path:
-            top = path.split('/', 1)[0]
-            if top.lower() in RESERVED_CONFIG_FOLDER_NAMES:
-                return f"Reserved folder name: {top}", 400
     missing = PROTECTED_CONFIG_FILES - set(configs_data.keys())
     if require_protected and missing:
         return f"Built-in files cannot be removed: {', '.join(sorted(missing))}", 400
@@ -163,14 +125,12 @@ def _validate_config_folders(folders):
         return None, None
     if not isinstance(folders, list):
         return "config_folders must be a list", 400
-    for name in folders:
-        if not isinstance(name, str):
+    for path in folders:
+        if not isinstance(path, str):
             return "config_folders entries must be strings", 400
-        err = _validate_path_segment(name, None)
+        err = validate_config_folder_path(path)
         if err:
             return err, 400
-        if name.lower() in RESERVED_CONFIG_FOLDER_NAMES:
-            return f"Reserved folder name: {name}", 400
     return None, None
 
 
@@ -197,27 +157,21 @@ def _list_managed_files_recursive(instance_dir):
 
 
 def _list_managed_folders(instance_dir):
-    """Return top-level managed folders (excluding reserved subdirs)."""
-    if not os.path.isdir(instance_dir):
-        return []
-    return [
-        name for name in os.listdir(instance_dir)
-        if os.path.isdir(os.path.join(instance_dir, name))
-        and name.lower() not in RESERVED_CONFIG_FOLDER_NAMES
-    ]
+    """Return all managed folders (any depth), excluding reserved subdirs."""
+    return list_folders_recursive(instance_dir)
 
 
 def _sync_configs_to_disk(instance_dir, configs_data, config_folders=None):
-    """Write configs (nested supported), create empty folders, and remove orphans.
+    """Write configs (nested supported), create folders, and remove orphans.
 
     config_folders semantics:
       - None         → caller did not supply the field. Preserve all existing
-                       top-level folders (legacy/partial-client safety).
+                       folders (legacy/partial-client safety).
       - list (incl []) → caller explicitly listed the folders that must exist
-                         after sync. Prune any other top-level folder not in
-                         this list (or implied by a nested file path), but only
-                         via os.rmdir (empty-only); folders that still contain
-                         unmanaged content are left alone.
+                         after sync. Prune any other folder not in this list
+                         (or implied as an ancestor of a listed/file folder),
+                         but only via os.rmdir (empty-only); folders that
+                         still contain unmanaged content are left alone.
     """
     os.makedirs(instance_dir, exist_ok=True)
     folder_pruning_requested = config_folders is not None
@@ -225,8 +179,9 @@ def _sync_configs_to_disk(instance_dir, configs_data, config_folders=None):
 
     desired_folders = set(config_folders)
     for rel_path in configs_data.keys():
-        if '/' in rel_path:
-            desired_folders.add(rel_path.split('/', 1)[0])
+        parent = rel_path.rsplit('/', 1)[0] if '/' in rel_path else ''
+        if parent:
+            desired_folders.add(parent)
 
     _write_configs_to_disk(instance_dir, configs_data)
 
@@ -244,16 +199,7 @@ def _sync_configs_to_disk(instance_dir, configs_data, config_folders=None):
                 current_app.logger.error(f"Error removing config file {rel_path}: {e}")
 
     if folder_pruning_requested:
-        for name in _list_managed_folders(instance_dir):
-            if name in desired_folders:
-                continue
-            folder_path = os.path.join(instance_dir, name)
-            try:
-                os.rmdir(folder_path)
-            except OSError as e:
-                current_app.logger.warning(
-                    f"Skipping non-empty orphan folder {folder_path}: {e}"
-                )
+        prune_orphan_folders(instance_dir, desired_folders)
 
 
 def _sync_factories_to_disk(factories_dir, factories_data):
