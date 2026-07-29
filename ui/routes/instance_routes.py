@@ -796,6 +796,29 @@ def fetch_remote_logs_api(instance_id):
         current_app.logger.error(f"Failed to fetch remote logs for instance {instance_id}: {error_msg}")
         return jsonify({"error": {"message": error_msg}}), 500
 
+@instance_api_bp.route('/<int:instance_id>/remote-logs/list', methods=['GET'], endpoint='list_remote_server_logs_api')
+@jwt_required()
+def list_remote_server_logs_api(instance_id):
+    """Lists available server-log archive files from the remote QLDS instance."""
+    from ui.task_logic.ansible_server_log_archives import list_instance_server_log_archives
+
+    instance = get_instance(instance_id)
+    if not instance:
+        return jsonify({"error": {"message": "Instance not found."}}), 404
+
+    if not instance.host:
+        return jsonify({"error": {"message": "Instance has no associated host."}}), 400
+
+    current_app.logger.info(f"Listing server log archives for instance {instance_id} ({instance.name})")
+
+    success, files, error_msg = list_instance_server_log_archives(instance_id)
+
+    if success:
+        return jsonify({"data": {"files": files, "instance_name": instance.name}})
+
+    current_app.logger.error(f"Failed to list server log archives for instance {instance_id}: {error_msg}")
+    return jsonify({"error": {"message": error_msg}}), 500
+
 # Supported time windows for chat-log time-range filtering. Kept in sync with
 # TIME_OPTIONS in frontend-react/src/components/instances/logFilterOptions.js.
 ALLOWED_CHAT_LOG_SINCE = frozenset({
