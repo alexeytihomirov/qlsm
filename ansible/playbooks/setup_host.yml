@@ -728,6 +728,9 @@
         - "{{ common_assets_dir }}"
         - "{{ qlds_base_dir }}/steamapps" # Specifically ensure steamapps ownership
 
+    - name: Install QLDS server-log archiving
+      ansible.builtin.include_tasks: tasks/server_log_archiving.yml
+
   handlers:
     - name: restart redis
       service:

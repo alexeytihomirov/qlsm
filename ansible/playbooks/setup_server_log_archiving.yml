@@ -1,0 +1,9 @@
+---
+- name: Set up QLDS server-log archiving
+  hosts: all
+  become: yes
+  gather_facts: false
+
+  tasks:
+    - name: Install server-log archiving
+      ansible.builtin.include_tasks: tasks/server_log_archiving.yml

@@ -1,0 +1,145 @@
+---
+# Shared task list: installs the QLDS server-log archiving script, its
+# logrotate policy, and the systemd timer that drives it. Included by both
+# setup_host.yml (new hosts) and setup_server_log_archiving.yml (existing hosts).
+
+- name: Ensure QLSM state directory exists
+  ansible.builtin.file:
+    path: /var/lib/qlsm
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure QLSM config directory exists
+  ansible.builtin.file:
+    path: /etc/qlsm
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy QLDS server-log archive script
+  ansible.builtin.copy:
+    dest: /usr/local/bin/qlsm-archive-serverlogs.sh
+    owner: root
+    group: root
+    mode: '0755'
+    content: |
+      #!/bin/sh
+      # Archive QLDS server logs out of journald into per-instance rotating
+      # files. Managed by QLSM - do not edit by hand.
+      STATE_DIR=/var/lib/qlsm
+      mkdir -p "$STATE_DIR"
+
+      for dir in /home/ql/qlds-*/; do
+          [ -d "$dir" ] || continue
+          port=${dir#/home/ql/qlds-}
+          port=${port%/}
+          # Skip non-instance directories such as /home/ql/qlds-base
+          case "$port" in ''|*[!0-9]*) continue ;; esac
+
+          unit="qlds@${port}.service"
+          logdir="${dir}serverlogs"
+          cursor="${STATE_DIR}/logcursor-${port}"
+
+          if [ ! -d "$logdir" ]; then
+              mkdir -p "$logdir" || continue
+              chown ql:ql "$logdir"
+              chmod 0755 "$logdir"
+          fi
+
+          # First sighting of an instance: seed the cursor at the journal tail
+          # so pre-existing history is not imported (start-fresh policy).
+          # -n0 with --cursor-file writes the cursor without emitting entries.
+          if [ ! -s "$cursor" ]; then
+              journalctl -u "$unit" -n0 --cursor-file="$cursor" --no-pager >/dev/null 2>&1
+              continue
+          fi
+
+          # journalctl emits "-- No entries --" when the cursor is already
+          # current, which would otherwise be appended on every idle run. Drop
+          # that marker only -- "-- Boot <id> --" markers are kept, since they
+          # record host reboots and carry real diagnostic value.
+          journalctl -u "$unit" --cursor-file="$cursor" --no-pager 2>/dev/null \
+              | grep -v '^-- No entries --$' >> "${logdir}/server.log"
+          chown ql:ql "${logdir}/server.log" 2>/dev/null || true
+      done
+
+      logrotate -s "${STATE_DIR}/logrotate.state" /etc/qlsm/qlds-serverlogs.conf 2>/dev/null || true
+      exit 0
+
+- name: Deploy logrotate policy for QLDS server logs
+  ansible.builtin.copy:
+    dest: /etc/qlsm/qlds-serverlogs.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by QLSM - do not edit by hand.
+      # Lives outside /etc/logrotate.d/ with its own state file so the system
+      # cron job never races the QLSM archive timer.
+      # dateformat includes the time because maxsize permits a second rotation
+      # on a high-traffic day; with a date-only suffix logrotate would find the
+      # target already present and silently skip the rotation.
+      /home/ql/qlds-*/serverlogs/server.log {
+          daily
+          maxsize 10M
+          rotate 90
+          compress
+          delaycompress
+          dateext
+          dateformat -%Y%m%d-%H%M%S
+          missingok
+          notifempty
+          su ql ql
+          create 0644 ql ql
+      }
+
+- name: Deploy QLDS server-log archive service unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/qlsm-archive-serverlogs.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Archive QLDS server logs from journald
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/qlsm-archive-serverlogs.sh
+
+- name: Deploy QLDS server-log archive timer unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/qlsm-archive-serverlogs.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Timer for QLDS server-log archiving
+
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=5min
+      AccuracySec=30s
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Reload systemd daemon for archive units
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable and start the server-log archive timer
+  ansible.builtin.systemd:
+    name: qlsm-archive-serverlogs.timer
+    enabled: yes
+    state: started
+
+- name: Seed cursors immediately so archiving starts without waiting for the timer
+  ansible.builtin.command:
+    cmd: /usr/local/bin/qlsm-archive-serverlogs.sh
+  changed_when: false
+  failed_when: false
