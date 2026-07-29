@@ -87,3 +87,17 @@ export function getExtension(name = '') {
   const dotIndex = name.lastIndexOf('.');
   return dotIndex === -1 ? '' : name.slice(dotIndex).toLowerCase();
 }
+
+export const MAX_CONFIG_FOLDER_DEPTH = 3;
+export const MAX_CONFIG_FILE_DEPTH = 4;
+
+export function getPathDepth(path = '') {
+  return path ? path.split('/').length : 0;
+}
+
+export function flattenFolders(items = []) {
+  return items.flatMap(item => {
+    if (item.type !== 'folder') return [];
+    return [item, ...flattenFolders(item.children || [])];
+  });
+}

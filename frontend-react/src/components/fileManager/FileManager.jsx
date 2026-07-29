@@ -55,7 +55,7 @@ const FileManager = forwardRef(function FileManager({
 
   const creatableExtensions = capabilities.allowedExtensions.filter(ext => ext !== '.so');
   const newModalExistingNames = controller.newModalMode === 'folder'
-    ? controller.rootFolderNames
+    ? controller.newModalFolderSiblingNames
     : controller.siblingNames;
 
   if (adapter.error) {
@@ -94,13 +94,14 @@ const FileManager = forwardRef(function FileManager({
             onRename: controller.openRenameModal,
             onDelete: controller.requestDelete,
             onNewFileInFolder: controller.handleNewFileInFolder,
+            onNewFolderInFolder: controller.handleNewFolderInFolder,
             onUploadToFolder: controller.handleUploadToFolder,
           }}
         />
         <FileSidebarActions
           capabilities={capabilities}
           onNewFile={() => controller.openNewFileModal('')}
-          onNewFolder={controller.openNewFolderModal}
+          onNewFolder={() => controller.openNewFolderModal('')}
           onUpload={controller.handleUpload}
         />
       </div>

@@ -1,4 +1,5 @@
 import { render, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import FileTreeRowMenu from '../FileTreeRowMenu';
@@ -26,5 +27,37 @@ describe('FileTreeRowMenu folder upload', () => {
     expect(onUploadToFolder).toHaveBeenCalledTimes(1);
     const arg = onUploadToFolder.mock.calls[0][0];
     expect(Array.from(arg).map(f => f.name)).toEqual(['a.cfg', 'b.cfg']);
+  });
+});
+
+describe('FileTreeRowMenu new folder', () => {
+  it('shows a New Folder action for a folder below max depth', async () => {
+    const user = userEvent.setup();
+    const onNewFolderInFolder = vi.fn();
+    const { getByLabelText, getByText } = render(
+      <FileTreeRowMenu
+        itemType="folder"
+        capabilities={CAPS}
+        isMaxDepth={false}
+        onNewFolderInFolder={onNewFolderInFolder}
+      />,
+    );
+    await user.click(getByLabelText('folder actions'));
+    await user.click(getByText('New Folder'));
+    expect(onNewFolderInFolder).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides New Folder once the folder is at max depth', async () => {
+    const user = userEvent.setup();
+    const { getByLabelText, queryByText } = render(
+      <FileTreeRowMenu
+        itemType="folder"
+        capabilities={CAPS}
+        isMaxDepth
+        onNewFolderInFolder={vi.fn()}
+      />,
+    );
+    await user.click(getByLabelText('folder actions'));
+    expect(queryByText('New Folder')).toBeNull();
   });
 });

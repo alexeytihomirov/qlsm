@@ -124,23 +124,34 @@ Instance ZMQ connections (RCON + stats) are managed via `_prepare_instance_zmq()
 
 ## Instance Config Folders
 
-Instance config directories (`configs/<host_name>/<instance_id>/`) support one level of user-managed subfolders for `.ent` files (entity overrides). This is in addition to the always-present `scripts/` and `factories/` reserved folders.
+Instance config directories (`configs/<host_name>/<instance_id>/`) support user-managed subfolders, nested up to 3 levels deep, for `.ent` files (entity overrides). This is in addition to the always-present `scripts/` and `factories/` reserved folders.
 
 ### Allowed extensions
 `ALLOWED_CONFIG_EXTENSIONS` in `instance_routes.py` defines which extensions are valid inside a config folder: `.cfg`, `.txt`, `.ent`. Files with other extensions are treated as unmanaged and never deleted during sync.
 
 ### Reserved folder names
-`RESERVED_CONFIG_FOLDER_NAMES = {'scripts', 'factories'}`. These may not be used as `config_folders` values and are never touched by the folder reconciliation logic.
+`RESERVED_CONFIG_FOLDER_NAMES = {'scripts', 'factories', 'user-hooks'}` (defined in `ui/config_path_utils.py`). These may not be used as `config_folders` values — at any nesting depth, not just the top level — and are never touched by the folder reconciliation logic.
 
-### Backend helpers (instance_routes.py)
-- `_validate_path_segment(segment, allowed_extensions)` — validates one path component (no slashes, no dotdot, no leading dot; extension check skipped when `allowed_extensions is None`).
-- `_validate_relative_path(path, allowed_extensions, max_depth=2)` — splits on `/`, validates each segment, enforces depth limit and no leading/trailing slashes.
-- `_validate_config_folders(folders)` — validates a list of folder names: checks reserved names, then each name via `_validate_path_segment`.
-- `_validate_configs_map(configs)` — validates all keys in a `configs` dict using `_validate_relative_path`.
-- `_sync_configs_to_disk(instance_dir, configs, config_folders)` — writes all files in `configs`, reconciles top-level subfolders when `config_folders` is not `None` (None = legacy/omitted = leave folders alone), and removes orphaned managed files.
+### Backend helpers (`ui/config_path_utils.py`)
+Shared by `instance_routes.py`, `preset_api_routes.py`, and `draft_routes.py`:
+- `validate_path_segment(segment, allowed_extensions)` — validates one path component (no slashes, no dotdot, no leading dot; extension check skipped when `allowed_extensions is None`).
+- `validate_relative_config_path(path, allowed_extensions, max_depth=MAX_CONFIG_FILE_DEPTH)` — splits on `/`, validates each segment (including reserved-name rejection at every segment), enforces depth limit and no leading/trailing slashes.
+- `validate_config_folder_path(path, max_depth=MAX_CONFIG_FOLDER_DEPTH)` — validates a pure folder path (e.g. a `config_folders` entry) the same way, capped at `MAX_CONFIG_FOLDER_DEPTH`.
+- `list_folders_recursive(base_dir, ...)` / `prune_orphan_folders(base_dir, desired_folders, ...)` — enumerate and reconcile managed folders at any depth.
+
+`instance_routes.py` also defines `_validate_config_folders(folders)` (validates a list of folder paths via `validate_config_folder_path`), `_validate_configs_map(configs)` (validates all keys in a `configs` dict via `validate_relative_config_path`), and `_sync_configs_to_disk(instance_dir, configs, config_folders)` (writes all files in `configs`, reconciles nested subfolders when `config_folders` is not `None` — `None` = legacy/omitted = leave folders alone — and removes orphaned managed files).
 
 ### Frontend adapter
 `useStateAdapter` (in `fileManager/adapters/`) tracks both file content and the `config_folders` list. `serialize()` returns `{ files: Record<path,content>, folders: string[] }`. Consumers destructure this: `const { files, folders } = serializeConfigs();`.
+
+### Nested config/plugin folders
+
+Configuration Files and Plugins tabs support folders nested up to 3 levels
+deep (e.g. `a/b/c/file.cfg`). A file path may have at most 4 path segments
+(3 folders + filename); a pure folder path (e.g. a `config_folders` entry)
+may have at most 3 segments. Reserved names (`scripts`, `factories`,
+`user-hooks`) are rejected at every segment, not just the top level. The
+Factories tab does not support folders at all.
 
 ## Plugin Python Dependencies (`requirements.txt`)
 

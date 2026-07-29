@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Box, Code, FileText, Folder, FolderOpen, Lock, Search } from 'lucide-react';
 
 import FileTreeRowMenu from './FileTreeRowMenu';
-import { sortFileTree } from './fileManagerUtils';
+import { sortFileTree, MAX_CONFIG_FOLDER_DEPTH } from './fileManagerUtils';
 
 const FILE_TYPE_ICONS = {
   python: Code,
@@ -130,12 +130,14 @@ function TreeItem({
         <FileTreeRowMenu
           itemType={item.type}
           isProtected={!!item.protected}
+          isMaxDepth={isFolder && item.path.split('/').length >= MAX_CONFIG_FOLDER_DEPTH}
           capabilities={capabilities}
           onDownload={() => rowMenuHandlers.onDownload(item)}
           onCopyContent={() => rowMenuHandlers.onCopyContent(item)}
           onRename={() => rowMenuHandlers.onRename(item)}
           onDelete={() => rowMenuHandlers.onDelete(item)}
           onNewFileInFolder={() => rowMenuHandlers.onNewFileInFolder(item)}
+          onNewFolderInFolder={() => rowMenuHandlers.onNewFolderInFolder(item)}
           onUploadToFolder={(files) => rowMenuHandlers.onUploadToFolder(item, files)}
         />
       </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { rewritePathPrefix } from '../fileManagerUtils';
+import { rewritePathPrefix, MAX_CONFIG_FOLDER_DEPTH, MAX_CONFIG_FILE_DEPTH } from '../fileManagerUtils';
 
 function getExtension(path) {
   const dotIndex = path.lastIndexOf('.');
@@ -8,7 +8,7 @@ function getExtension(path) {
 
 function validatePath(path, allowedExtensions) {
   const segments = path.split('/');
-  if (segments.length > 2) {
+  if (segments.length > MAX_CONFIG_FILE_DEPTH) {
     throw new Error(`Path too deep: ${path}`);
   }
   for (const segment of segments) {
@@ -31,6 +31,16 @@ function validateFolderName(name, reservedFolderNames = []) {
   }
 }
 
+function validateFolderPath(path, reservedFolderNames = []) {
+  const segments = path.split('/');
+  if (segments.length > MAX_CONFIG_FOLDER_DEPTH) {
+    throw new Error(`Path too deep: ${path} (max depth ${MAX_CONFIG_FOLDER_DEPTH})`);
+  }
+  for (const segment of segments) {
+    validateFolderName(segment, reservedFolderNames);
+  }
+}
+
 function normalizeTreeItem(item) {
   const path = item.path || item.name;
   return {
@@ -42,38 +52,58 @@ function normalizeTreeItem(item) {
   };
 }
 
-function buildHierarchicalTree(flatItems, folders, protectedSet) {
-  const rootFiles = [];
-  const folderChildren = new Map();
-  for (const item of flatItems) {
-    if (item.path.includes('/')) {
-      const [top, ...rest] = item.path.split('/');
-      if (!folderChildren.has(top)) folderChildren.set(top, []);
-      folderChildren.get(top).push({
-        ...item,
-        name: rest.join('/'),
-        path: item.path,
-        protected: protectedSet.has(item.path),
-      });
-    } else {
-      rootFiles.push({ ...item, protected: protectedSet.has(item.path) });
+function buildHierarchicalTree(flatItems, folderPaths, protectedSet) {
+  const root = { children: new Map() };
+
+  function ensureFolderNode(path) {
+    const segments = path.split('/');
+    let node = root;
+    let builtPath = '';
+    for (const segment of segments) {
+      builtPath = builtPath ? `${builtPath}/${segment}` : segment;
+      if (!node.children.has(builtPath)) {
+        node.children.set(builtPath, {
+          name: segment,
+          path: builtPath,
+          type: 'folder',
+          children: new Map(),
+        });
+      }
+      node = node.children.get(builtPath);
     }
+    return node;
   }
-  const folderItems = [];
-  const allFolderNames = new Set([...folders, ...folderChildren.keys()]);
-  for (const name of allFolderNames) {
-    folderItems.push({
-      name,
-      path: name,
-      type: 'folder',
-      children: (folderChildren.get(name) || []).sort((a, b) => a.name.localeCompare(b.name)),
+
+  for (const path of folderPaths) {
+    ensureFolderNode(path);
+  }
+
+  for (const item of flatItems) {
+    const segments = item.path.split('/');
+    const entry = { ...item, protected: protectedSet.has(item.path) };
+    if (segments.length === 1) {
+      root.children.set(item.path, entry);
+      continue;
+    }
+    const parentPath = segments.slice(0, -1).join('/');
+    const parentNode = ensureFolderNode(parentPath);
+    parentNode.children.set(item.path, entry);
+  }
+
+  function toSortedArray(node) {
+    const items = [...node.children.values()].map(child => (
+      child.type === 'folder'
+        ? { ...child, children: toSortedArray(child) }
+        : child
+    ));
+    return items.sort((a, b) => {
+      if (a.type === 'folder' && b.type !== 'folder') return -1;
+      if (a.type !== 'folder' && b.type === 'folder') return 1;
+      return a.name.localeCompare(b.name);
     });
   }
-  return [...folderItems, ...rootFiles].sort((a, b) => {
-    if (a.type === 'folder' && b.type !== 'folder') return -1;
-    if (a.type !== 'folder' && b.type === 'folder') return 1;
-    return a.name.localeCompare(b.name);
-  });
+
+  return toSortedArray(root);
 }
 
 export function useStateAdapter({
@@ -202,54 +232,59 @@ export function useStateAdapter({
     });
   }, [allowedExtensions, protectedSet, readContent, files]);
 
-  const createFolder = useCallback((name) => {
-    validateFolderName(name, reservedFolderNames);
-    if (folders.has(name)) throw new Error(`Folder already exists: ${name}`);
+  const createFolder = useCallback((path) => {
+    validateFolderPath(path, reservedFolderNames);
+    if (folders.has(path)) throw new Error(`Folder already exists: ${path}`);
     setFolders(prev => {
       const next = new Set(prev);
-      next.add(name);
+      next.add(path);
       return next;
     });
   }, [folders, reservedFolderNames]);
 
-  const deleteFolder = useCallback((name) => {
+  const deleteFolder = useCallback((path) => {
     setFiles(prev => {
       const next = {};
-      for (const [path, content] of Object.entries(prev)) {
-        if (path === name || path.startsWith(name + '/')) continue;
-        next[path] = content;
+      for (const [filePath, content] of Object.entries(prev)) {
+        if (filePath === path || filePath.startsWith(path + '/')) continue;
+        next[filePath] = content;
       }
       return next;
     });
     setDeletedPaths(prev => {
       const next = new Set(prev);
-      for (const path of Object.keys(files)) {
-        if (path === name || path.startsWith(name + '/')) next.add(path);
+      for (const filePath of Object.keys(files)) {
+        if (filePath === path || filePath.startsWith(path + '/')) next.add(filePath);
       }
       return next;
     });
     setFolders(prev => {
       const next = new Set(prev);
-      next.delete(name);
+      for (const folderPath of prev) {
+        if (folderPath === path || folderPath.startsWith(path + '/')) next.delete(folderPath);
+      }
       return next;
     });
   }, [files]);
 
-  const renameFolder = useCallback((oldName, newName) => {
-    validateFolderName(newName, reservedFolderNames);
-    if (folders.has(newName)) throw new Error(`Folder already exists: ${newName}`);
+  const renameFolder = useCallback((oldPath, newPath) => {
+    const newSegments = newPath.split('/');
+    validateFolderName(newSegments[newSegments.length - 1], reservedFolderNames);
+    if (folders.has(newPath)) throw new Error(`Folder already exists: ${newPath}`);
     setFiles(prev => {
       const next = {};
-      for (const [path, content] of Object.entries(prev)) {
-        const rewritten = rewritePathPrefix(path, oldName, newName);
-        next[rewritten ?? path] = content;
+      for (const [filePath, content] of Object.entries(prev)) {
+        const rewritten = rewritePathPrefix(filePath, oldPath, newPath);
+        next[rewritten ?? filePath] = content;
       }
       return next;
     });
     setFolders(prev => {
-      const next = new Set(prev);
-      next.delete(oldName);
-      next.add(newName);
+      const next = new Set();
+      for (const folderPath of prev) {
+        const rewritten = rewritePathPrefix(folderPath, oldPath, newPath);
+        next.add(rewritten ?? folderPath);
+      }
       return next;
     });
   }, [folders, reservedFolderNames]);

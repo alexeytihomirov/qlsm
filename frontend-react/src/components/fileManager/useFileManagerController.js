@@ -4,12 +4,15 @@ import {
   basename,
   dirname,
   flattenFiles,
+  flattenFolders,
   getErrorMessage,
   getExtension,
   getFileType,
   getInitialSelectableFile,
+  getPathDepth,
   isCheckablePath,
   joinPath,
+  MAX_CONFIG_FOLDER_DEPTH,
 } from './fileManagerUtils';
 
 const EMPTY_TREE = [];
@@ -75,6 +78,7 @@ export function useFileManagerController({
   const siblingNames = useMemo(() => flatFiles
     .filter(file => dirname(file.path) === selectedDir)
     .map(file => basename(file.path)), [flatFiles, selectedDir]);
+  const allFolders = useMemo(() => flattenFolders(files), [files]);
   const rootFolderNames = useMemo(() => files
     .filter(item => item.type === 'folder')
     .map(item => item.name), [files]);
@@ -231,19 +235,30 @@ export function useFileManagerController({
     setShowNewModal(true);
   }, []);
 
-  const openNewFolderModal = useCallback(() => {
+  const openNewFolderModal = useCallback((targetDir = '') => {
     setNewModalMode('folder');
-    setNewModalTargetDir('');
+    setNewModalTargetDir(targetDir);
     setShowNewModal(true);
   }, []);
+
+  const isFolderAtMaxDepth = useCallback((path) => getPathDepth(path) >= MAX_CONFIG_FOLDER_DEPTH, []);
+
+  const newModalFolderSiblingNames = useMemo(
+    () => allFolders
+      .filter(folder => dirname(folder.path) === newModalTargetDir)
+      .map(folder => basename(folder.path)),
+    [allFolders, newModalTargetDir],
+  );
 
   const handleCreateFromModal = useCallback(async (name) => {
     try {
       if (newModalMode === 'folder') {
         if (!adapter.createFolder) throw new Error('Folder creation not supported');
-        await adapter.createFolder(name);
+        const path = joinPath(newModalTargetDir, name);
+        await adapter.createFolder(path);
         await adapter.refreshTree?.();
-        expandFolder(name);
+        if (newModalTargetDir) expandFolder(newModalTargetDir);
+        expandFolder(path);
         setShowNewModal(false);
         setActionError(null);
         return;
@@ -327,12 +342,13 @@ export function useFileManagerController({
     try {
       if (renameTarget.kind === 'folder') {
         if (!adapter.renameFolder) throw new Error('Folder rename not supported');
-        await adapter.renameFolder(oldPath, newName);
+        const newPath = joinPath(dirname(oldPath), newName);
+        await adapter.renameFolder(oldPath, newPath);
         setEditedContent(prev => {
           const next = {};
           for (const [path, content] of Object.entries(prev)) {
             if (path === oldPath || path.startsWith(oldPath + '/')) {
-              next[newName + path.slice(oldPath.length)] = content;
+              next[newPath + path.slice(oldPath.length)] = content;
             } else {
               next[path] = content;
             }
@@ -343,8 +359,8 @@ export function useFileManagerController({
         setExpandedFolders(prev => {
           const next = new Set();
           for (const p of prev) {
-            if (p === oldPath) next.add(newName);
-            else if (p.startsWith(oldPath + '/')) next.add(newName + p.slice(oldPath.length));
+            if (p === oldPath) next.add(newPath);
+            else if (p.startsWith(oldPath + '/')) next.add(newPath + p.slice(oldPath.length));
             else next.add(p);
           }
           return next;
@@ -471,6 +487,10 @@ export function useFileManagerController({
     openNewFileModal(folderItem.path);
   }, [openNewFileModal]);
 
+  const handleNewFolderInFolder = useCallback((folderItem) => {
+    openNewFolderModal(folderItem.path);
+  }, [openNewFolderModal]);
+
   const handleUploadToFolder = useCallback((folderItem, files) => {
     return handleUpload(files, folderItem.path);
   }, [handleUpload]);
@@ -484,7 +504,9 @@ export function useFileManagerController({
     ? flatFiles.find(f => f.path === renameTarget.path) || files.find(i => i.type === 'folder' && i.path === renameTarget.path)
     : null;
   const renameTargetSiblings = renameTarget?.kind === 'folder'
-    ? rootFolderNames
+    ? allFolders
+        .filter(f => dirname(f.path) === dirname(renameTarget?.path || '') && f.path !== renameTarget?.path)
+        .map(f => basename(f.path))
     : flatFiles
         .filter(f => dirname(f.path) === dirname(renameTarget?.path || ''))
         .map(f => basename(f.path));
@@ -507,6 +529,7 @@ export function useFileManagerController({
     handleDownload,
     handleCopyContent,
     handleNewFileInFolder,
+    handleNewFolderInFolder,
     handleRename,
     handleReplace,
     handleSaveBinaryDescription,
@@ -515,8 +538,10 @@ export function useFileManagerController({
     handleUpload,
     handleUploadToFolder,
     isDirty: selectedFile ? editedContent[selectedFile.path] !== undefined : false,
+    isFolderAtMaxDepth,
     language,
     linterSource,
+    newModalFolderSiblingNames,
     newModalMode,
     newModalTargetDir,
     openNewFileModal,

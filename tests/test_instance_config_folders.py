@@ -226,6 +226,19 @@ class TestSyncConfigsWithFolders:
         assert 'config_folders' in data
         assert set(data['config_folders']) >= {'custom_entities', 'empty_dir'}
 
+    def test_prunes_nested_empty_folder_not_in_desired_list(self, client, app, sample_instance, auth_token, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        instance_dir = tmp_path / 'configs' / sample_instance.host_name / str(sample_instance.id)
+        (instance_dir / 'a' / 'b' / 'gone').mkdir(parents=True)
+        payload = {
+            'configs': _full_configs(**{'a/b/keep.cfg': ''}),
+            'config_folders': ['a/b'],
+        }
+        resp = _put_config(client, sample_instance.id, payload, auth_token)
+        assert resp.status_code in (200, 202)
+        assert not (instance_dir / 'a' / 'b' / 'gone').exists()
+        assert (instance_dir / 'a' / 'b' / 'keep.cfg').exists()
+
 
 class TestRejectReservedAndDeep:
     def test_rejects_reserved_folder_name(self, client, app, sample_instance, auth_token):
@@ -237,12 +250,43 @@ class TestRejectReservedAndDeep:
         assert resp.status_code == 400
         assert 'reserved' in resp.get_json()['error']['message'].lower()
 
+    def test_accepts_three_folders_deep(self, client, app, sample_instance, auth_token):
+        payload = {
+            'configs': _full_configs(**{'a/b/c/deep.cfg': ''}),
+            'config_folders': ['a/b/c'],
+        }
+        resp = _put_config(client, sample_instance.id, payload, auth_token)
+        assert resp.status_code in (200, 202), resp.get_json()
+
     def test_rejects_deep_path(self, client, app, sample_instance, auth_token):
         resp = client.put(
             f'/api/instances/{sample_instance.id}/config',
             json={
-                'configs': _full_configs(**{'a/b/c.cfg': ''}),
+                'configs': _full_configs(**{'a/b/c/d/e.cfg': ''}),
                 'config_folders': [],
+            },
+            headers={'Authorization': f'Bearer {auth_token}'},
+        )
+        assert resp.status_code == 400
+
+    def test_rejects_reserved_name_nested_at_any_depth(self, client, app, sample_instance, auth_token):
+        resp = client.put(
+            f'/api/instances/{sample_instance.id}/config',
+            json={
+                'configs': _full_configs(**{'a/scripts/deep.cfg': ''}),
+                'config_folders': [],
+            },
+            headers={'Authorization': f'Bearer {auth_token}'},
+        )
+        assert resp.status_code == 400
+        assert 'reserved' in resp.get_json()['error']['message'].lower()
+
+    def test_rejects_config_folders_entry_beyond_max_depth(self, client, app, sample_instance, auth_token):
+        resp = client.put(
+            f'/api/instances/{sample_instance.id}/config',
+            json={
+                'configs': _full_configs(),
+                'config_folders': ['a/b/c/d'],
             },
             headers={'Authorization': f'Bearer {auth_token}'},
         )

@@ -316,9 +316,9 @@ Example success response:
 }
 ```
 
-`configs` is a filename-to-content map. Flat filenames use `.cfg` or `.txt` extensions. Nested paths (one level deep, e.g. `custom_entities/items.ent`) use the `.ent` extension and are written inside the corresponding subfolder. The protected files `server.cfg`, `mappool.txt`, `access.txt`, and `workshop.txt` are always required by update flows; create fills any missing protected file from the default preset. Custom config files are allowed.
+`configs` is a filename-to-content map. Flat filenames use `.cfg` or `.txt` extensions. Nested paths (up to 3 folders deep, e.g. `a/b/c/items.ent` — 4 path segments total including the filename) use the `.ent` extension and are written inside the corresponding subfolder. The protected files `server.cfg`, `mappool.txt`, `access.txt`, and `workshop.txt` are always required by update flows; create fills any missing protected file from the default preset. Custom config files are allowed.
 
-`config_folders` is an optional list of top-level subfolder names to create alongside the `configs` map. Folder names must not collide with the reserved names `scripts` and `factories`, must be at most one path segment, and may not start with `.`. If omitted by an older client, existing folders on disk are left untouched. Invalid `config_folders` are rejected with 400 before any database write occurs.
+`config_folders` is an optional list of folder paths (nested up to 3 path segments deep) to create alongside the `configs` map. Folder names must not collide with the reserved names `scripts`, `factories`, or `user-hooks` — checked at every segment, not just the top level — and may not start with `.`. If omitted by an older client, existing folders on disk are left untouched. Invalid `config_folders` are rejected with 400 before any database write occurs.
 
 `checked_plugins` is a list of plugin names used to build the instance `qlx_plugins` value. `draft_id` is optional and commits a plugin draft workspace into the instance — its sibling `user-hooks/` directory is copied to the instance's `user-hooks/` directory alongside `scripts/`. The legacy `scripts` payload is no longer accepted on create. `factories` is optional; when omitted, QLSM copies default factories for legacy compatibility. When present, QLSM deploys exactly the provided flat `.factories` map.
 
@@ -393,9 +393,9 @@ Example success response:
 }
 ```
 
-`config_folders` is returned alongside the flat `configs` map. It lists every top-level subfolder present in the instance config directory (excluding the reserved `scripts` and `factories` folders).
+`config_folders` is returned alongside the flat `configs` map. It lists every managed subfolder present in the instance config directory, nested up to 3 levels deep (excluding the reserved `scripts`, `factories`, and `user-hooks` folders).
 
-`PUT /instances/<id>/config` accepts the same generic `configs` map plus optional top-level `name`, `hostname`, `lan_rate_enabled`, `checked_plugins`, `draft_id`, `enabled_hooks`, `factories`, `config_folders`, and `restart`. When `configs` is present, QLSM syncs the managed config set and removes unprotected `.cfg`/`.txt` files omitted from the map. When `config_folders` is present, QLSM reconciles top-level subfolders: creating any listed that are missing, and removing any that are no longer listed (provided they contain only managed `.ent`/`.cfg`/`.txt` files — folders with unmanaged content are preserved). When `config_folders` is omitted entirely, existing subfolders are left untouched. When `factories` is omitted, existing factories are preserved; when it is present, omitted `.factories` files are removed. When `draft_id` is present, its `user-hooks/` directory is copied into the instance's `user-hooks/` directory. When `enabled_hooks` is present (typically from a loaded preset), `ld_preload_hooks` is fully replaced with that list filtered to hooks that actually exist on disk after the copy — same replace-on-load semantics as `checked_plugins`/`checked_factories`. When `enabled_hooks` is omitted, the instance's current hook enablement (managed separately via the Hooks tab) is left untouched.
+`PUT /instances/<id>/config` accepts the same generic `configs` map plus optional top-level `name`, `hostname`, `lan_rate_enabled`, `checked_plugins`, `draft_id`, `enabled_hooks`, `factories`, `config_folders`, and `restart`. When `configs` is present, QLSM syncs the managed config set and removes unprotected `.cfg`/`.txt` files omitted from the map. When `config_folders` is present, QLSM reconciles subfolders at any depth up to 3 levels: creating any listed that are missing, and removing any that are no longer listed (provided they contain only managed `.ent`/`.cfg`/`.txt` files — folders with unmanaged content are preserved). When `config_folders` is omitted entirely, existing subfolders are left untouched. When `factories` is omitted, existing factories are preserved; when it is present, omitted `.factories` files are removed. When `draft_id` is present, its `user-hooks/` directory is copied into the instance's `user-hooks/` directory. When `enabled_hooks` is present (typically from a loaded preset), `ld_preload_hooks` is fully replaced with that list filtered to hooks that actually exist on disk after the copy — same replace-on-load semantics as `checked_plugins`/`checked_factories`. When `enabled_hooks` is omitted, the instance's current hook enablement (managed separately via the Hooks tab) is left untouched.
 
 ### LD_PRELOAD Hooks
 
@@ -512,6 +512,9 @@ lock and return `200` immediately.
 | `/drafts/<draft_id>/upload` | POST | Upload `.py`, `.txt`, or `.so` into the draft |
 | `/drafts/<draft_id>/file` | DELETE | Delete a draft file (`?path=`) |
 | `/drafts/<draft_id>/rename` | PATCH | Rename a draft file without changing its extension |
+| `/drafts/<draft_id>/folders` | POST | Create a folder inside the draft scripts directory |
+| `/drafts/<draft_id>/folders` | DELETE | Delete a folder (recursive) inside the draft scripts directory |
+| `/drafts/<draft_id>/folders` | PATCH | Rename a folder inside the draft scripts directory |
 | `/drafts/<draft_id>/commit` | POST | Commit the draft to an instance or preset and delete the draft |
 | `/drafts/<draft_id>/binary-meta` | GET | Get the description for a `.so` file in a preset or instance context |
 | `/drafts/<draft_id>/binary-meta` | PATCH | Create or update the description for a `.so` file in a preset or instance context |
@@ -578,7 +581,7 @@ Instance source:
 }
 ```
 
-Draft paths must be relative paths inside the draft. Text reads and writes support `.py` and `.txt` up to 256 KB. Uploads support `.py`, `.txt`, and ELF `.so` files; `.so` uploads are capped at 10 MB.
+Draft paths must be relative paths inside the draft. Text reads and writes support `.py` and `.txt` up to 256 KB. Uploads support `.py`, `.txt`, and ELF `.so` files; `.so` uploads are capped at 10 MB. File paths (content, upload, rename, delete) may have at most 4 path segments (3 folders + filename); folder-only paths (the `/folders` endpoints below) may have at most 3 segments.
 
 ### Rename Draft File Request
 ```json
@@ -591,6 +594,30 @@ Draft paths must be relative paths inside the draft. Text reads and writes suppo
 ```
 
 `context_type` and `context_key` are required only when renaming `.so` files so binary metadata can be moved with the file. Renames cannot change file extensions and cannot overwrite an existing path.
+
+### Draft Folder Endpoints
+
+```
+POST /drafts/<draft_id>/folders
+{"path": "a/b/c"}
+```
+
+```
+DELETE /drafts/<draft_id>/folders?path=a/b/c
+```
+
+```
+PATCH /drafts/<draft_id>/folders
+{"old_path": "a/b/c", "new_path": "a/b/d"}
+```
+
+Folder paths are limited to 3 path segments (e.g. `a/b/c`). Each segment must
+match `[A-Za-z0-9._-]+`, be 64 characters or fewer, and not start with `.`.
+Create returns `201` with `{"data": {"path": "..."}}`; delete recursively
+removes the folder and returns `200`; rename returns `200` with
+`{"data": {"old_path": "...", "new_path": "..."}}`. Errors: `400` (invalid
+draft id or path), `404` (draft or folder not found), `409` (create/rename
+target already exists).
 
 ### Commit Draft Request
 ```json
