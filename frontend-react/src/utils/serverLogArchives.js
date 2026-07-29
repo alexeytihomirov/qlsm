@@ -25,7 +25,22 @@ export function parseArchiveDate(filename) {
         Number(y), Number(mo) - 1, Number(d),
         Number(h), Number(mi), Number(s),
     );
-    return Number.isNaN(date.getTime()) ? null : date;
+    if (Number.isNaN(date.getTime())) return null;
+
+    // The Date constructor normalizes out-of-range components (e.g. day 32
+    // rolls into the next month) instead of producing an Invalid Date, which
+    // would otherwise fabricate a phantom archive under the wrong day/month.
+    // Reject anything that didn't round-trip exactly.
+    if (date.getFullYear() !== Number(y)
+        || date.getMonth() !== Number(mo) - 1
+        || date.getDate() !== Number(d)
+        || date.getHours() !== Number(h)
+        || date.getMinutes() !== Number(mi)
+        || date.getSeconds() !== Number(s)) {
+        return null;
+    }
+
+    return date;
 }
 
 export function formatArchiveLabel(filename, occurrenceIndex = 0) {

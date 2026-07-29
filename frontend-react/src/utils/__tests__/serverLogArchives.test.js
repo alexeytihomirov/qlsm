@@ -15,7 +15,10 @@ describe('parseArchiveDate', () => {
     });
 
     it('parses a compressed archive name', () => {
-        expect(parseArchiveDate('server.log-20260728-091500.gz')).toBeInstanceOf(Date);
+        const d = parseArchiveDate('server.log-20260728-091500.gz');
+        expect(d.getFullYear()).toBe(2026);
+        expect(d.getMonth()).toBe(6); // July
+        expect(d.getDate()).toBe(28);
     });
 
     it('returns null for the current log', () => {
@@ -25,6 +28,18 @@ describe('parseArchiveDate', () => {
     it('returns null for unparseable names', () => {
         expect(parseArchiveDate('server.log.1')).toBeNull();
         expect(parseArchiveDate('garbage')).toBeNull();
+    });
+
+    it('returns null for an out-of-range day instead of rolling over', () => {
+        expect(parseArchiveDate('server.log-20260732-093000')).toBeNull();
+    });
+
+    it('returns null for an out-of-range month instead of rolling over', () => {
+        expect(parseArchiveDate('server.log-20261301-093000')).toBeNull();
+    });
+
+    it('returns null for Feb 29 in a non-leap year instead of rolling over', () => {
+        expect(parseArchiveDate('server.log-20260229-093000')).toBeNull();
     });
 });
 
@@ -73,5 +88,15 @@ describe('groupArchivesByMonth', () => {
             'server.log-20260729-140000',
         ]);
         expect(groups[0].items.map(i => i.label)).toEqual(['Jul 29', 'Jul 29 (2)']);
+    });
+
+    it('drops an out-of-range date instead of fabricating a phantom month group', () => {
+        const groups = groupArchivesByMonth([
+            'server.log-20260729-093000',
+            'server.log-20260732-093000',
+        ]);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].label).toBe('July 2026');
+        expect(groups[0].items.map(i => i.label)).toEqual(['Jul 29']);
     });
 });
