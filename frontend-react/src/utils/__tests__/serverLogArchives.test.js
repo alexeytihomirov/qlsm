@@ -41,6 +41,33 @@ describe('parseArchiveDate', () => {
     it('returns null for Feb 29 in a non-leap year instead of rolling over', () => {
         expect(parseArchiveDate('server.log-20260229-093000')).toBeNull();
     });
+
+    it('returns null for an out-of-range hour instead of rolling over', () => {
+        expect(parseArchiveDate('server.log-20260729-253000')).toBeNull();
+    });
+
+    it('returns null for an out-of-range minute instead of rolling over', () => {
+        expect(parseArchiveDate('server.log-20260729-097000')).toBeNull();
+    });
+
+    it('returns null for an out-of-range second instead of rolling over', () => {
+        expect(parseArchiveDate('server.log-20260729-093099')).toBeNull();
+    });
+
+    // DST spring-forward: local clocks skip 02:00-02:59 on Mar 8 2026 in
+    // timezones that observe it (e.g. America/Vancouver). The archive
+    // timestamp is the *host's* local time and is parsed in the *viewer's*
+    // timezone, so a filename landing in that gap is a legitimate archive,
+    // not a malformed one. It must still parse — asserting a specific hour
+    // here would bake in whatever normalization the local Date constructor
+    // applies, so we only assert it resolves to a real Date. Do not
+    // "simplify" parseArchiveDate back to a round-trip-against-Date check;
+    // that reintroduces this bug (see Fix round 2 in task-5-report.md).
+    it('parses a timestamp that falls in a DST spring-forward gap', () => {
+        expect(parseArchiveDate('server.log-20260308-020000')).toBeInstanceOf(Date);
+        expect(parseArchiveDate('server.log-20260308-023000')).toBeInstanceOf(Date);
+        expect(parseArchiveDate('server.log-20260308-025959')).toBeInstanceOf(Date);
+    });
 });
 
 describe('formatArchiveLabel', () => {
