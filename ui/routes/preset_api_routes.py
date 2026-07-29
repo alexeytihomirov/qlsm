@@ -18,6 +18,13 @@ from ui.preset_support import (
     validate_user_preset_name,
 )
 from ui.routes.draft_routes import ELF_MAGIC, MAX_BINARY_FILE_SIZE
+from ui.config_path_utils import (
+    RESERVED_CONFIG_FOLDER_NAMES,
+    MAX_CONFIG_FOLDER_DEPTH,
+    MAX_CONFIG_FILE_DEPTH,
+    validate_path_segment as _shared_validate_path_segment,
+    validate_config_folder_path as _shared_validate_config_folder_path,
+)
 
 preset_api_bp = Blueprint('preset_api_routes', __name__)  # url_prefix will be /presets
 
@@ -34,8 +41,6 @@ API_TO_FILE_MAP = {v: k for k, v in CONFIG_FILE_MAP.items()}
 ALLOWED_PRESET_CONFIG_EXTENSIONS = {'.cfg', '.txt', '.ent'}
 ALLOWED_PRESET_FACTORY_EXTENSIONS = {'.factories'}
 PROTECTED_CONFIG_FILES = set(CONFIG_FILE_MAP.keys())
-RESERVED_CONFIG_FOLDER_NAMES = {'scripts', 'factories', 'user-hooks'}
-MAX_CONFIG_PATH_DEPTH = 2
 EXPORT_FORMAT_VERSION = 1
 EXPORT_EXCLUDED_DIRS = {'__pycache__'}
 EXPORT_EXCLUDED_FILES = {'.DS_Store', '.gitkeep'}
@@ -205,24 +210,16 @@ def _validate_flat_filename(filename, allowed_extensions, label):
 
 
 def _validate_path_segment(name, allowed_extensions=None, label='config'):
-    if not isinstance(name, str) or not name:
+    err = _shared_validate_path_segment(name, allowed_extensions)
+    if err:
         raise ValueError(f"Invalid {label} filename: {name}")
-    if '/' in name or '\\' in name or '..' in name or name.startswith('.'):
-        raise ValueError(f"Invalid {label} filename: {name}")
-    if not all(char.isalnum() or char in '._-' for char in name):
-        raise ValueError(f"Invalid {label} filename: {name}")
-    if len(name) > 64:
-        raise ValueError(f"Invalid {label} filename: {name}")
-    if allowed_extensions is not None and os.path.splitext(name)[1].lower() not in allowed_extensions:
-        allowed = ', '.join(sorted(allowed_extensions))
-        raise ValueError(f"Invalid {label} extension for {name}. Allowed: {allowed}")
 
 
 def _validate_relative_config_path(path):
     if not isinstance(path, str) or not path or path.startswith('/') or path.endswith('/'):
         raise ValueError(f"Invalid config filename: {path}")
     segments = path.split('/')
-    if len(segments) > MAX_CONFIG_PATH_DEPTH:
+    if len(segments) > MAX_CONFIG_FILE_DEPTH:
         raise ValueError(f"Invalid config filename: {path}")
     for i, segment in enumerate(segments):
         is_file = i == len(segments) - 1
@@ -231,8 +228,8 @@ def _validate_relative_config_path(path):
             ALLOWED_PRESET_CONFIG_EXTENSIONS if is_file else None,
             'config',
         )
-    if len(segments) > 1 and segments[0].lower() in RESERVED_CONFIG_FOLDER_NAMES:
-        raise ValueError(f"Reserved folder name: {segments[0]}")
+        if not is_file and segment.lower() in RESERVED_CONFIG_FOLDER_NAMES:
+            raise ValueError(f"Reserved folder name: {segment}")
 
 
 def _normalize_config_folders(folders):
@@ -241,11 +238,13 @@ def _normalize_config_folders(folders):
     if not isinstance(folders, list):
         raise ValueError("config_folders must be a list")
     normalized = []
-    for name in folders:
-        _validate_path_segment(name, None, 'config')
-        if name.lower() in RESERVED_CONFIG_FOLDER_NAMES:
-            raise ValueError(f"Reserved folder name: {name}")
-        normalized.append(name)
+    for path in folders:
+        if not isinstance(path, str):
+            raise ValueError("config_folders entries must be strings")
+        err = _shared_validate_config_folder_path(path)
+        if err:
+            raise ValueError(err)
+        normalized.append(path)
     return normalized
 
 
@@ -678,14 +677,9 @@ def _list_preset_config_files(preset_path):
 
 
 def _list_preset_config_folders(preset_path):
-    """Return top-level managed config folder names for a preset."""
-    if not os.path.isdir(preset_path):
-        return []
-    return sorted(
-        name for name in os.listdir(preset_path)
-        if os.path.isdir(os.path.join(preset_path, name))
-        and name.lower() not in RESERVED_CONFIG_FOLDER_NAMES
-    )
+    """Return all managed config folder paths (any depth) for a preset."""
+    from ui.config_path_utils import list_folders_recursive
+    return sorted(list_folders_recursive(preset_path))
 
 
 def _write_preset_configs(preset_path, config_data):
@@ -713,8 +707,9 @@ def _write_preset_configs(preset_path, config_data):
 
     desired_folders = set(config_folders or [])
     for rel_path in config_files:
-        if '/' in rel_path:
-            desired_folders.add(rel_path.split('/', 1)[0])
+        parent = rel_path.rsplit('/', 1)[0] if '/' in rel_path else ''
+        if parent:
+            desired_folders.add(parent)
 
     for folder in sorted(desired_folders):
         os.makedirs(os.path.join(preset_path, folder), exist_ok=True)
@@ -734,17 +729,8 @@ def _write_preset_configs(preset_path, config_data):
     if not config_folders_present:
         return
 
-    for folder in _list_preset_config_folders(preset_path):
-        if folder in desired_folders:
-            continue
-        folder_path = os.path.join(preset_path, folder)
-        try:
-            os.rmdir(folder_path)
-            current_app.logger.info(f"Removed empty preset config folder: {folder_path}")
-        except OSError as e:
-            current_app.logger.warning(
-                f"Skipping non-empty preset config folder {folder_path}: {e}"
-            )
+    from ui.config_path_utils import prune_orphan_folders
+    prune_orphan_folders(preset_path, desired_folders)
 
 
 def _validation_status(reason):

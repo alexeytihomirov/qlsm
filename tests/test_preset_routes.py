@@ -203,7 +203,7 @@ def test_create_preset_with_generic_configs_writes_custom_file(client, app):
 @pytest.mark.parametrize('filename', [
     '../custom.cfg',
     'custom.py',
-    'nested/deep/custom.cfg',
+    'a/b/c/d/custom.cfg',
 ])
 def test_create_preset_rejects_invalid_generic_config_filename(client, app, filename):
     """Generic config map filenames must be safe managed config paths."""
@@ -237,6 +237,51 @@ def test_create_preset_accepts_nested_configs_and_folders(client, app):
     assert data['config_folders'] == ['test']
     with open(os.path.join('configs', 'presets', 'nestedpreset', 'test', 'test.cfg')) as f:
         assert f.read() == 'set g_gametype 0\n'
+
+
+def test_create_preset_accepts_three_folders_deep(client, app):
+    """POST accepts config paths nested 3 folders deep."""
+    headers = auth_headers(app, DEFAULT_USER)
+    configs = {**BASE_CONFIG_MAP, 'a/b/c/deep.cfg': 'set g_gametype 0\n'}
+
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'deeppreset',
+        'description': '',
+        'configs': configs,
+        'config_folders': ['a/b/c'],
+    })
+
+    assert response.status_code == 201, response.get_json()
+    data = response.get_json()['data']
+    assert data['configs']['a/b/c/deep.cfg'] == 'set g_gametype 0\n'
+
+
+def test_create_preset_rejects_four_folders_deep(client, app):
+    """POST rejects config paths nested beyond 3 folders."""
+    headers = auth_headers(app, DEFAULT_USER)
+    configs = {**BASE_CONFIG_MAP, 'a/b/c/d/deep.cfg': 'set g_gametype 0\n'}
+
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'toodeeppreset',
+        'description': '',
+        'configs': configs,
+    })
+
+    assert response.status_code == 400, response.get_json()
+
+
+def test_create_preset_rejects_reserved_name_nested(client, app):
+    """POST rejects a reserved folder name at any nesting depth, not just top-level."""
+    headers = auth_headers(app, DEFAULT_USER)
+    configs = {**BASE_CONFIG_MAP, 'a/scripts/deep.cfg': 'set g_gametype 0\n'}
+
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'reservednestedpreset',
+        'description': '',
+        'configs': configs,
+    })
+
+    assert response.status_code == 400, response.get_json()
 
 
 def test_create_preset_unauthenticated(client, app):
