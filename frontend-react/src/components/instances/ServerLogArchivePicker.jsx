@@ -1,7 +1,7 @@
 import React, { Fragment } from 'react';
 import { Listbox, Transition } from '@headlessui/react';
 import { ChevronDown, Check, FileText, Radio } from 'lucide-react';
-import { CURRENT_SERVER_LOG, groupArchivesByMonth, formatArchiveLabel } from '../../utils/serverLogArchives';
+import { CURRENT_SERVER_LOG, groupArchivesByMonth } from '../../utils/serverLogArchives';
 
 /**
  * Source picker for the server-log modal: the live log plus rotated archives
@@ -11,7 +11,13 @@ import { CURRENT_SERVER_LOG, groupArchivesByMonth, formatArchiveLabel } from '..
 function ServerLogArchivePicker({ files, selectedFile, onSelect, disabled = false }) {
     const groups = groupArchivesByMonth(files);
     const isCurrent = selectedFile === CURRENT_SERVER_LOG;
-    const selectedLabel = isCurrent ? 'Current' : formatArchiveLabel(selectedFile, 0);
+    // Reuse the label groupArchivesByMonth already computed (occurrence-aware,
+    // e.g. "Jul 29 (2)") instead of recomputing it — recomputing with a fixed
+    // occurrence index of 0 would both disagree with the dropdown for same-day
+    // archives and fall back to rendering the raw filename for any selectedFile
+    // that doesn't parse.
+    const selectedArchive = groups.flatMap((g) => g.items).find((item) => item.filename === selectedFile);
+    const selectedLabel = isCurrent ? 'Current' : (selectedArchive?.label ?? 'Archived');
 
     return (
         <div className="flex items-center gap-2">
