@@ -1,16 +1,18 @@
 import { Fragment, useRef } from 'react';
 import { Menu, Transition } from '@headlessui/react';
-import { Copy, Download, FilePlus, MoreVertical, Pencil, Trash2, Upload } from 'lucide-react';
+import { Copy, Download, FilePlus, FolderPlus, MoreVertical, Pencil, Trash2, Upload } from 'lucide-react';
 
 export default function FileTreeRowMenu({
   itemType,
   isProtected = false,
+  isMaxDepth = false,
   capabilities = {},
   onDownload,
   onCopyContent,
   onRename,
   onDelete,
   onNewFileInFolder,
+  onNewFolderInFolder,
   onUploadToFolder,
 }) {
   const fileInputRef = useRef(null);
@@ -21,6 +23,7 @@ export default function FileTreeRowMenu({
   const items = isFolder
     ? [
         { key: 'new-file', label: 'New File', icon: FilePlus, onClick: onNewFileInFolder },
+        ...(isMaxDepth ? [] : [{ key: 'new-folder', label: 'New Folder', icon: FolderPlus, onClick: onNewFolderInFolder }]),
         { key: 'upload', label: 'Upload', icon: Upload, onClick: () => fileInputRef.current?.click() },
         { key: 'rename', label: 'Rename', icon: Pencil, onClick: onRename },
         { key: 'delete', label: 'Delete', icon: Trash2, onClick: onDelete, danger: true },
