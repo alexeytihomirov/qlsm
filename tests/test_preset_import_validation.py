@@ -245,3 +245,31 @@ def test_enabled_hooks_none_when_absent():
     raw = build_zip()
     bundle = parse_import_archive(raw)
     assert bundle['enabled_hooks'] is None
+
+
+TTF_CONTENT = b'\x00\x01\x00\x00' + b'\x00' * 20
+
+
+def test_parses_font_file_in_scripts():
+    raw = build_zip(extra={'scripts/stats.ttf': TTF_CONTENT})
+    bundle = parse_import_archive(raw)
+    assert bundle['scripts']['stats.ttf'] == TTF_CONTENT
+
+
+def test_rejects_invalid_signature_font_in_scripts():
+    raw = build_zip(extra={'scripts/fake.ttf': b'not a font'})
+    with pytest.raises(PresetImportError, match='signature'):
+        parse_import_archive(raw)
+
+
+def test_accepts_pfa_without_signature_check():
+    raw = build_zip(extra={'scripts/legacy.pfa': b'%!PS-AdobeFont-1.0\n'})
+    bundle = parse_import_archive(raw)
+    assert bundle['scripts']['legacy.pfa'] == b'%!PS-AdobeFont-1.0\n'
+
+
+def test_rejects_oversized_font_in_scripts():
+    oversized = TTF_CONTENT + b'\x00' * (25 * 1024 * 1024 + 1 - len(TTF_CONTENT))
+    raw = build_zip(extra={'scripts/huge.ttf': oversized})
+    with pytest.raises(PresetImportError, match='25MB'):
+        parse_import_archive(raw)

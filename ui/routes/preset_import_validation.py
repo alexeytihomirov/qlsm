@@ -1,9 +1,11 @@
 """Validation and parsing for preset ZIP imports (counterpart of preset export)."""
 import io
 import json
+import os
 import stat
 import zipfile
 
+from ui.font_files import FONT_EXTENSIONS, MAX_FONT_FILE_SIZE, validate_font_content
 from ui.routes.draft_routes import MAX_BINARY_FILE_SIZE
 from ui.routes.instance_hooks_routes import _validate_filename as _validate_hook_filename
 from ui.routes.preset_api_routes import (
@@ -97,12 +99,14 @@ def _validate_script_path(rel_path):
             _validate_path_segment(segment, None, 'script')
         except ValueError as exc:
             raise PresetImportError(str(exc)) from exc
-    if not rel_path.lower().endswith(SCRIPT_TEXT_EXTENSIONS + SCRIPT_BINARY_EXTENSIONS):
+    ext = os.path.splitext(rel_path)[1].lower()
+    if ext not in SCRIPT_TEXT_EXTENSIONS and ext not in SCRIPT_BINARY_EXTENSIONS and ext not in FONT_EXTENSIONS:
         raise PresetImportError(f"Unsupported script file: scripts/{rel_path}")
 
 
 def _read_script_entry(archive, info, rel_path):
-    if rel_path.lower().endswith(SCRIPT_BINARY_EXTENSIONS):
+    ext = os.path.splitext(rel_path)[1].lower()
+    if ext in SCRIPT_BINARY_EXTENSIONS:
         if info.file_size > MAX_BINARY_FILE_SIZE:
             raise PresetImportError(
                 f"Script {rel_path} exceeds {MAX_BINARY_FILE_SIZE // (1024 * 1024)}MB."
@@ -110,6 +114,16 @@ def _read_script_entry(archive, info, rel_path):
         content = _read_entry(archive, info)
         if not content.startswith(ELF_MAGIC):
             raise PresetImportError(f"Script {rel_path} is not a valid ELF binary.")
+        return content
+    if ext in FONT_EXTENSIONS:
+        if info.file_size > MAX_FONT_FILE_SIZE:
+            raise PresetImportError(
+                f"Script {rel_path} exceeds {MAX_FONT_FILE_SIZE // (1024 * 1024)}MB."
+            )
+        content = _read_entry(archive, info)
+        font_error = validate_font_content(ext, content)
+        if font_error:
+            raise PresetImportError(f"Script {rel_path}: {font_error}")
         return content
     return _read_text(archive, info, 'Script')
 
