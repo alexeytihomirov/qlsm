@@ -226,6 +226,11 @@ qlsm/
 4. Ansible `sync_instance_configs_and_restart.yml` → Syncs configs and restarts
 5. Instance status → RUNNING
 
+### Server Log Retrieval
+1. Independent of any UI request, a host-side `qlsm-archive-serverlogs.timer` runs every 5 minutes and exports new journald entries for each `qlds@<port>.service` into `/home/ql/qlds-<port>/serverlogs/server.log`, tracked with a per-instance journald cursor. journald remains the log sink; the QLDS service unit template is unchanged, so no instance restart is needed for archiving to take effect. The same run applies a logrotate policy that rotates `server.log` daily or at 10 MB, keeping 90 dated, compressed archives.
+2. Frontend calls `GET /api/instances/<id>/remote-logs/list` → `list_instance_server_log_archives()` runs `list_server_log_archives.yml` to enumerate the instance's `server.log*` files.
+3. Frontend calls `GET /api/instances/<id>/remote-logs?filename=...` → current-log `lines` and `time` requests query journald through `fetch_instance_remote_logs()`, preserving the existing live-journal views. Current-log `all` and dated-archive `lines`/`all` requests use `fetch_instance_server_log()` and `fetch_server_log_archive.yml`; the playbook self-provisions the archiving machinery on older hosts, flushes pending journal entries before reading `server.log`, and fetches the selected bounded file to the controller. Archive `time` requests are rejected.
+
 ### Host Rename
 1. User edits name → `PUT /api/hosts/<id>`
 2. Database updated immediately

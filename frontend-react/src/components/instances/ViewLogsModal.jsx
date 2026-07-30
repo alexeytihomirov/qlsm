@@ -6,7 +6,9 @@ import ExpandedEditorModal from '../ExpandedEditorModal';
 import LogFilterControls from './LogFilterControls';
 import { getFilterDescription } from './logFilterOptions';
 import { logLanguage } from '../../utils/logLanguage';
-import { fetchInstanceRemoteLogs } from '../../services/api';
+import ServerLogArchivePicker from './ServerLogArchivePicker';
+import { CURRENT_SERVER_LOG } from '../../utils/serverLogArchives';
+import { fetchInstanceRemoteLogs, listInstanceServerLogArchives } from '../../services/api';
 
 /**
  * Modal for viewing QLDS instance logs fetched from the remote server.
@@ -25,6 +27,23 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
     const [lineCount, setLineCount] = useState(500);
     const [timeRange, setTimeRange] = useState('1 hour ago');
 
+    // Rotated archive state
+    const [availableFiles, setAvailableFiles] = useState([CURRENT_SERVER_LOG]);
+    const [selectedFile, setSelectedFile] = useState(CURRENT_SERVER_LOG);
+    const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+
+    const isArchive = selectedFile !== CURRENT_SERVER_LOG;
+
+    // Reset the selected source when the modal is pointed at a different instance.
+    // ServersPage keeps this modal mounted and swaps `instance` while `isOpen` stays
+    // true, so without this the refetch effect below would fire once with the
+    // previous instance's archive filename.
+    const [lastInstanceId, setLastInstanceId] = useState(instance?.id);
+    if (instance?.id !== lastInstanceId) {
+        setLastInstanceId(instance?.id);
+        setSelectedFile(CURRENT_SERVER_LOG);
+    }
+
     // Fetch logs when modal opens. Filter changes apply through the Apply button.
     const fetchLogs = async () => {
         if (!instance?.id) return;
@@ -33,10 +52,16 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
         setError(null);
 
         try {
+            // Archives have no supported time filter and the backend 400s that combination.
+            // Derive the mode here rather than depending on the fallback effect below having
+            // already corrected state — it is declared after the refetch effect, so on the
+            // render where an archive is selected it has not run yet.
+            const effectiveMode = isArchive && filterMode === 'time' ? 'lines' : filterMode;
             const data = await fetchInstanceRemoteLogs(instance.id, {
-                filterMode,
+                filterMode: effectiveMode,
                 since: timeRange,
                 lines: lineCount,
+                filename: selectedFile,
             });
             setLogs(data.logs || '-- No entries --');
         } catch (err) {
@@ -48,20 +73,55 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
         }
     };
 
+    const fetchLogFiles = async () => {
+        if (!instance?.id) return;
+        setIsLoadingFiles(true);
+        try {
+            const data = await listInstanceServerLogArchives(instance.id);
+            const files = (data.files && data.files.length > 0) ? data.files : [CURRENT_SERVER_LOG];
+            setAvailableFiles(files);
+            if (!files.includes(selectedFile)) {
+                setSelectedFile(CURRENT_SERVER_LOG);
+            }
+        } catch (err) {
+            console.error('Failed to list server log archives:', err);
+            setAvailableFiles([CURRENT_SERVER_LOG]);
+            setSelectedFile(CURRENT_SERVER_LOG);
+        } finally {
+            setIsLoadingFiles(false);
+        }
+    };
+
+    useEffect(() => {
+        if (isOpen && instance?.id) {
+            fetchLogFiles();
+        } else if (!isOpen) {
+            setLogs('');
+            setError(null);
+            setIsExpandedEditorOpen(false);
+            setSelectedFile(CURRENT_SERVER_LOG);
+            setAvailableFiles([CURRENT_SERVER_LOG]);
+            setFilterMode('lines');
+        }
+        // Intentionally omit fetchLogFiles from deps — filters are applied via the
+        // Apply button, not reactively. Effect should only run on open/instance change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, instance?.id]);
+
+    // Refetch whenever the modal opens or the selected source changes.
     useEffect(() => {
         if (isOpen && instance?.id) {
             fetchLogs();
         }
-        // Reset state when modal closes
-        if (!isOpen) {
-            setLogs('');
-            setError(null);
-            setIsExpandedEditorOpen(false);
-        }
-        // Intentionally omit fetchLogs from deps — filters are applied via the
-        // Apply button, not reactively. Effect should only run on open/instance change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, instance?.id]);
+    }, [isOpen, instance?.id, selectedFile]);
+
+    // Archives carry no supported time filter; fall back to line mode.
+    useEffect(() => {
+        if (isArchive && filterMode === 'time') {
+            setFilterMode('lines');
+        }
+    }, [isArchive, filterMode]);
 
     // Scroll to bottom of logs after load
     useEffect(() => {
@@ -108,6 +168,12 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                        <ServerLogArchivePicker
+                                            files={availableFiles}
+                                            selectedFile={selectedFile}
+                                            onSelect={setSelectedFile}
+                                            disabled={isLoadingFiles}
+                                        />
                                         <button
                                             onClick={fetchLogs}
                                             disabled={isLoading}
@@ -135,6 +201,7 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
                                     setTimeRange={setTimeRange}
                                     onApply={fetchLogs}
                                     isLoading={isLoading}
+                                    allowedModes={isArchive ? ['lines', 'all'] : ['lines', 'time', 'all']}
                                 />
 
                                 {/* Content */}

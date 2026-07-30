@@ -4,6 +4,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.19.0` | 2026-07-29 | [#159](https://github.com/dngrtech/qlsm/pull/159) | Add bounded per-instance server-log archiving and a month-grouped LIVE/ARCHIVED browser while preserving live journald line and time views. |
 | `v1.18.0` | 2026-07-29 | [#158](https://github.com/dngrtech/qlsm/pull/158) | Allow folders nested up to 3 levels deep in the Configuration Files and Plugins tabs, with a New Folder action in the folder menu. |
 | `v1.17.0` | 2026-07-25 | [#157](https://github.com/dngrtech/qlsm/pull/157) | Raise the maximum number of QLDS instances per host from 4 to 8. |
 | `v1.16.1` | 2026-07-25 | [#156](https://github.com/dngrtech/qlsm/pull/156) | Collapse a whole Global RCON command run from its header, and expand individual target output in the ALL view. |

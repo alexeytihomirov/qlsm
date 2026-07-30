@@ -1,0 +1,42 @@
+---
+- name: List QLDS Server Log Archives
+  hosts: all
+  become: yes
+  gather_facts: false
+
+  vars:
+    game_port: "{{ port }}"
+    log_dir: "/home/ql/qlds-{{ game_port }}/serverlogs"
+
+  tasks:
+    - name: Initialize server log file list
+      ansible.builtin.set_fact:
+        server_log_files: []
+
+    - name: Check if serverlogs directory exists
+      ansible.builtin.stat:
+        path: "{{ log_dir }}"
+      register: log_dir_stat
+
+    - name: Find server log files
+      ansible.builtin.find:
+        paths: "{{ log_dir }}"
+        patterns: "server.log*"
+        file_type: file
+        recurse: false
+      register: server_log_find
+      when: log_dir_stat.stat.exists and log_dir_stat.stat.isdir
+
+    - name: Set server log file list
+      ansible.builtin.set_fact:
+        server_log_files: >-
+          {{ (server_log_find.files | default([])
+              | map(attribute='path')
+              | map('basename')
+              | select('match', '^server\\.log(-\\d{8}-\\d{6}(\\.gz)?)?\\Z')
+              | list) }}
+      when: log_dir_stat.stat.exists and log_dir_stat.stat.isdir
+
+    - name: Output server log files to stdout for capture
+      ansible.builtin.debug:
+        msg: "{{ server_log_files | to_json }}"
