@@ -8,6 +8,10 @@ size and magic-byte checks live, so those three call sites don't each
 duplicate the logic.
 """
 
+# Keep in sync with FONT_EXTENSIONS in
+# frontend-react/src/components/fileManager/fileManagerUtils.js — the frontend
+# uses its copy for the upload accept filter and file-type classification.
+# tests/test_font_files.py::test_font_extensions_match_frontend enforces this.
 FONT_EXTENSIONS = frozenset({
     '.ttf', '.otf', '.ttc', '.otc', '.woff', '.woff2',
     '.eot', '.fon', '.fnt', '.pfb', '.pfa', '.pfm', '.afm',

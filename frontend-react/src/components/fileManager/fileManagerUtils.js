@@ -1,3 +1,6 @@
+// Keep in sync with FONT_EXTENSIONS in ui/font_files.py, which enforces the
+// server-side size and magic-byte checks.
+// tests/test_font_files.py::test_font_extensions_match_frontend enforces this.
 export const FONT_EXTENSIONS = [
   '.ttf', '.otf', '.ttc', '.otc', '.woff', '.woff2',
   '.eot', '.fon', '.fnt', '.pfb', '.pfa', '.pfm', '.afm',
