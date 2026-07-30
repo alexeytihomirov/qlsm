@@ -18,6 +18,7 @@ from ui.preset_support import (
     validate_user_preset_name,
 )
 from ui.routes.draft_routes import ELF_MAGIC, MAX_BINARY_FILE_SIZE
+from ui.font_files import FONT_EXTENSIONS, validate_font_content
 from ui.config_path_utils import (
     RESERVED_CONFIG_FOLDER_NAMES,
     MAX_CONFIG_FOLDER_DEPTH,
@@ -42,6 +43,7 @@ CONFIG_FILE_MAP = {
 API_TO_FILE_MAP = {v: k for k, v in CONFIG_FILE_MAP.items()}
 ALLOWED_PRESET_CONFIG_EXTENSIONS = {'.cfg', '.txt', '.ent'}
 ALLOWED_PRESET_FACTORY_EXTENSIONS = {'.factories'}
+ALLOWED_PRESET_SCRIPT_EXTENSIONS = {'.py', '.txt', '.so'} | FONT_EXTENSIONS
 PROTECTED_CONFIG_FILES = set(CONFIG_FILE_MAP.keys())
 EXPORT_FORMAT_VERSION = 1
 EXPORT_EXCLUDED_DIRS = {'__pycache__'}
@@ -303,13 +305,134 @@ def _normalize_preset_factory_files(factories_data):
     return factories
 
 
-def _validate_preset_write_payload(data, has_config_updates=True):
+def _resolve_preset_scripts_root(preset_path):
+    """Return the anchored scripts root, rejecting unsafe existing roots."""
+    preset_root = os.path.realpath(preset_path)
+    scripts_path = os.path.join(preset_path, 'scripts')
+    if os.path.islink(scripts_path):
+        raise ValueError("Preset scripts directory cannot be a symlink.")
+    if os.path.lexists(scripts_path) and not os.path.isdir(scripts_path):
+        raise ValueError("Preset scripts path must be a directory.")
+
+    expected_root = os.path.join(preset_root, 'scripts')
+    resolved_root = os.path.realpath(scripts_path)
+    try:
+        is_inside_preset = (
+            os.path.commonpath([preset_root, resolved_root]) == preset_root
+        )
+    except ValueError:
+        is_inside_preset = False
+    if (
+        not is_inside_preset or
+        resolved_root != expected_root or
+        resolved_root == preset_root
+    ):
+        raise ValueError("Preset scripts directory is outside the preset.")
+    return resolved_root
+
+
+def _prepare_script_content(rel_path, content):
+    """Return validated bytes for a script payload value."""
+    if isinstance(content, bytes):
+        # ZIP imports validate bytes, size, and signatures while parsing.
+        return content
+
+    ext = os.path.splitext(rel_path)[1].lower()
+    if ext == '.so':
+        if not isinstance(content, str):
+            raise ValueError(f"Script {rel_path} must be a base64 string.")
+        try:
+            decoded = base64.b64decode(content, validate=True)
+        except (ValueError, TypeError):
+            raise ValueError(f"Script {rel_path} is not valid base64.")
+        if len(decoded) > MAX_BINARY_FILE_SIZE:
+            raise ValueError(
+                f"Script {rel_path} exceeds "
+                f"{MAX_BINARY_FILE_SIZE // (1024 * 1024)}MB."
+            )
+        if not decoded.startswith(ELF_MAGIC):
+            raise ValueError(f"Script {rel_path} is not a valid ELF binary.")
+        return decoded
+
+    if ext in FONT_EXTENSIONS:
+        if not isinstance(content, str):
+            raise ValueError(f"Script {rel_path} must be a base64 string.")
+        try:
+            decoded = base64.b64decode(content, validate=True)
+        except (ValueError, TypeError):
+            raise ValueError(f"Script {rel_path} is not valid base64.")
+        font_error = validate_font_content(ext, decoded)
+        if font_error:
+            raise ValueError(f"Script {rel_path}: {font_error}")
+        return decoded
+
+    if not isinstance(content, str):
+        raise ValueError(f"Script {rel_path} content must be a string.")
+    try:
+        return content.encode('utf-8')
+    except UnicodeEncodeError:
+        raise ValueError(f"Script {rel_path} is not valid UTF-8 text.")
+
+
+def _validate_preset_scripts_payload(scripts_data, preset_path=None):
+    """Validate and prepare every script before any filesystem mutation."""
+    if not isinstance(scripts_data, dict):
+        raise ValueError("'scripts' must be a dict")
+
+    validated = []
+    root = (
+        _resolve_preset_scripts_root(preset_path)
+        if preset_path is not None
+        else None
+    )
+    for rel_path, content in scripts_data.items():
+        if (
+            not isinstance(rel_path, str) or not rel_path or
+            os.path.isabs(rel_path) or '\\' in rel_path
+        ):
+            raise ValueError(f"Invalid script path: {rel_path}")
+
+        segments = rel_path.split('/')
+        if len(segments) > MAX_CONFIG_FILE_DEPTH:
+            raise ValueError(f"Invalid script path: {rel_path}")
+        for index, segment in enumerate(segments):
+            allowed = (
+                ALLOWED_PRESET_SCRIPT_EXTENSIONS
+                if index == len(segments) - 1
+                else None
+            )
+            error = _shared_validate_path_segment(segment, allowed)
+            if error:
+                raise ValueError(f"Invalid script path: {rel_path}")
+
+        full_path = None
+        if root is not None:
+            full_path = os.path.realpath(os.path.join(root, *segments))
+            try:
+                is_inside_root = os.path.commonpath([root, full_path]) == root
+            except ValueError:
+                is_inside_root = False
+            if not is_inside_root or full_path == root:
+                raise ValueError(f"Invalid script path: {rel_path}")
+        prepared_content = _prepare_script_content(rel_path, content)
+        validated.append((rel_path, prepared_content, full_path))
+    return validated
+
+
+def _validate_preset_write_payload(
+    data, has_config_updates=True, preset_path=None
+):
     if has_config_updates:
         _normalize_preset_config_files(data)
     if 'config_folders' in data:
         _normalize_config_folders(data['config_folders'])
     if 'factories' in data:
         _normalize_preset_factory_files(data['factories'])
+    if 'scripts' in data:
+        return _validate_preset_scripts_payload(
+            data['scripts'], preset_path
+        )
+    return None
 
 
 def _validate_checked_plugins_payload(data):
@@ -380,16 +503,18 @@ def _read_preset_configs(preset_path):
     }
 
 
-SCRIPT_READ_EXTENSIONS = ('.py', '.txt', '.so')
+SCRIPT_READ_EXTENSIONS = ('.py', '.txt', '.so') + tuple(FONT_EXTENSIONS)
 
 
 def _read_script_file(filepath):
     """Read a plugin script for API responses.
 
-    .so files are binary and JSON responses must stay JSON-safe, so they are
-    base64-encoded here. _write_preset_scripts decodes them back on save.
+    .so and font files are binary and JSON responses must stay JSON-safe, so
+    they are base64-encoded here. _write_preset_scripts decodes them back on
+    save.
     """
-    if filepath.lower().endswith('.so'):
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == '.so' or ext in FONT_EXTENSIONS:
         with open(filepath, 'rb') as f:
             return base64.b64encode(f.read()).decode('ascii')
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -437,48 +562,25 @@ def _read_preset_scripts(preset_path):
     return scripts
 
 
-def _write_preset_scripts(preset_path, scripts_data):
+def _write_preset_scripts(
+    preset_path, scripts_data, prepared_scripts=None
+):
     """Write scripts to a preset's scripts/ folder."""
-    if not scripts_data:
+    scripts_dir = os.path.join(preset_path, 'scripts')
+    if prepared_scripts is None:
+        prepared_scripts = _validate_preset_scripts_payload(
+            scripts_data, preset_path
+        )
+    if not prepared_scripts:
         return
 
-    scripts_dir = os.path.join(preset_path, 'scripts')
     os.makedirs(scripts_dir, exist_ok=True)
 
-    for rel_path, content in scripts_data.items():
-        # Security: ensure path doesn't escape scripts directory
-        full_path = os.path.normpath(os.path.join(scripts_dir, rel_path))
-        if not full_path.startswith(os.path.normpath(scripts_dir)):
-            current_app.logger.warning(f"Skipping script with invalid path: {rel_path}")
-            continue
-
+    for rel_path, content, full_path in prepared_scripts:
         # Create parent directories if needed
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        if isinstance(content, bytes):
-            # Only reached via the ZIP-import bundle, which already ran the
-            # ELF magic + size checks in preset_import_validation.py.
-            with open(full_path, 'wb') as f:
-                f.write(content)
-        elif rel_path.lower().endswith('.so'):
-            # .so content from the API is base64 text (see _read_script_file).
-            # Validated the same way ZIP-imported .so files are: size cap and
-            # ELF magic. Raising ValueError surfaces a 400 to the caller
-            # instead of silently saving a preset with a dropped plugin.
-            try:
-                decoded = base64.b64decode(content, validate=True)
-            except (ValueError, TypeError):
-                raise ValueError(f"Script {rel_path} is not valid base64.")
-            if len(decoded) > MAX_BINARY_FILE_SIZE:
-                raise ValueError(
-                    f"Script {rel_path} exceeds {MAX_BINARY_FILE_SIZE // (1024 * 1024)}MB."
-                )
-            if not decoded.startswith(ELF_MAGIC):
-                raise ValueError(f"Script {rel_path} is not a valid ELF binary.")
-            with open(full_path, 'wb') as f:
-                f.write(decoded)
-        else:
-            with open(full_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+        with open(full_path, 'wb') as script_file:
+            script_file.write(content)
         current_app.logger.info(f"Wrote preset script: {full_path}")
 
 
@@ -878,7 +980,9 @@ def create_preset_api():
             return jsonify({"error": {"message": "Draft not found"}}), 400
 
     try:
-        _validate_preset_write_payload(data)
+        prepared_scripts = _validate_preset_write_payload(
+            data, preset_path=preset_path
+        )
     except ValueError as e:
         return _validation_error_response(e)
 
@@ -906,7 +1010,9 @@ def create_preset_api():
                 shutil.copytree(draft_user_hooks, preset_user_hooks, dirs_exist_ok=True)
             # Don't delete the draft — the form continues using it after preset save
         elif 'scripts' in data:
-            _write_preset_scripts(preset_path, data['scripts'])
+            _write_preset_scripts(
+                preset_path, data['scripts'], prepared_scripts
+            )
 
         # Step 1c: Write factories if provided
         if 'factories' in data:
@@ -1100,7 +1206,9 @@ def update_preset_api(preset_id):
         key in data for key in API_TO_FILE_MAP.keys()
     )
     try:
-        _validate_preset_write_payload(data, has_config_updates)
+        prepared_scripts = _validate_preset_write_payload(
+            data, has_config_updates, preset_path=preset.path
+        )
     except ValueError as e:
         return _validation_error_response(e)
 
@@ -1129,7 +1237,9 @@ def update_preset_api(preset_id):
                 shutil.copytree(draft_user_hooks, preset_user_hooks, dirs_exist_ok=True)
             # Don't delete the draft — the form continues using it after preset save
         elif 'scripts' in data:
-            _write_preset_scripts(preset.path, data['scripts'])
+            _write_preset_scripts(
+                preset.path, data['scripts'], prepared_scripts
+            )
 
         # Update factories if provided
         if 'factories' in data:

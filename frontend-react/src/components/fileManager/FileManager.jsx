@@ -53,7 +53,10 @@ const FileManager = forwardRef(function FileManager({
     updateContent: controller.updateContent,
   }), [controller.flushEdits, controller.updateContent]);
 
-  const creatableExtensions = capabilities.allowedExtensions.filter(ext => ext !== '.so');
+  const nonEditableExtensions = capabilities.nonEditableExtensions || [];
+  const creatableExtensions = capabilities.allowedExtensions.filter(
+    ext => !nonEditableExtensions.includes(ext)
+  );
   const newModalExistingNames = controller.newModalMode === 'folder'
     ? controller.newModalFolderSiblingNames
     : controller.siblingNames;

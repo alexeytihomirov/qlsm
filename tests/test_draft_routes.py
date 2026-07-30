@@ -504,6 +504,209 @@ class TestDraftUpload:
         assert response.status_code == 400
 
 
+TTF_CONTENT = b'\x00\x01\x00\x00' + b'\x00' * 20
+BAD_TTF_CONTENT = b'not a font at all'
+
+
+class TestDraftUploadFonts:
+    """Tests for font file uploads via POST /api/drafts/<draft_id>/upload."""
+
+    def _create_draft(self, client, auth_headers, monkeypatch, preset_with_scripts):
+        monkeypatch.setattr('ui.routes.draft_routes.CONFIGS_BASE', str(preset_with_scripts / 'configs'))
+        resp = client.post('/api/drafts/', json={
+            'source': 'preset', 'preset': 'default'
+        }, headers=auth_headers)
+        return resp.get_json()['data']['draft_id']
+
+    def test_upload_ttf_with_valid_signature(self, client, auth_headers, preset_with_scripts, monkeypatch, drafts_base):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        data = {'file': (io.BytesIO(TTF_CONTENT), 'stats.ttf')}
+        response = client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data=data, content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        saved = os.path.join(drafts_base, draft_id, 'scripts', 'stats.ttf')
+        assert os.path.exists(saved)
+        with open(saved, 'rb') as f:
+            assert f.read() == TTF_CONTENT
+
+    def test_upload_ttf_with_invalid_signature_rejected(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        data = {'file': (io.BytesIO(BAD_TTF_CONTENT), 'bad.ttf')}
+        response = client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data=data, content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        assert response.status_code == 400
+        assert 'signature' in response.get_json()['error']['message'].lower()
+
+    def test_upload_pfa_without_signature_check_accepted(self, client, auth_headers, preset_with_scripts, monkeypatch, drafts_base):
+        """`.pfa` has no reliable magic bytes — extension+size only."""
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        data = {'file': (io.BytesIO(b'%!PS-AdobeFont-1.0\n'), 'legacy.pfa')}
+        response = client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data=data, content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert os.path.exists(os.path.join(drafts_base, draft_id, 'scripts', 'legacy.pfa'))
+
+    def test_upload_font_exceeding_25mb_rejected(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        big_content = TTF_CONTENT + b'\x00' * (25 * 1024 * 1024 + 1 - len(TTF_CONTENT))
+        data = {'file': (io.BytesIO(big_content), 'huge.ttf')}
+        response = client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data=data, content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        assert response.status_code == 400
+        assert '25MB' in response.get_json()['error']['message']
+
+    def test_font_appears_in_tree_with_font_file_type(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(TTF_CONTENT), 'stats.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        response = client.get(f'/api/drafts/{draft_id}/tree', headers=auth_headers)
+        tree = response.get_json()['data']
+        ttf_file = next(f for f in tree if f['name'] == 'stats.ttf')
+        assert ttf_file['file_type'] == 'font'
+
+    def test_font_cannot_be_read_as_text_content(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(TTF_CONTENT), 'stats.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        response = client.get(
+            f'/api/drafts/{draft_id}/content?path=stats.ttf',
+            headers=auth_headers
+        )
+        assert response.status_code == 400
+
+    def test_download_font_returns_exact_bytes(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        content = b'\x00\x01\x00\x00\xff\x80font\x00bytes'
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(content), 'stats.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers,
+        )
+
+        response = client.get(
+            f'/api/drafts/{draft_id}/file?path=stats.ttf',
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.data == content
+        assert response.headers['Content-Disposition'].startswith('attachment;')
+
+    def test_download_font_requires_authentication(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+
+        response = client.get(f'/api/drafts/{draft_id}/file?path=stats.ttf')
+
+        assert response.status_code == 401
+
+    def test_download_rejects_path_traversal(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+
+        response = client.get(
+            f'/api/drafts/{draft_id}/file?path=../outside.ttf',
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+
+    def test_download_rejects_symlink_escape(
+        self, client, auth_headers, preset_with_scripts, monkeypatch, drafts_base, tmp_path
+    ):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        outside = tmp_path / 'outside.ttf'
+        outside.write_bytes(TTF_CONTENT)
+        scripts_dir = os.path.join(drafts_base, draft_id, 'scripts')
+        os.symlink(outside, os.path.join(scripts_dir, 'linked.ttf'))
+
+        response = client.get(
+            f'/api/drafts/{draft_id}/file?path=linked.ttf',
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+
+    def test_rename_font_preserving_extension(self, client, auth_headers, preset_with_scripts, monkeypatch, drafts_base):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(TTF_CONTENT), 'old.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        response = client.patch(f'/api/drafts/{draft_id}/rename', json={
+            'old_path': 'old.ttf', 'new_path': 'new.ttf',
+        }, headers=auth_headers)
+        assert response.status_code == 200
+        scripts_dir = os.path.join(drafts_base, draft_id, 'scripts')
+        assert os.path.exists(os.path.join(scripts_dir, 'new.ttf'))
+        assert not os.path.exists(os.path.join(scripts_dir, 'old.ttf'))
+
+    def test_rename_font_does_not_require_binary_context(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        """Unlike .so, renaming a font never requires context_type/context_key."""
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(TTF_CONTENT), 'old.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        response = client.patch(f'/api/drafts/{draft_id}/rename', json={
+            'old_path': 'old.ttf', 'new_path': 'new.ttf',
+        }, headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_rename_font_rejects_extension_change(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(TTF_CONTENT), 'old.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        response = client.patch(f'/api/drafts/{draft_id}/rename', json={
+            'old_path': 'old.ttf', 'new_path': 'old.otf',
+        }, headers=auth_headers)
+        assert response.status_code == 400
+
+    def test_commit_carries_font_file_to_instance(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(TTF_CONTENT), 'stats.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers
+        )
+        target_dir = str(preset_with_scripts / 'configs' / 'font-host' / '1' / 'scripts')
+        os.makedirs(target_dir, exist_ok=True)
+        response = client.post(f'/api/drafts/{draft_id}/commit', json={
+            'target': 'instance', 'host': 'font-host', 'instance_id': '1'
+        }, headers=auth_headers)
+        assert response.status_code == 200
+        with open(os.path.join(target_dir, 'stats.ttf'), 'rb') as f:
+            assert f.read() == TTF_CONTENT
+
+
 class TestDraftDeleteFile:
     """Tests for DELETE /api/drafts/<draft_id>/file endpoint."""
 

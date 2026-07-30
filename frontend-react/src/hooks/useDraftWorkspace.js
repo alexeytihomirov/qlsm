@@ -5,6 +5,7 @@ import {
   touchDraft,
   getDraftTree,
   getDraftContent,
+  downloadDraftFile,
   saveDraftContent,
   uploadToDraft,
   deleteDraftFile,
@@ -106,6 +107,11 @@ export function useDraftWorkspace({ source, preset, host, instanceId, active }) 
     return result.content;
   }, [draftId]);
 
+  const downloadFile = useCallback(async (path) => {
+    if (!draftId) return null;
+    return downloadDraftFile(draftId, path);
+  }, [draftId]);
+
   const writeContent = useCallback(async (path, content) => {
     if (!draftId) return;
     await saveDraftContent(draftId, path, content);
@@ -184,7 +190,7 @@ export function useDraftWorkspace({ source, preset, host, instanceId, active }) 
 
   return {
     draftId, tree, loading, error,
-    refreshTree, readContent, writeContent, upload, deleteFile, renameFile,
+    refreshTree, readContent, downloadFile, writeContent, upload, deleteFile, renameFile,
     createFolder, deleteFolder, renameFolder,
     hasChanges: mutationCount > 0,
     commit, discard, consume,

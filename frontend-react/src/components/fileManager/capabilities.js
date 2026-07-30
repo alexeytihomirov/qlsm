@@ -1,3 +1,5 @@
+import { FONT_EXTENSIONS } from './fileManagerUtils';
+
 export const CONFIG_CAPS = {
   canCreate: true,
   canUpload: true,
@@ -22,7 +24,8 @@ export const PLUGIN_CAPS = {
   canCreateFolder: true,
   canCheckEnable: true,
   canValidate: true,
-  allowedExtensions: ['.py', '.txt', '.so'],
+  allowedExtensions: ['.py', '.txt', '.so', ...FONT_EXTENSIONS],
+  nonEditableExtensions: ['.so', ...FONT_EXTENSIONS],
   newFileTemplate: () => '',
   protectedFiles: [],
   reservedFolderNames: [],

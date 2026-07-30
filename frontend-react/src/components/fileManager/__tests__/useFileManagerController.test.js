@@ -203,6 +203,79 @@ describe('useFileManagerController initial selection', () => {
     vi.unstubAllGlobals();
   });
 
+  it('downloads font rows through the byte-safe adapter without text conversion', async () => {
+    const bytes = new Uint8Array([0, 255, 128, 65, 0]);
+    const binaryBlob = new Blob([bytes], { type: 'application/octet-stream' });
+    const createObjectURL = vi.fn(() => 'blob:font-url');
+    const revokeObjectURL = vi.fn();
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL,
+    });
+    const adapter = createAdapter([]);
+    adapter.downloadFile = vi.fn().mockResolvedValue(binaryBlob);
+
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.ttf'] },
+    }));
+
+    await act(async () => {
+      await result.current.handleDownload({
+        name: 'score.ttf',
+        path: 'fonts/score.ttf',
+        type: 'file',
+      });
+    });
+
+    expect(adapter.downloadFile).toHaveBeenCalledWith('fonts/score.ttf');
+    expect(adapter.readContent).not.toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledWith(binaryBlob);
+    await expect(createObjectURL.mock.calls[0][0].arrayBuffer())
+      .resolves.toEqual(bytes.buffer);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:font-url');
+
+    anchorClick.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('selects a font without reading text or binary metadata', async () => {
+    const font = {
+      name: 'score.ttf',
+      path: 'score.ttf',
+      type: 'file',
+    };
+    const adapter = createAdapter([font]);
+    const getBinaryMeta = vi.fn();
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.ttf'] },
+      getBinaryMeta,
+    }));
+
+    await waitFor(() => expect(result.current.selectedFile?.path).toBe('score.ttf'));
+    expect(adapter.readContent).not.toHaveBeenCalled();
+    expect(getBinaryMeta).not.toHaveBeenCalled();
+  });
+
+  it('does not text-read the immediate fallback item after a font upload', async () => {
+    const adapter = createAdapter([]);
+    adapter.upload.mockResolvedValue({ path: 'score.ttf' });
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.ttf'] },
+    }));
+
+    await act(async () => {
+      await result.current.handleUpload(new File(['font bytes'], 'score.ttf'));
+    });
+
+    expect(result.current.selectedFile?.path).toBe('score.ttf');
+    expect(adapter.readContent).not.toHaveBeenCalled();
+  });
+
   it('does not refetch from the server after uploading into a state adapter', async () => {
     const readServerContent = vi.fn().mockRejectedValue(new Error('404 not found'));
 

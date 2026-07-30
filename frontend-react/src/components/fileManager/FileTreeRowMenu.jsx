@@ -4,6 +4,7 @@ import { Copy, Download, FilePlus, FolderPlus, MoreVertical, Pencil, Trash2, Upl
 
 export default function FileTreeRowMenu({
   itemType,
+  fileType,
   isProtected = false,
   isMaxDepth = false,
   capabilities = {},
@@ -17,6 +18,7 @@ export default function FileTreeRowMenu({
 }) {
   const fileInputRef = useRef(null);
   const isFolder = itemType === 'folder';
+  const canCopyContent = fileType !== 'binary' && fileType !== 'font';
 
   if (isFolder && !capabilities.canCreateFolder) return null;
 
@@ -30,7 +32,7 @@ export default function FileTreeRowMenu({
       ]
     : [
         { key: 'download', label: 'Download', icon: Download, onClick: onDownload },
-        { key: 'copy', label: 'Copy Content', icon: Copy, onClick: onCopyContent },
+        ...(canCopyContent ? [{ key: 'copy', label: 'Copy Content', icon: Copy, onClick: onCopyContent }] : []),
         { key: 'rename', label: 'Rename', icon: Pencil, onClick: onRename, disabled: isProtected, disabledTitle: 'Built-in file, cannot be renamed' },
         { key: 'delete', label: 'Delete', icon: Trash2, onClick: onDelete, danger: true, disabled: isProtected, disabledTitle: 'Built-in file, cannot be deleted' },
       ];

@@ -10,12 +10,13 @@ import shutil
 import time
 import uuid
 import sqlalchemy
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required
 from werkzeug.utils import secure_filename
 from ui import db
 from ui.models import BinaryMetadata
 from ui.preset_support import resolve_preset_subdir
+from ui.font_files import FONT_EXTENSIONS, MAX_FONT_FILE_SIZE, validate_font_content
 
 draft_api_bp = Blueprint('draft_api_routes', __name__)
 
@@ -141,8 +142,9 @@ def _is_safe_name(value):
     return '/' not in value and '\\' not in value and '..' not in value
 
 
-ALLOWED_EXTENSIONS = {'.py', '.txt', '.so'}
+ALLOWED_EXTENSIONS = {'.py', '.txt', '.so'} | FONT_EXTENSIONS
 FILE_TYPE_MAP = {'.py': 'python', '.txt': 'text', '.so': 'binary'}
+FILE_TYPE_MAP.update({ext: 'font' for ext in FONT_EXTENSIONS})
 VALID_BINARY_CONTEXT_TYPES = frozenset({'preset', 'instance'})
 MAX_DRAFT_FOLDER_DEPTH = 3
 MAX_DRAFT_FILE_DEPTH = 4
@@ -213,9 +215,12 @@ ELF_MAGIC = b'\x7fELF'
 
 def _is_safe_draft_path(draft_scripts_path, relative_path):
     """Validate that a relative path doesn't escape the draft directory."""
-    full_path = os.path.normpath(os.path.join(draft_scripts_path, relative_path))
-    safe_prefix = os.path.normpath(draft_scripts_path) + os.sep
-    return full_path.startswith(safe_prefix) or full_path == os.path.normpath(draft_scripts_path)
+    root = os.path.realpath(draft_scripts_path)
+    full_path = os.path.realpath(os.path.join(root, relative_path))
+    try:
+        return os.path.commonpath([root, full_path]) == root
+    except ValueError:
+        return False
 
 
 def _normalize_draft_file_path(relative_path):
@@ -371,6 +376,35 @@ def get_draft_content(draft_id):
     return jsonify({"data": {"path": path, "content": content}}), 200
 
 
+@draft_api_bp.route('/<draft_id>/file', methods=['GET'])
+@jwt_required()
+def download_draft_file(draft_id):
+    """Download an allowed draft file without decoding or re-encoding it."""
+    if not _validate_draft_id(draft_id):
+        return jsonify({"error": {"message": "Invalid draft ID"}}), 400
+    if not _draft_exists(draft_id):
+        return jsonify({"error": {"message": "Draft not found"}}), 404
+
+    path = _normalize_draft_file_path(request.args.get('path'))
+    if path is None:
+        return jsonify({"error": {"message": "Invalid file path"}}), 400
+    if os.path.splitext(path)[1].lower() not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": {"message": "Unsupported file extension"}}), 400
+
+    scripts_path = _get_draft_scripts_path(draft_id)
+    full_path = os.path.realpath(os.path.join(scripts_path, *path.split('/')))
+    if not _is_safe_draft_path(scripts_path, path):
+        return jsonify({"error": {"message": "Invalid file path"}}), 400
+    if not os.path.isfile(full_path):
+        return jsonify({"error": {"message": "File not found"}}), 404
+
+    return send_file(
+        full_path,
+        as_attachment=True,
+        download_name=os.path.basename(path),
+    )
+
+
 @draft_api_bp.route('/<draft_id>/content', methods=['PUT'])
 @jwt_required()
 def save_draft_content(draft_id):
@@ -418,13 +452,15 @@ def _get_max_size(ext):
     """Return the max file size for a given extension."""
     if ext == '.so':
         return MAX_BINARY_FILE_SIZE
+    if ext in FONT_EXTENSIONS:
+        return MAX_FONT_FILE_SIZE
     return MAX_TEXT_FILE_SIZE
 
 
 @draft_api_bp.route('/<draft_id>/upload', methods=['POST'])
 @jwt_required()
 def upload_to_draft(draft_id):
-    """Upload a file to the draft workspace. Supports .py, .txt, .so."""
+    """Upload a file to the draft workspace. Supports .py, .txt, .so, and font files."""
     if not _validate_draft_id(draft_id):
         return jsonify({"error": {"message": "Invalid draft ID"}}), 400
     if not _draft_exists(draft_id):
@@ -441,7 +477,10 @@ def upload_to_draft(draft_id):
     ext = os.path.splitext(filename)[1].lower()
 
     if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": {"message": f"Unsupported extension {ext}. Allowed: .py, .txt, .so"}}), 400
+        return jsonify({"error": {"message": (
+            f"Unsupported extension {ext}. Allowed: .py, .txt, .so, or a font file "
+            "(.ttf, .otf, .ttc, .otc, .woff, .woff2, .eot, .fon, .fnt, .pfb, .pfa, .pfm, .afm)"
+        )}}), 400
 
     content = file.read()
     max_size = _get_max_size(ext)
@@ -452,6 +491,10 @@ def upload_to_draft(draft_id):
     if ext == '.so':
         if len(content) < 4 or content[:4] != ELF_MAGIC:
             return jsonify({"error": {"message": "Invalid .so file: missing ELF header. Expected a compiled shared library."}}), 400
+    elif ext in FONT_EXTENSIONS:
+        font_error = validate_font_content(ext, content)
+        if font_error:
+            return jsonify({"error": {"message": font_error}}), 400
 
     target_path = request.form.get('target_path', '')
     scripts_path = _get_draft_scripts_path(draft_id)

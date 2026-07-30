@@ -30,6 +30,14 @@ export const getDraftContent = async (draftId, path) => {
   return response.data.data;
 };
 
+export const downloadDraftFile = async (draftId, path) => {
+  const params = new URLSearchParams({ path });
+  const response = await apiClient.get(`/drafts/${draftId}/file?${params}`, {
+    responseType: 'blob',
+  });
+  return response.data;
+};
+
 export const saveDraftContent = async (draftId, path, content) => {
   const response = await apiClient.put(`/drafts/${draftId}/content`, { path, content });
   return response.data.data;

@@ -1,3 +1,11 @@
+// Keep in sync with FONT_EXTENSIONS in ui/font_files.py, which enforces the
+// server-side size and magic-byte checks.
+// tests/test_font_files.py::test_font_extensions_match_frontend enforces this.
+export const FONT_EXTENSIONS = [
+  '.ttf', '.otf', '.ttc', '.otc', '.woff', '.woff2',
+  '.eot', '.fon', '.fnt', '.pfb', '.pfa', '.pfm', '.afm',
+];
+
 export function flattenFiles(items = []) {
   return items.flatMap(item => {
     if (item.type === 'folder') return flattenFiles(item.children || []);
@@ -38,8 +46,10 @@ export function getInitialSelectableFile(files = [], {
 }
 
 export function getFileType(name = '') {
-  if (name.endsWith('.py')) return 'python';
-  if (name.endsWith('.so')) return 'binary';
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.py')) return 'python';
+  if (lower.endsWith('.so')) return 'binary';
+  if (FONT_EXTENSIONS.some(extension => lower.endsWith(extension))) return 'font';
   return 'text';
 }
 

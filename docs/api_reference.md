@@ -512,7 +512,8 @@ lock and return `200` immediately.
 | `/drafts/<draft_id>/tree` | GET | Get the draft plugin file tree |
 | `/drafts/<draft_id>/content` | GET | Read a draft `.py` or `.txt` file (`?path=`) |
 | `/drafts/<draft_id>/content` | PUT | Write a draft `.py` or `.txt` file |
-| `/drafts/<draft_id>/upload` | POST | Upload `.py`, `.txt`, or `.so` into the draft |
+| `/drafts/<draft_id>/upload` | POST | Upload `.py`, `.txt`, `.so`, or a font file into the draft |
+| `/drafts/<draft_id>/file` | GET | Download an allowed draft file as raw bytes (`?path=`) |
 | `/drafts/<draft_id>/file` | DELETE | Delete a draft file (`?path=`) |
 | `/drafts/<draft_id>/rename` | PATCH | Rename a draft file without changing its extension |
 | `/drafts/<draft_id>/folders` | POST | Create a folder inside the draft scripts directory |
@@ -584,7 +585,7 @@ Instance source:
 }
 ```
 
-Draft paths must be relative paths inside the draft. Text reads and writes support `.py` and `.txt` up to 256 KB. Uploads support `.py`, `.txt`, and ELF `.so` files; `.so` uploads are capped at 10 MB. File paths (content, upload, rename, delete) may have at most 4 path segments (3 folders + filename); folder-only paths (the `/folders` endpoints below) may have at most 3 segments.
+Draft paths must be relative paths inside the draft. Text reads and writes support `.py` and `.txt` up to 256 KB. Raw file downloads preserve the stored bytes and return the file as an attachment. Uploads support `.py`, `.txt`, and ELF `.so` files (`.so` capped at 10 MB), plus 13 font extensions — `.ttf`, `.otf`, `.ttc`, `.otc`, `.woff`, `.woff2`, `.eot`, `.fon`, `.fnt`, `.pfb`, `.pfa`, `.pfm`, `.afm` — capped at 25 MB each. `.ttf`/`.otf`/`.ttc`/`.otc`/`.woff`/`.woff2`/`.pfb`/`.afm` uploads are additionally checked against their expected file signature; the remaining font extensions have no reliable signature and are validated by extension and size only. File paths (content, download, upload, rename, delete) may have at most 4 path segments (3 folders + filename); folder-only paths (the `/folders` endpoints below) may have at most 3 segments.
 
 ### Rename Draft File Request
 ```json
@@ -866,7 +867,7 @@ Responses:
 
 For legacy presets, `checked_plugins`, `checked_factories`, or `enabled_hooks` may be `null`. A `null` `checked_factories` value means the preset predates explicit factory selection, so all files in `factories/` are treated as selected for compatibility. A `null` `enabled_hooks` value means the preset was saved without recording hook enablement — loading it does not touch the target instance's current `ld_preload_hooks`.
 
-`scripts` values are UTF-8 text for `.py`/`.txt` files. `.so` plugin files are binary, so their value is base64-encoded; write requests must send `.so` content the same way (raw bytes are only accepted for `.so` files arriving through preset ZIP import, not through this JSON API).
+`scripts` values are UTF-8 text for `.py`/`.txt` files. `.so` plugin files and font files are binary, so their values are base64-encoded; write requests must send `.so` and font content the same way (raw bytes are only accepted for `.so` plugin files and font files arriving through preset ZIP import, not through this JSON API).
 
 ### Preset Name Validation
 - Pattern: `^[a-zA-Z0-9_-]+$` (letters, numbers, hyphens, underscores)

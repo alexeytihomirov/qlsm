@@ -104,7 +104,7 @@ QLSM assembles all managed cvars into a single argument string that is passed to
 The `Plugins` tab manages Python plugins for this instance:
 
 - folders and files in the plugin tree
-- `.py`, `.txt`, and native `.so` plugin files
+- `.py`, `.txt`, native `.so` plugin files, and font files (`.ttf`, `.otf`, `.ttc`, `.otc`, `.woff`, `.woff2`, `.eot`, `.fon`, `.fnt`, `.pfb`, `.pfa`, `.pfm`, `.afm`) for plugins that bundle a font asset
 - checkbox selection for which Python plugins are included in `qlx_plugins`
 - `Validate` button for checking Python plugin files
 - binary file details and descriptions for `.so` files
@@ -114,6 +114,8 @@ The `Plugins` tab manages Python plugins for this instance:
 Use **New**, **Upload**, **Rename**, and **Delete** to stage plugin file changes. Plugin changes are saved through a draft workspace while the modal or deploy form is open; they are committed to the instance or preset only when you save, update, or create.
 
 `.so` files are shown as binary files instead of text. You can replace the binary and add a short description so the file is easier to identify later.
+
+Font files are shown the same way — binary, download/replace-only — but without the description field. Like any other file in this tab, they always sync to the instance or preset; there's no separate "enable" toggle for a font, since it's just an asset your plugin's own code loads at runtime.
 
 ### Python Dependency Auto-Install
 

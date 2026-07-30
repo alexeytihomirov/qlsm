@@ -1,26 +1,22 @@
 import { useMemo, useRef, useState } from 'react';
-import { Box, Code, FileText, Folder, FolderOpen, Lock, Search } from 'lucide-react';
+import { Box, Code, FileText, Folder, FolderOpen, Lock, Search, Type } from 'lucide-react';
 
 import FileTreeRowMenu from './FileTreeRowMenu';
-import { sortFileTree, MAX_CONFIG_FOLDER_DEPTH } from './fileManagerUtils';
+import { getFileType, sortFileTree, MAX_CONFIG_FOLDER_DEPTH } from './fileManagerUtils';
 
 const FILE_TYPE_ICONS = {
   python: Code,
   text: FileText,
   binary: Box,
+  font: Type,
 };
 
 const FILE_TYPE_COLORS = {
   python: 'text-blue-400',
   text: 'text-gray-400',
   binary: 'text-purple-400',
+  font: 'text-pink-400',
 };
-
-function getFileType(name = '') {
-  if (name.endsWith('.py')) return 'python';
-  if (name.endsWith('.so')) return 'binary';
-  return 'text';
-}
 
 function isCheckableFile(item, fileType, checkable) {
   if (!checkable || item.type === 'folder') return false;
@@ -129,6 +125,7 @@ function TreeItem({
         </button>
         <FileTreeRowMenu
           itemType={item.type}
+          fileType={fileType}
           isProtected={!!item.protected}
           isMaxDepth={isFolder && item.path.split('/').length >= MAX_CONFIG_FOLDER_DEPTH}
           capabilities={capabilities}

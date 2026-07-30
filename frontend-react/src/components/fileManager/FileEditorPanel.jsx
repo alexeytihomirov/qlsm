@@ -12,12 +12,7 @@ import CodeMirrorEditor from '../CodeMirrorEditor';
 import { validateScript } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 import BinaryDetailsPanel from './BinaryDetailsPanel';
-
-function getFileType(name = '') {
-  if (name.endsWith('.py')) return 'python';
-  if (name.endsWith('.so')) return 'binary';
-  return 'text';
-}
+import { getFileType } from './fileManagerUtils';
 
 export default function FileEditorPanel({
   selectedFile,
@@ -73,7 +68,7 @@ export default function FileEditorPanel({
     );
   }
 
-  if (fileType === 'binary') {
+  if (fileType === 'binary' || fileType === 'font') {
     return (
       <BinaryDetailsPanel
         filePath={selectedFile.path}
@@ -81,8 +76,8 @@ export default function FileEditorPanel({
         size={selectedFile.size}
         lastModified={selectedFile.last_modified}
         onReplace={onReplace}
-        description={binaryDescription}
-        onDescriptionSave={onSaveBinaryDescription}
+        description={fileType === 'binary' ? binaryDescription : undefined}
+        onDescriptionSave={fileType === 'binary' ? onSaveBinaryDescription : undefined}
       />
     );
   }
