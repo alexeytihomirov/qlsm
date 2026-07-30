@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 from ui import db
 from ui.models import BinaryMetadata
 from ui.preset_support import resolve_preset_subdir
+from ui.font_files import FONT_EXTENSIONS, MAX_FONT_FILE_SIZE, validate_font_content
 
 draft_api_bp = Blueprint('draft_api_routes', __name__)
 
@@ -141,8 +142,9 @@ def _is_safe_name(value):
     return '/' not in value and '\\' not in value and '..' not in value
 
 
-ALLOWED_EXTENSIONS = {'.py', '.txt', '.so'}
+ALLOWED_EXTENSIONS = {'.py', '.txt', '.so'} | FONT_EXTENSIONS
 FILE_TYPE_MAP = {'.py': 'python', '.txt': 'text', '.so': 'binary'}
+FILE_TYPE_MAP.update({ext: 'font' for ext in FONT_EXTENSIONS})
 VALID_BINARY_CONTEXT_TYPES = frozenset({'preset', 'instance'})
 MAX_DRAFT_FOLDER_DEPTH = 3
 MAX_DRAFT_FILE_DEPTH = 4
@@ -418,13 +420,15 @@ def _get_max_size(ext):
     """Return the max file size for a given extension."""
     if ext == '.so':
         return MAX_BINARY_FILE_SIZE
+    if ext in FONT_EXTENSIONS:
+        return MAX_FONT_FILE_SIZE
     return MAX_TEXT_FILE_SIZE
 
 
 @draft_api_bp.route('/<draft_id>/upload', methods=['POST'])
 @jwt_required()
 def upload_to_draft(draft_id):
-    """Upload a file to the draft workspace. Supports .py, .txt, .so."""
+    """Upload a file to the draft workspace. Supports .py, .txt, .so, and font files."""
     if not _validate_draft_id(draft_id):
         return jsonify({"error": {"message": "Invalid draft ID"}}), 400
     if not _draft_exists(draft_id):
@@ -441,7 +445,10 @@ def upload_to_draft(draft_id):
     ext = os.path.splitext(filename)[1].lower()
 
     if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": {"message": f"Unsupported extension {ext}. Allowed: .py, .txt, .so"}}), 400
+        return jsonify({"error": {"message": (
+            f"Unsupported extension {ext}. Allowed: .py, .txt, .so, or a font file "
+            "(.ttf, .otf, .ttc, .otc, .woff, .woff2, .eot, .fon, .fnt, .pfb, .pfa, .pfm, .afm)"
+        )}}), 400
 
     content = file.read()
     max_size = _get_max_size(ext)
@@ -452,6 +459,10 @@ def upload_to_draft(draft_id):
     if ext == '.so':
         if len(content) < 4 or content[:4] != ELF_MAGIC:
             return jsonify({"error": {"message": "Invalid .so file: missing ELF header. Expected a compiled shared library."}}), 400
+    elif ext in FONT_EXTENSIONS:
+        font_error = validate_font_content(ext, content)
+        if font_error:
+            return jsonify({"error": {"message": font_error}}), 400
 
     target_path = request.form.get('target_path', '')
     scripts_path = _get_draft_scripts_path(draft_id)
