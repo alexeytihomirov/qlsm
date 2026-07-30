@@ -50,10 +50,13 @@ function PresetSaveTab({
   }, []);
 
   const handleNameChange = (next) => {
-    setName(next);
-    setValidationError(validateNameLocally(next));
+    const normalizedName = next ?? '';
+    setName(normalizedName);
+    setValidationError(validateNameLocally(normalizedName));
     if (descriptionTouched) return;
-    const match = editablePresets.find((p) => p.name.toLowerCase() === next.trim().toLowerCase());
+    const match = editablePresets.find(
+      (p) => p.name.toLowerCase() === normalizedName.trim().toLowerCase()
+    );
     setDescription(match ? (match.description || '') : '');
   };
 
