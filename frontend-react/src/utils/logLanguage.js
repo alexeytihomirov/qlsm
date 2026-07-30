@@ -46,6 +46,12 @@ const logLanguage = StreamLanguage.define({
             return 'number';
         }
 
+        // Match QLDS's own two-digit-year timestamps like "26-07-29 09:36:31".
+        // The rule above requires a four-digit year, so these never matched.
+        if (stream.match(/\b\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\b/)) {
+            return 'number';
+        }
+
         // Match Python exception types
         if (stream.match(/\b\w+Error\b|\b\w+Exception\b|\bTraceback\b/)) {
             return 'invalid'; // Red color

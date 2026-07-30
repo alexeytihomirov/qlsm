@@ -459,17 +459,28 @@ export const setInstanceHookDescription = async (instanceId, filename, descripti
 
 export const fetchInstanceRemoteLogs = async (instanceId, options = {}) => {
   try {
-    const { filterMode = 'lines', since = '1 hour ago', lines = 500 } = options;
+    const { filterMode = 'lines', since = '1 hour ago', lines = 500, filename = 'server.log' } = options;
     const params = new URLSearchParams({
       filter_mode: filterMode,
       since: since,
-      lines: lines.toString()
+      lines: lines.toString(),
+      filename: filename
     });
     const response = await apiClient.get(`/instances/${instanceId}/remote-logs?${params.toString()}`);
-    return response.data.data; // { logs, instance_name, port, filter_mode, lines, since }
+    return response.data.data; // { logs, instance_name, port, filter_mode, lines, since, filename }
   } catch (error) {
     console.error(`Failed to fetch remote logs for instance ${instanceId}:`, error.response ? error.response.data : error.message);
     throw error.response ? error.response.data : new Error(`Failed to fetch remote logs for instance ${instanceId}`);
+  }
+};
+
+export const listInstanceServerLogArchives = async (instanceId) => {
+  try {
+    const response = await apiClient.get(`/instances/${instanceId}/remote-logs/list`);
+    return response.data.data; // { files, instance_name }
+  } catch (error) {
+    console.error(`Failed to list server log archives for instance ${instanceId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to list server log archives for instance ${instanceId}`);
   }
 };
 
