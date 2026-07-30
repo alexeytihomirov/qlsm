@@ -4,7 +4,9 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
-| `v1.20.0` | 2026-07-30 | — | Add validated upload, preset round-tripping, and download/replace UI for font assets used by Quake Live plugins. |
+| `v1.20.0` | 2026-07-30 | [#163](https://github.com/dngrtech/qlsm/pull/163) | Add validated upload, preset round-tripping, and download/replace UI for font assets used by Quake Live plugins. |
+| `v1.19.3` | 2026-07-30 | [#162](https://github.com/dngrtech/qlsm/pull/162) | Fix a crash when saving a preset after clearing its name, and prevent an in-flight name validation from saving a stale name. |
+| `v1.19.2` | 2026-07-30 | [#161](https://github.com/dngrtech/qlsm/pull/161) | Import presets from re-zipped exports that nest every entry under a single top-level folder. |
 | `v1.19.1` | 2026-07-29 | [#160](https://github.com/dngrtech/qlsm/pull/160) | Keep unexpected server-log archive controller errors in application logs instead of exposing internal details through API responses. |
 | `v1.19.0` | 2026-07-29 | [#159](https://github.com/dngrtech/qlsm/pull/159) | Add bounded per-instance server-log archiving and a month-grouped LIVE/ARCHIVED browser while preserving live journald line and time views. |
 | `v1.18.0` | 2026-07-29 | [#158](https://github.com/dngrtech/qlsm/pull/158) | Allow folders nested up to 3 levels deep in the Configuration Files and Plugins tabs, with a New Folder action in the folder menu. |
