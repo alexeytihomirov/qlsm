@@ -34,6 +34,16 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
 
     const isArchive = selectedFile !== CURRENT_SERVER_LOG;
 
+    // Reset the selected source when the modal is pointed at a different instance.
+    // ServersPage keeps this modal mounted and swaps `instance` while `isOpen` stays
+    // true, so without this the refetch effect below would fire once with the
+    // previous instance's archive filename.
+    const [lastInstanceId, setLastInstanceId] = useState(instance?.id);
+    if (instance?.id !== lastInstanceId) {
+        setLastInstanceId(instance?.id);
+        setSelectedFile(CURRENT_SERVER_LOG);
+    }
+
     // Fetch logs when modal opens. Filter changes apply through the Apply button.
     const fetchLogs = async () => {
         if (!instance?.id) return;
@@ -71,6 +81,7 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
         } catch (err) {
             console.error('Failed to list server log archives:', err);
             setAvailableFiles([CURRENT_SERVER_LOG]);
+            setSelectedFile(CURRENT_SERVER_LOG);
         } finally {
             setIsLoadingFiles(false);
         }
