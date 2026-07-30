@@ -142,7 +142,7 @@ def list_instance_server_log_archives(instance_id):
         return False, [], "Timeout while listing server log archives from remote host."
     except Exception as e:
         log.exception(f"Exception listing server log archives for instance {instance_id}: {e}")
-        return False, [], str(e)
+        return False, [], "Failed to list server log archives."
 
 
 def fetch_instance_server_log(instance_id, filename=CURRENT_SERVER_LOG,
@@ -230,7 +230,7 @@ def fetch_instance_server_log(instance_id, filename=CURRENT_SERVER_LOG,
         return False, "", "Timeout while fetching server logs from remote host."
     except Exception as e:
         log.exception(f"Exception fetching server log for instance {instance_id}: {e}")
-        return False, "", str(e)
+        return False, "", "Failed to fetch server logs."
     finally:
         if local_dir:
             shutil.rmtree(local_dir, ignore_errors=True)
