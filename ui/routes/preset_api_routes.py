@@ -18,6 +18,7 @@ from ui.preset_support import (
     validate_user_preset_name,
 )
 from ui.routes.draft_routes import ELF_MAGIC, MAX_BINARY_FILE_SIZE
+from ui.font_files import FONT_EXTENSIONS, MAX_FONT_FILE_SIZE, validate_font_content
 from ui.config_path_utils import (
     RESERVED_CONFIG_FOLDER_NAMES,
     MAX_CONFIG_FOLDER_DEPTH,
@@ -380,16 +381,18 @@ def _read_preset_configs(preset_path):
     }
 
 
-SCRIPT_READ_EXTENSIONS = ('.py', '.txt', '.so')
+SCRIPT_READ_EXTENSIONS = ('.py', '.txt', '.so') + tuple(FONT_EXTENSIONS)
 
 
 def _read_script_file(filepath):
     """Read a plugin script for API responses.
 
-    .so files are binary and JSON responses must stay JSON-safe, so they are
-    base64-encoded here. _write_preset_scripts decodes them back on save.
+    .so and font files are binary and JSON responses must stay JSON-safe, so
+    they are base64-encoded here. _write_preset_scripts decodes them back on
+    save.
     """
-    if filepath.lower().endswith('.so'):
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == '.so' or ext in FONT_EXTENSIONS:
         with open(filepath, 'rb') as f:
             return base64.b64encode(f.read()).decode('ascii')
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -454,12 +457,13 @@ def _write_preset_scripts(preset_path, scripts_data):
 
         # Create parent directories if needed
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        ext = os.path.splitext(rel_path)[1].lower()
         if isinstance(content, bytes):
             # Only reached via the ZIP-import bundle, which already ran the
-            # ELF magic + size checks in preset_import_validation.py.
+            # ELF magic / font + size checks in preset_import_validation.py.
             with open(full_path, 'wb') as f:
                 f.write(content)
-        elif rel_path.lower().endswith('.so'):
+        elif ext == '.so':
             # .so content from the API is base64 text (see _read_script_file).
             # Validated the same way ZIP-imported .so files are: size cap and
             # ELF magic. Raising ValueError surfaces a 400 to the caller
@@ -474,6 +478,17 @@ def _write_preset_scripts(preset_path, scripts_data):
                 )
             if not decoded.startswith(ELF_MAGIC):
                 raise ValueError(f"Script {rel_path} is not a valid ELF binary.")
+            with open(full_path, 'wb') as f:
+                f.write(decoded)
+        elif ext in FONT_EXTENSIONS:
+            # Font content from the API is base64 text (see _read_script_file).
+            try:
+                decoded = base64.b64decode(content, validate=True)
+            except (ValueError, TypeError):
+                raise ValueError(f"Script {rel_path} is not valid base64.")
+            font_error = validate_font_content(ext, decoded)
+            if font_error:
+                raise ValueError(f"Script {rel_path}: {font_error}")
             with open(full_path, 'wb') as f:
                 f.write(decoded)
         else:

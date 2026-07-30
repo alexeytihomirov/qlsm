@@ -644,6 +644,58 @@ def test_create_preset_rejects_invalid_base64_so_script(client, app):
     assert 'not valid base64' in response.get_json()['error']['message']
 
 
+TTF_CONTENT = b'\x00\x01\x00\x00' + b'\x00' * 20
+
+
+def test_create_preset_with_ttf_script_round_trips_as_base64(client, app, tmp_path):
+    """A .ttf script is written as real binary on disk but stays JSON-safe in the response."""
+    encoded = base64.b64encode(TTF_CONTENT).decode('ascii')
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'with-ttf-script',
+        'description': '',
+        'scripts': {'stats.ttf': encoded},
+    })
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data['scripts']['stats.ttf'] == encoded
+
+    preset_path = os.path.join(str(tmp_path), 'configs', 'presets', 'with-ttf-script')
+    with open(os.path.join(preset_path, 'scripts', 'stats.ttf'), 'rb') as f:
+        assert f.read() == TTF_CONTENT
+
+
+def test_create_preset_rejects_invalid_signature_font_script(client, app):
+    """A .ttf payload that isn't real TTF content is rejected with a 400, not silently dropped."""
+    encoded = base64.b64encode(b'not a font').decode('ascii')
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'bad-ttf-script',
+        'description': '',
+        'scripts': {'stats.ttf': encoded},
+    })
+    assert response.status_code == 400
+
+
+def test_create_preset_from_draft_includes_font_file_in_response(client, app):
+    """Fonts placed via draft_id show up in the create response's scripts dict, not just on disk."""
+    draft_id = str(uuid.uuid4())
+    draft_scripts = os.path.join(app.config['DRAFTS_BASE'], draft_id, 'scripts')
+    os.makedirs(draft_scripts, exist_ok=True)
+    with open(os.path.join(draft_scripts, 'stats.ttf'), 'wb') as f:
+        f.write(TTF_CONTENT)
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'draft-with-font',
+        'description': '',
+        'draft_id': draft_id,
+    })
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert base64.b64decode(data['scripts']['stats.ttf']) == TTF_CONTENT
+
+
 def test_get_preset_scripts_merges_defaults(client, app, tmp_path):
     """Getting a preset with its own scripts also returns default preset scripts."""
     # Set up default preset scripts directory
