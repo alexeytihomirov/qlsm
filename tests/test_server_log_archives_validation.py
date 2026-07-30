@@ -313,6 +313,26 @@ def test_fetch_rejects_out_of_range_lines_without_touching_subprocess():
     mock_popen.assert_not_called()
 
 
+def test_list_unexpected_exception_returns_generic_error():
+    from ui.task_logic.ansible_server_log_archives import list_instance_server_log_archives
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               side_effect=OSError('/private/controller/path')):
+        success, files, error = list_instance_server_log_archives(1)
+    assert success is False
+    assert files == []
+    assert error == "Failed to list server log archives."
+
+
+def test_fetch_unexpected_exception_returns_generic_error():
+    from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               side_effect=OSError('/private/controller/path')):
+        success, logs, error = fetch_instance_server_log(1)
+    assert success is False
+    assert logs == ""
+    assert error == "Failed to fetch server logs."
+
+
 def test_fetch_returns_not_found_message_when_temp_file_absent(app):
     instance_id = _make_instance_with_host_details(app)
     from ui.task_logic.ansible_server_log_archives import fetch_instance_server_log
