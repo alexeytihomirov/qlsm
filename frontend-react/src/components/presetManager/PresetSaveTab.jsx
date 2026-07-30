@@ -50,10 +50,13 @@ function PresetSaveTab({
   }, []);
 
   const handleNameChange = (next) => {
-    setName(next);
-    setValidationError(validateNameLocally(next));
+    const normalizedName = next ?? '';
+    setName(normalizedName);
+    setValidationError(validateNameLocally(normalizedName));
     if (descriptionTouched) return;
-    const match = editablePresets.find((p) => p.name.toLowerCase() === next.trim().toLowerCase());
+    const match = editablePresets.find(
+      (p) => p.name.toLowerCase() === normalizedName.trim().toLowerCase()
+    );
     setDescription(match ? (match.description || '') : '');
   };
 
@@ -112,7 +115,7 @@ function PresetSaveTab({
           value={name}
           onChange={handleNameChange}
           presets={editablePresets}
-          disabled={isSaving || Boolean(savedPreset)}
+          disabled={isSaving || isValidating || Boolean(savedPreset)}
           hasCaution={isOverwrite}
         />
         {validationError && (
@@ -146,7 +149,7 @@ function PresetSaveTab({
           placeholder="e.g., Standard duel settings with competitive mappool"
           rows={2}
           className="input-base resize-none"
-          disabled={isSaving}
+          disabled={isSaving || isValidating}
         />
         {isOverwrite && !descriptionTouched && (
           <p className="mt-1 text-xs text-[var(--text-muted)]">
