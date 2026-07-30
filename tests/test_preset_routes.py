@@ -595,6 +595,107 @@ def test_update_rejects_script_symlink_escape_before_config_mutation(client, app
     assert not (outside_dir / 'escape.py').exists()
 
 
+def test_create_rejects_top_level_scripts_symlink_before_any_mutation(
+    client, app, tmp_path
+):
+    preset_path = tmp_path / 'configs' / 'presets' / 'create-root-symlink'
+    outside_dir = tmp_path / 'outside-create-scripts'
+    preset_path.mkdir(parents=True)
+    outside_dir.mkdir()
+    config_path = preset_path / 'server.cfg'
+    outside_file = outside_dir / 'escape.py'
+    config_path.write_bytes(b'original config bytes')
+    outside_file.write_bytes(b'original external bytes')
+    os.symlink(outside_dir, preset_path / 'scripts')
+    headers = auth_headers(app, DEFAULT_USER)
+
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'create-root-symlink',
+        'server_cfg': 'changed config',
+        'scripts': {'escape.py': 'print("escape")'},
+    })
+
+    assert response.status_code == 400
+    assert config_path.read_bytes() == b'original config bytes'
+    assert outside_file.read_bytes() == b'original external bytes'
+
+
+def test_update_rejects_top_level_scripts_symlink_before_any_mutation(
+    client, app, tmp_path
+):
+    preset_id, preset_path = _create_preset_folder(
+        app,
+        'update-root-symlink',
+        files={**BASE_CONFIG_MAP, 'server.cfg': 'original config'},
+    )
+    scripts_path = os.path.join(preset_path, 'scripts')
+    outside_dir = tmp_path / 'outside-update-scripts'
+    outside_dir.mkdir()
+    outside_file = outside_dir / 'escape.py'
+    outside_file.write_bytes(b'original external bytes')
+    os.symlink(outside_dir, scripts_path)
+    config_path = os.path.join(preset_path, 'server.cfg')
+    headers = auth_headers(app, DEFAULT_USER)
+
+    response = client.put(f'/api/presets/{preset_id}', headers=headers, json={
+        'server_cfg': 'changed config',
+        'scripts': {'escape.py': 'print("escape")'},
+    })
+
+    assert response.status_code == 400
+    with open(config_path, 'rb') as config_file:
+        assert config_file.read() == b'original config'
+    assert outside_file.read_bytes() == b'original external bytes'
+
+
+def test_create_rejects_non_string_text_script_before_mutation(client, app):
+    headers = auth_headers(app, DEFAULT_USER)
+
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'non-string-text-script',
+        'server_cfg': 'must not be written',
+        'scripts': {'plugin.py': 42},
+    })
+
+    assert response.status_code == 400
+    assert not os.path.exists('configs/presets/non-string-text-script')
+
+
+def test_invalid_later_script_content_leaves_update_bytes_unchanged(client, app):
+    preset_id, preset_path = _create_preset_folder(
+        app,
+        'atomic-script-content',
+        files={**BASE_CONFIG_MAP, 'server.cfg': 'original config bytes'},
+    )
+    scripts_dir = os.path.join(preset_path, 'scripts')
+    valid_path = os.path.join(scripts_dir, 'a-valid.py')
+    invalid_path = os.path.join(scripts_dir, 'z-invalid.so')
+    os.makedirs(scripts_dir)
+    with open(valid_path, 'wb') as valid_file:
+        valid_file.write(b'original valid script bytes')
+    with open(invalid_path, 'wb') as invalid_file:
+        invalid_file.write(b'\x7fELForiginal binary bytes')
+    config_path = os.path.join(preset_path, 'server.cfg')
+    before = {}
+    for path in (config_path, valid_path, invalid_path):
+        with open(path, 'rb') as existing_file:
+            before[path] = existing_file.read()
+    headers = auth_headers(app, DEFAULT_USER)
+
+    response = client.put(f'/api/presets/{preset_id}', headers=headers, json={
+        'server_cfg': 'changed config',
+        'scripts': {
+            'a-valid.py': 'changed valid script',
+            'z-invalid.so': 'not-valid-base64!!!',
+        },
+    })
+
+    assert response.status_code == 400
+    for path, expected in before.items():
+        with open(path, 'rb') as unchanged_file:
+            assert unchanged_file.read() == expected
+
+
 def test_create_preset_from_draft_excludes_python_cache_cruft(client, app):
     """Draft script cache artifacts are not copied into saved presets."""
     draft_id = str(uuid.uuid4())
