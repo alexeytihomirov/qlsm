@@ -6,10 +6,15 @@ import PresetSaveTab from '../PresetSaveTab';
 const mocks = vi.hoisted(() => ({ validatePresetName: vi.fn() }));
 vi.mock('../../../services/api', () => ({ validatePresetName: mocks.validatePresetName }));
 vi.mock('../PresetNameCombobox', () => ({
-  default: ({ value, onChange }) => (
+  default: ({ value, onChange, disabled }) => (
     <>
-      <input aria-label="Preset Name" value={value} onChange={(e) => onChange(e.target.value)} />
-      <button type="button" onClick={() => onChange(null)}>Clear Preset Name</button>
+      <input
+        aria-label="Preset Name"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      />
+      <button type="button" onClick={() => onChange(null)} disabled={disabled}>Clear Preset Name</button>
     </>
   ),
 }));
@@ -94,5 +99,27 @@ describe('PresetSaveTab', () => {
     expect(screen.getByLabelText(/description/i)).toHaveValue('');
     expect(screen.getByText('Preset name is required.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save preset/i })).toBeDisabled();
+  });
+
+  it('disables the name field during validation so a mid-flight clear cannot produce a stale save', async () => {
+    const onSavePreset = vi.fn();
+    let resolveValidation;
+    mocks.validatePresetName.mockReturnValue(
+      new Promise((resolve) => { resolveValidation = resolve; })
+    );
+    setup({ onSavePreset });
+
+    fireEvent.change(screen.getByLabelText('Preset Name'), { target: { value: 'fresh-name' } });
+    fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+
+    await waitFor(() => expect(screen.getByLabelText('Preset Name')).toBeDisabled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Preset Name' }));
+    expect(screen.getByLabelText('Preset Name')).toHaveValue('fresh-name');
+
+    resolveValidation({ is_valid: true });
+
+    await waitFor(() => expect(onSavePreset).toHaveBeenCalledWith({ name: 'fresh-name', description: null }));
+    expect(onSavePreset).not.toHaveBeenCalledWith(expect.objectContaining({ name: '' }));
   });
 });
