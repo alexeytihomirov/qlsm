@@ -52,8 +52,13 @@ function ViewLogsModal({ isOpen, onClose, instance }) {
         setError(null);
 
         try {
+            // Archives have no supported time filter and the backend 400s that combination.
+            // Derive the mode here rather than depending on the fallback effect below having
+            // already corrected state — it is declared after the refetch effect, so on the
+            // render where an archive is selected it has not run yet.
+            const effectiveMode = isArchive && filterMode === 'time' ? 'lines' : filterMode;
             const data = await fetchInstanceRemoteLogs(instance.id, {
-                filterMode,
+                filterMode: effectiveMode,
                 since: timeRange,
                 lines: lineCount,
                 filename: selectedFile,
