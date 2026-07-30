@@ -513,6 +513,7 @@ lock and return `200` immediately.
 | `/drafts/<draft_id>/content` | GET | Read a draft `.py` or `.txt` file (`?path=`) |
 | `/drafts/<draft_id>/content` | PUT | Write a draft `.py` or `.txt` file |
 | `/drafts/<draft_id>/upload` | POST | Upload `.py`, `.txt`, `.so`, or a font file into the draft |
+| `/drafts/<draft_id>/file` | GET | Download an allowed draft file as raw bytes (`?path=`) |
 | `/drafts/<draft_id>/file` | DELETE | Delete a draft file (`?path=`) |
 | `/drafts/<draft_id>/rename` | PATCH | Rename a draft file without changing its extension |
 | `/drafts/<draft_id>/folders` | POST | Create a folder inside the draft scripts directory |
@@ -584,7 +585,7 @@ Instance source:
 }
 ```
 
-Draft paths must be relative paths inside the draft. Text reads and writes support `.py` and `.txt` up to 256 KB. Uploads support `.py`, `.txt`, and ELF `.so` files (`.so` capped at 10 MB), plus 13 font extensions — `.ttf`, `.otf`, `.ttc`, `.otc`, `.woff`, `.woff2`, `.eot`, `.fon`, `.fnt`, `.pfb`, `.pfa`, `.pfm`, `.afm` — capped at 25 MB each. `.ttf`/`.otf`/`.ttc`/`.otc`/`.woff`/`.woff2`/`.pfb`/`.afm` uploads are additionally checked against their expected file signature; the remaining font extensions have no reliable signature and are validated by extension and size only. File paths (content, upload, rename, delete) may have at most 4 path segments (3 folders + filename); folder-only paths (the `/folders` endpoints below) may have at most 3 segments.
+Draft paths must be relative paths inside the draft. Text reads and writes support `.py` and `.txt` up to 256 KB. Raw file downloads preserve the stored bytes and return the file as an attachment. Uploads support `.py`, `.txt`, and ELF `.so` files (`.so` capped at 10 MB), plus 13 font extensions — `.ttf`, `.otf`, `.ttc`, `.otc`, `.woff`, `.woff2`, `.eot`, `.fon`, `.fnt`, `.pfb`, `.pfa`, `.pfm`, `.afm` — capped at 25 MB each. `.ttf`/`.otf`/`.ttc`/`.otc`/`.woff`/`.woff2`/`.pfb`/`.afm` uploads are additionally checked against their expected file signature; the remaining font extensions have no reliable signature and are validated by extension and size only. File paths (content, download, upload, rename, delete) may have at most 4 path segments (3 folders + filename); folder-only paths (the `/folders` endpoints below) may have at most 3 segments.
 
 ### Rename Draft File Request
 ```json
