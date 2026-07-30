@@ -15,6 +15,17 @@ function formatDate(timestamp) {
   return new Date(timestamp * 1000).toLocaleString();
 }
 
+function getExtension(name = '') {
+  const idx = name.lastIndexOf('.');
+  return idx === -1 ? '' : name.slice(idx).toLowerCase();
+}
+
+function getTypeLabel(ext) {
+  if (ext === '.so') return 'Native shared library (.so)';
+  if (ext) return `Font file (${ext})`;
+  return 'Binary file';
+}
+
 function validateDescription(value) {
   if (value.length > DESCRIPTION_MAX) return `Max ${DESCRIPTION_MAX} characters`;
   if (FORBIDDEN_RE.test(value)) return 'Cannot contain < > { } "';
@@ -34,6 +45,7 @@ export default function BinaryDetailsPanel({
   const [focused, setFocused] = useState(false);
   const [validationError, setValidationError] = useState(null);
   const textareaRef = useRef(null);
+  const ext = getExtension(fileName);
 
   useEffect(() => {
     setLocalDesc(description);
@@ -89,7 +101,7 @@ export default function BinaryDetailsPanel({
       <div className="space-y-3 mb-6">
         <div className="flex justify-between text-sm">
           <span className="text-[var(--text-secondary)]">Type</span>
-          <span className="text-[var(--text-primary)]">Native shared library (.so)</span>
+          <span className="text-[var(--text-primary)]">{getTypeLabel(ext)}</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-[var(--text-secondary)]">Size</span>
@@ -139,7 +151,7 @@ export default function BinaryDetailsPanel({
         Replace
         <input
           type="file"
-          accept=".so"
+          accept={ext || '.so'}
           className="hidden"
           onChange={(e) => {
             if (e.target.files[0]) onReplace(e.target.files[0]);

@@ -13,9 +13,16 @@ import { validateScript } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 import BinaryDetailsPanel from './BinaryDetailsPanel';
 
+const FONT_EXTENSIONS = [
+  '.ttf', '.otf', '.ttc', '.otc', '.woff', '.woff2',
+  '.eot', '.fon', '.fnt', '.pfb', '.pfa', '.pfm', '.afm',
+];
+
 function getFileType(name = '') {
-  if (name.endsWith('.py')) return 'python';
-  if (name.endsWith('.so')) return 'binary';
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.py')) return 'python';
+  if (lower.endsWith('.so')) return 'binary';
+  if (FONT_EXTENSIONS.some(ext => lower.endsWith(ext))) return 'font';
   return 'text';
 }
 
@@ -73,7 +80,7 @@ export default function FileEditorPanel({
     );
   }
 
-  if (fileType === 'binary') {
+  if (fileType === 'binary' || fileType === 'font') {
     return (
       <BinaryDetailsPanel
         filePath={selectedFile.path}
@@ -81,8 +88,8 @@ export default function FileEditorPanel({
         size={selectedFile.size}
         lastModified={selectedFile.last_modified}
         onReplace={onReplace}
-        description={binaryDescription}
-        onDescriptionSave={onSaveBinaryDescription}
+        description={fileType === 'binary' ? binaryDescription : undefined}
+        onDescriptionSave={fileType === 'binary' ? onSaveBinaryDescription : undefined}
       />
     );
   }
