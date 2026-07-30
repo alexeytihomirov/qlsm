@@ -245,3 +245,38 @@ def test_enabled_hooks_none_when_absent():
     raw = build_zip()
     bundle = parse_import_archive(raw)
     assert bundle['enabled_hooks'] is None
+
+
+def test_unwraps_single_top_level_export_folder():
+    # Extracting an export and re-zipping the folder (a common file-manager
+    # "Compress" action) nests everything under e.g. ffv5/manifest.json.
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('ffv5/manifest.json', json.dumps(make_manifest(name='ffv5')))
+        for path, content in BASE_CONFIGS.items():
+            archive.writestr(f'ffv5/{path}', content)
+        archive.writestr('ffv5/factories/ca.factories', '{"id": "ca"}\n')
+        archive.writestr('ffv5/user-hooks/custom_hook.so', b'\x7fELFfake')
+        archive.writestr(
+            'ffv5/binary_metadata.json',
+            json.dumps({'format_version': 1, 'metadata': [
+                {'file_path': 'custom_hook.so', 'description': '99k hook'},
+            ]}),
+        )
+
+    bundle = parse_import_archive(buffer.getvalue())
+
+    assert bundle['manifest']['preset']['name'] == 'ffv5'
+    assert set(BASE_CONFIGS) <= set(bundle['configs'])
+    assert bundle['factories'] == {'ca.factories': '{"id": "ca"}\n'}
+    # Confirms binary_metadata.json under the wrapper folder was actually
+    # parsed, not silently dropped (both cases would otherwise read as []).
+    assert bundle['binary_metadata'] == [
+        {'file_path': 'custom_hook.so', 'description': '99k hook'},
+    ]
+
+
+def test_does_not_unwrap_when_manifest_already_at_root():
+    raw = build_zip(extra={'notes/readme.txt': 'note\n'})
+    bundle = parse_import_archive(raw)
+    assert bundle['configs']['notes/readme.txt'] == 'note\n'

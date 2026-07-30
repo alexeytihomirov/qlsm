@@ -42,6 +42,35 @@ def _validate_entry_name(name):
         raise PresetImportError(f"Unsafe path in archive: {name!r}")
 
 
+def _detect_wrapper_prefix(infos):
+    """Detect a single top-level folder wrapping the whole export.
+
+    Extracting a QLSM preset export and re-zipping it with a file manager's
+    "Compress"/"Send to > Compressed folder" action nests every entry one
+    level deeper, under a folder named after the preset (e.g.
+    ffv5/manifest.json instead of manifest.json). Recognize that shape so
+    re-zipped exports from another QLSM installation still import cleanly.
+    """
+    prefix = None
+    for info in infos:
+        if info.is_dir():
+            continue
+        name = info.filename
+        if '/' not in name:
+            return None
+        top, _, _ = name.partition('/')
+        if prefix is None:
+            prefix = top
+        elif prefix != top:
+            return None
+    if prefix is None:
+        return None
+    names = {info.filename for info in infos}
+    if 'manifest.json' in names or f'{prefix}/manifest.json' not in names:
+        return None
+    return prefix
+
+
 def _check_archive_limits(infos):
     if len(infos) > MAX_IMPORT_ENTRIES:
         raise PresetImportError("Archive contains too many entries.")
@@ -222,6 +251,7 @@ def parse_import_archive(raw_bytes):
     with archive:
         infos = archive.infolist()
         _check_archive_limits(infos)
+        wrapper_prefix = _detect_wrapper_prefix(infos)
 
         for info in infos:
             name = info.filename
@@ -230,6 +260,9 @@ def parse_import_archive(raw_bytes):
                 continue
             if _entry_is_symlink(info):
                 raise PresetImportError(f"Archive contains a symlink: {name}")
+            if wrapper_prefix:
+                name = name[len(wrapper_prefix) + 1:]
+                _validate_entry_name(name)
             if _should_skip_export_path(name):
                 continue
             if name == 'manifest.json':
