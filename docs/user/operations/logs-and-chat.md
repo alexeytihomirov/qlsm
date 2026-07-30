@@ -15,7 +15,8 @@ Action reference: [Instance Actions Menu](instance-actions-menu.md)
 ## Server Logs: Practical Usage
 
 - Start with **Last 500 lines**.
-- If needed, switch to a time range (for example last 1 hour).
+- If needed, switch to a time range (for example last 1 hour) — time range only applies to the current log.
+- Select an archived file from the picker for older activity; archives are grouped by month.
 - Press **Apply**.
 - Use `Ctrl+F` inside the log viewer.
 

@@ -286,9 +286,12 @@ Example success response:
 | `/instances/<id>/hooks/files/<filename>/description` | PATCH | Set a hook file description |
 | `/instances/<id>/lan-rate` | PUT | Toggle 99k LAN rate mode |
 | `/instances/<id>/logs` | GET | Get instance task logs |
-| `/instances/<id>/remote-logs` | GET | Fetch live logs via Ansible (`?filter_mode=`, `?since=`, `?lines=`) |
+| `/instances/<id>/remote-logs` | GET | Fetch server logs via Ansible (`?filter_mode=`, `?since=`, `?lines=`, `?filename=`) |
+| `/instances/<id>/remote-logs/list` | GET | List available server-log archive files |
 | `/instances/<id>/chat-logs` | GET | Fetch chat logs (`?filter_mode=`, `?since=`, `?lines=`, `?filename=`) |
 | `/instances/<id>/chat-logs/list` | GET | List available chat log files |
+
+`filename` on `/instances/<id>/remote-logs` defaults to `server.log` and must match `^server\.log(-\d{8}-\d{6}(\.gz)?)?$` — the exact set of names logrotate produces for the rotated server log. `filter_mode=lines` and `filter_mode=all` read that exported file, current or archived; `filter_mode=time` still queries journald directly and is rejected with 400 for any `filename` other than `server.log`, since a rotated archive has no journald time range to query.
 
 ### Create Instance Request
 ```json
