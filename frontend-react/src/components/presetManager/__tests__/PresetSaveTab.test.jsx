@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({ validatePresetName: vi.fn() }));
 vi.mock('../../../services/api', () => ({ validatePresetName: mocks.validatePresetName }));
 vi.mock('../PresetNameCombobox', () => ({
   default: ({ value, onChange }) => (
-    <input aria-label="Preset Name" value={value} onChange={(e) => onChange(e.target.value)} />
+    <>
+      <input aria-label="Preset Name" value={value} onChange={(e) => onChange(e.target.value)} />
+      <button type="button" onClick={() => onChange(null)}>Clear Preset Name</button>
+    </>
   ),
 }));
 
@@ -79,5 +82,17 @@ describe('PresetSaveTab', () => {
     fireEvent.click(screen.getByText(/save as new instead/i));
     expect(screen.getByLabelText('Preset Name').value).toBe('');
     expect(screen.getByText('New preset')).toBeInTheDocument();
+  });
+
+  it('treats a null combobox value as an empty preset name', () => {
+    setup({ initialOverwriteName: 'duel-cfg' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Preset Name' }));
+
+    expect(screen.getByLabelText('Preset Name')).toHaveValue('');
+    expect(screen.getByText('New preset')).toBeInTheDocument();
+    expect(screen.getByLabelText(/description/i)).toHaveValue('');
+    expect(screen.getByText('Preset name is required.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save preset/i })).toBeDisabled();
   });
 });
