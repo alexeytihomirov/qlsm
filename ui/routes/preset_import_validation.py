@@ -262,6 +262,7 @@ def parse_import_archive(raw_bytes):
                 raise PresetImportError(f"Archive contains a symlink: {name}")
             if wrapper_prefix:
                 name = name[len(wrapper_prefix) + 1:]
+                _validate_entry_name(name)
             if _should_skip_export_path(name):
                 continue
             if name == 'manifest.json':

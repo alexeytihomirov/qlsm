@@ -256,9 +256,12 @@ def test_unwraps_single_top_level_export_folder():
         for path, content in BASE_CONFIGS.items():
             archive.writestr(f'ffv5/{path}', content)
         archive.writestr('ffv5/factories/ca.factories', '{"id": "ca"}\n')
+        archive.writestr('ffv5/user-hooks/custom_hook.so', b'\x7fELFfake')
         archive.writestr(
             'ffv5/binary_metadata.json',
-            json.dumps({'format_version': 1, 'metadata': []}),
+            json.dumps({'format_version': 1, 'metadata': [
+                {'file_path': 'custom_hook.so', 'description': '99k hook'},
+            ]}),
         )
 
     bundle = parse_import_archive(buffer.getvalue())
@@ -266,6 +269,11 @@ def test_unwraps_single_top_level_export_folder():
     assert bundle['manifest']['preset']['name'] == 'ffv5'
     assert set(BASE_CONFIGS) <= set(bundle['configs'])
     assert bundle['factories'] == {'ca.factories': '{"id": "ca"}\n'}
+    # Confirms binary_metadata.json under the wrapper folder was actually
+    # parsed, not silently dropped (both cases would otherwise read as []).
+    assert bundle['binary_metadata'] == [
+        {'file_path': 'custom_hook.so', 'description': '99k hook'},
+    ]
 
 
 def test_does_not_unwrap_when_manifest_already_at_root():
