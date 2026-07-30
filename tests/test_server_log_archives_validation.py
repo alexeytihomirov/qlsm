@@ -203,8 +203,34 @@ def test_archive_lines_request_routed_to_archive_fetcher(mock_fetch, client, app
 
 
 @patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log',
+       return_value=(True, 'whole archive', None))
+def test_archive_all_request_routed_to_archive_fetcher(mock_fetch, client, app):
+    instance_id, token = _make_instance(app)
+    resp = _get_logs(client, instance_id, token, filter_mode='all',
+                     filename='server.log-20260729-093000.gz')
+    assert resp.status_code == 200
+    assert resp.get_json()['data']['logs'] == 'whole archive'
+    mock_fetch.assert_called_once_with(
+        instance_id, filename='server.log-20260729-093000.gz',
+        filter_mode='all', lines=500,
+    )
+
+
+@patch('ui.task_logic.ansible_instance_mgmt.fetch_instance_remote_logs',
+       return_value=(True, 'journal tail', None))
+def test_current_lines_request_routed_to_journald(mock_fetch, client, app):
+    instance_id, token = _make_instance(app)
+    resp = _get_logs(client, instance_id, token, filter_mode='lines', lines=250)
+    assert resp.status_code == 200
+    assert resp.get_json()['data']['logs'] == 'journal tail'
+    mock_fetch.assert_called_once_with(
+        instance_id, filter_mode='lines', since='1 hour ago', lines=250,
+    )
+
+
+@patch('ui.task_logic.ansible_server_log_archives.fetch_instance_server_log',
        return_value=(True, 'everything', None))
-def test_all_mode_reads_current_file_not_journald(mock_fetch, client, app):
+def test_current_all_request_routed_to_file_fetcher(mock_fetch, client, app):
     instance_id, token = _make_instance(app)
     resp = _get_logs(client, instance_id, token, filter_mode='all')
     assert resp.status_code == 200
@@ -221,6 +247,20 @@ def test_time_mode_on_current_still_uses_journald(mock_fetch, client, app):
     assert resp.status_code == 200
     assert resp.get_json()['data']['logs'] == 'journald window'
     mock_fetch.assert_called_once()
+
+
+def test_invalid_since_rejected_before_task_logic(client, app):
+    # `since` reaches journalctl via ansible.builtin.command, which shlex-splits
+    # rather than invoking a shell -- but an out-of-set value can still inject
+    # extra journalctl arguments (e.g. --unit=<other service>) and read an
+    # arbitrary unit's journal. Reject anything outside the fixed allowlist
+    # before any Ansible invocation, mirroring the chat-log endpoint.
+    instance_id, token = _make_instance(app)
+    with patch('ui.task_logic.ansible_instance_mgmt.fetch_instance_remote_logs') as mock_fetch:
+        resp = _get_logs(client, instance_id, token, filter_mode='time',
+                         since='1 hour ago" --unit=ssh.service --since "1 hour ago')
+    assert resp.status_code == 400
+    mock_fetch.assert_not_called()
 
 
 def test_lines_out_of_range_rejected_before_task_logic(client, app):

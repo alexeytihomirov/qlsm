@@ -753,10 +753,9 @@ def view_instance_logs_api(instance_id): # Renamed function
 def fetch_remote_logs_api(instance_id):
     """Fetches logs from the remote QLDS instance.
 
-    'lines' and 'all' read the exported server-log file (current or an
-    archive), which is size-bounded by logrotate. 'time' still queries
-    journald directly, since the window is inherently bounded and archives
-    are not time-filterable.
+    For the current log, 'lines' and 'time' query journald while 'all'
+    reads the size-bounded exported file. Archived 'lines' and 'all' read
+    the selected file; archived 'time' requests are rejected.
 
     Query parameters:
         filter_mode: 'time', 'lines', or 'all' (default: 'lines')
@@ -792,6 +791,14 @@ def fetch_remote_logs_api(instance_id):
     if filter_mode == 'time' and filename != CURRENT_SERVER_LOG:
         return jsonify({"error": {"message": "Time range filtering is not supported for archived logs."}}), 400
 
+    # Validate 'since' against the fixed set of supported windows (time mode
+    # only). It reaches journalctl via ansible.builtin.command, which uses
+    # shlex splitting rather than a shell, but an unvalidated value can still
+    # inject additional journalctl arguments (e.g. --unit=<other>), so it
+    # must never carry arbitrary input. Mirrors fetch_remote_chat_logs_api.
+    if filter_mode == 'time' and since not in ALLOWED_CHAT_LOG_SINCE:
+        return jsonify({"error": {"message": "Invalid time range."}}), 400
+
     if filter_mode != 'all' and (lines < 10 or lines > 10000):
         return jsonify({"error": {"message": "lines must be between 10 and 10000"}}), 400
 
@@ -800,9 +807,9 @@ def fetch_remote_logs_api(instance_id):
         f"mode: {filter_mode}, since: {since}, lines: {lines}, filename: {filename}"
     )
 
-    if filter_mode == 'time':
+    if filename == CURRENT_SERVER_LOG and filter_mode != 'all':
         success, logs, error_msg = fetch_instance_remote_logs(
-            instance_id, filter_mode='time', since=since, lines=lines
+            instance_id, filter_mode=filter_mode, since=since, lines=lines
         )
     else:
         success, logs, error_msg = fetch_instance_server_log(

@@ -33,7 +33,7 @@
           {{ (server_log_find.files | default([])
               | map(attribute='path')
               | map('basename')
-              | select('match', '^server\\.log(-\\d{8}-\\d{6}(\\.gz)?)?$')
+              | select('match', '^server\\.log(-\\d{8}-\\d{6}(\\.gz)?)?\\Z')
               | list) }}
       when: log_dir_stat.stat.exists and log_dir_stat.stat.isdir
 

@@ -291,7 +291,7 @@ Example success response:
 | `/instances/<id>/chat-logs` | GET | Fetch chat logs (`?filter_mode=`, `?since=`, `?lines=`, `?filename=`) |
 | `/instances/<id>/chat-logs/list` | GET | List available chat log files |
 
-`filename` on `/instances/<id>/remote-logs` defaults to `server.log` and must match `^server\.log(-\d{8}-\d{6}(\.gz)?)?$` — the exact set of names logrotate produces for the rotated server log. `filter_mode=lines` and `filter_mode=all` read that exported file, current or archived; `filter_mode=time` still queries journald directly and is rejected with 400 for any `filename` other than `server.log`, since a rotated archive has no journald time range to query.
+`filename` on `/instances/<id>/remote-logs` defaults to `server.log` and must match `\Aserver\.log(-\d{8}-\d{6}(\.gz)?)?\Z` — the exact set of names logrotate produces for the rotated server log. The anchors are `\A`/`\Z` rather than `^`/`$` deliberately: with `.match()` (used by the Ansible/Jinja listing filter), `$` still accepts a trailing newline, which `\Z` does not. For `server.log`, `filter_mode=lines` and `filter_mode=time` query journald, while `filter_mode=all` reads the current size-bounded exported file. For a dated archive, `lines` and `all` read the selected file; `time` is rejected with 400 because a rotated file has no journald time range to query.
 
 ### Create Instance Request
 ```json

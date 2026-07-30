@@ -32,6 +32,12 @@
       STATE_DIR=/var/lib/qlsm
       mkdir -p "$STATE_DIR"
 
+      # The fetch playbook runs this script directly, so systemd's oneshot
+      # serialization does not apply. Wait briefly rather than interleave
+      # appends; a timeout is an error so a fetch never reads mid-export.
+      exec 9>"$STATE_DIR/archive.lock"
+      flock -w 10 9 || exit 1
+
       for dir in /home/ql/qlds-*/; do
           [ -d "$dir" ] || continue
           port=${dir#/home/ql/qlds-}
@@ -50,10 +56,15 @@
           fi
 
           # First sighting of an instance: seed the cursor at the journal tail
-          # so pre-existing history is not imported (start-fresh policy).
-          # -n0 with --cursor-file writes the cursor without emitting entries.
+          # so pre-existing history is not imported (start-fresh policy), then
+          # create the empty live file immediately. This keeps a healthy new
+          # instance from reporting "file not found" before its first new
+          # journal entry arrives.
           if [ ! -s "$cursor" ]; then
               journalctl -u "$unit" -n0 --cursor-file="$cursor" --no-pager >/dev/null 2>&1
+              touch "${logdir}/server.log" || continue
+              chown ql:ql "${logdir}/server.log"
+              chmod 0644 "${logdir}/server.log"
               continue
           fi
 
@@ -66,7 +77,7 @@
           chown ql:ql "${logdir}/server.log" 2>/dev/null || true
       done
 
-      logrotate -s "${STATE_DIR}/logrotate.state" /etc/qlsm/qlds-serverlogs.conf 2>/dev/null || true
+      logrotate -s "${STATE_DIR}/logrotate.state" /etc/qlsm/qlds-serverlogs.conf || true
       exit 0
 
 - name: Deploy logrotate policy for QLDS server logs

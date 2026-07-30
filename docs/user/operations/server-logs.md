@@ -21,6 +21,8 @@ Selecting a different file reloads it immediately using the active filter.
 - **Time Range** — only available for the current (live) log; archived files hide this option, since a rotated file has no journald time range to query
 - **All**
 
+For **Current**, Last N Lines and Time Range query the live systemd journal, while All reads the complete current rotating file. For an archive, Last N Lines and All read the selected archive file.
+
 ### Line presets
 
 `100`, `250`, `500`, `1000`, `2500`

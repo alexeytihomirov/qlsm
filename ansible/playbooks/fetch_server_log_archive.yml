@@ -36,14 +36,27 @@
     # this feature exists to fix. The timer unit is the last file deployed,
     # so its presence implies the script, logrotate policy, and service unit
     # all landed too.
+    #
+    # The unit file alone isn't enough: it's written at step 6 of 9, so a
+    # daemon-reload or enable/start failure at steps 7-8 leaves the file
+    # present with the timer never actually enabled -- silently inert, with
+    # logrotate never invoked. Also check the enable symlink that
+    # `systemctl enable` creates for WantedBy=timers.target, and require
+    # both, so a partial provisioning failure re-provisions on the next read
+    # instead of going silent.
     - name: Check whether server-log archiving is installed
       ansible.builtin.stat:
         path: /etc/systemd/system/qlsm-archive-serverlogs.timer
       register: archive_timer_stat
 
+    - name: Check whether the archive timer is enabled
+      ansible.builtin.stat:
+        path: /etc/systemd/system/timers.target.wants/qlsm-archive-serverlogs.timer
+      register: archive_timer_enabled_stat
+
     - name: Install server-log archiving if missing
       ansible.builtin.include_tasks: tasks/server_log_archiving.yml
-      when: not archive_timer_stat.stat.exists
+      when: not archive_timer_stat.stat.exists or not archive_timer_enabled_stat.stat.exists
 
     # Flush pending journal entries so the current log is up to date at read
     # time rather than lagging the 5-minute archive timer. Only meaningful
@@ -54,7 +67,6 @@
         cmd: /usr/local/bin/qlsm-archive-serverlogs.sh
       when: log_filename == 'server.log'
       changed_when: false
-      failed_when: false
 
     - name: Check if the requested server log file exists
       ansible.builtin.stat:
