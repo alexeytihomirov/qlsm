@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { getExtension, getPathDepth, flattenFolders, MAX_CONFIG_FOLDER_DEPTH, MAX_CONFIG_FILE_DEPTH } from '../fileManagerUtils';
+import {
+  FONT_EXTENSIONS,
+  flattenFolders,
+  getExtension,
+  getFileType,
+  getPathDepth,
+  MAX_CONFIG_FILE_DEPTH,
+  MAX_CONFIG_FOLDER_DEPTH,
+} from '../fileManagerUtils';
 
 describe('getExtension', () => {
   it('returns the lowercased extension including the dot', () => {
@@ -10,6 +18,15 @@ describe('getExtension', () => {
 
   it('returns empty string when there is no dot', () => {
     expect(getExtension('README')).toBe('');
+  });
+});
+
+describe('getFileType', () => {
+  it('classifies all supported font extensions case-insensitively', () => {
+    expect(FONT_EXTENSIONS).toHaveLength(13);
+    for (const extension of FONT_EXTENSIONS) {
+      expect(getFileType(`fonts/example${extension.toUpperCase()}`)).toBe('font');
+    }
   });
 });
 

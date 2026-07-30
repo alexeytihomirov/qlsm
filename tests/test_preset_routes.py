@@ -517,6 +517,84 @@ def test_create_preset_with_scripts(client, app):
     assert 'myscript.py' in data.get('scripts', {})
 
 
+def test_create_preset_rejects_scripts_that_are_not_a_dict(client, app):
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'invalid-scripts-type',
+        'description': '',
+        'scripts': ['balance.py'],
+    })
+
+    assert response.status_code == 400
+    assert not os.path.exists('configs/presets/invalid-scripts-type')
+
+
+def test_create_preset_rejects_script_sibling_prefix_escape(client, app):
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'script-path-escape',
+        'description': '',
+        'scripts': {
+            '../scripts-escape.ttf': base64.b64encode(TTF_CONTENT).decode('ascii'),
+        },
+    })
+
+    assert response.status_code == 400
+    assert not os.path.exists('configs/presets/script-path-escape')
+    assert not os.path.exists('configs/presets/script-path-escape/scripts-escape.ttf')
+
+
+def test_create_preset_rejects_unsupported_script_extension(client, app):
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'unsupported-script-extension',
+        'description': '',
+        'scripts': {'plugin.exe': 'not allowed'},
+    })
+
+    assert response.status_code == 400
+    assert not os.path.exists('configs/presets/unsupported-script-extension')
+
+
+def test_invalid_script_key_causes_no_partial_filesystem_mutation(client, app):
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'atomic-script-validation',
+        'description': '',
+        'scripts': {
+            'a-valid.py': 'print("must not be written")',
+            'z-invalid.exe': 'not allowed',
+        },
+    })
+
+    assert response.status_code == 400
+    assert not os.path.exists('configs/presets/atomic-script-validation')
+
+
+def test_update_rejects_script_symlink_escape_before_config_mutation(client, app, tmp_path):
+    preset_id, preset_path = _create_preset_folder(
+        app,
+        'script-symlink-escape',
+        files={**BASE_CONFIG_MAP, 'server.cfg': 'original'},
+    )
+    scripts_dir = os.path.join(preset_path, 'scripts')
+    outside_dir = tmp_path / 'outside-scripts'
+    os.makedirs(scripts_dir)
+    outside_dir.mkdir()
+    os.symlink(outside_dir, os.path.join(scripts_dir, 'linked'))
+    headers = auth_headers(app, DEFAULT_USER)
+
+    response = client.put(f'/api/presets/{preset_id}', headers=headers, json={
+        'server_cfg': 'changed',
+        'scripts': {'linked/escape.py': 'print("escape")'},
+    })
+
+    assert response.status_code == 400
+    with open(os.path.join(preset_path, 'server.cfg')) as config_file:
+        assert config_file.read() == 'original'
+    assert not (outside_dir / 'escape.py').exists()
+
+
 def test_create_preset_from_draft_excludes_python_cache_cruft(client, app):
     """Draft script cache artifacts are not copied into saved presets."""
     draft_id = str(uuid.uuid4())

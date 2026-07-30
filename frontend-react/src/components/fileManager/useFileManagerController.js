@@ -131,10 +131,10 @@ export function useFileManagerController({
     setSelectedFile(item);
     setActionError(null);
     const fileType = item.file_type || getFileType(item.name);
-    if (fileType === 'binary') {
+    if (fileType === 'binary' || fileType === 'font') {
       setCurrentContent('');
       setBinaryDescription('');
-      if (!getBinaryMeta) return;
+      if (fileType === 'font' || !getBinaryMeta) return;
       try {
         const result = await getBinaryMeta(item.path);
         setBinaryDescription(result?.description ?? '');
@@ -466,9 +466,16 @@ export function useFileManagerController({
   }, [saveBinaryMeta, selectedFile]);
 
   const handleDownload = useCallback(async (item) => {
-    const content = editedContent[item.path] ??
-      (item.path === selectedFile?.path ? currentContent : await adapter.readContent(item.path));
-    const blob = new Blob([content || ''], { type: 'text/plain;charset=utf-8' });
+    const fileType = item.file_type || getFileType(item.name);
+    let blob;
+    if (fileType === 'binary' || fileType === 'font') {
+      if (!adapter.downloadFile) throw new Error('Binary download not supported');
+      blob = await adapter.downloadFile(item.path);
+    } else {
+      const content = editedContent[item.path] ??
+        (item.path === selectedFile?.path ? currentContent : await adapter.readContent(item.path));
+      blob = new Blob([content || ''], { type: 'text/plain;charset=utf-8' });
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

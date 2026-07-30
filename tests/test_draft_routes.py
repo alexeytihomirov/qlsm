@@ -594,6 +594,58 @@ class TestDraftUploadFonts:
         )
         assert response.status_code == 400
 
+    def test_download_font_returns_exact_bytes(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        content = b'\x00\x01\x00\x00\xff\x80font\x00bytes'
+        client.post(
+            f'/api/drafts/{draft_id}/upload',
+            data={'file': (io.BytesIO(content), 'stats.ttf')},
+            content_type='multipart/form-data',
+            headers=auth_headers,
+        )
+
+        response = client.get(
+            f'/api/drafts/{draft_id}/file?path=stats.ttf',
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.data == content
+        assert response.headers['Content-Disposition'].startswith('attachment;')
+
+    def test_download_font_requires_authentication(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+
+        response = client.get(f'/api/drafts/{draft_id}/file?path=stats.ttf')
+
+        assert response.status_code == 401
+
+    def test_download_rejects_path_traversal(self, client, auth_headers, preset_with_scripts, monkeypatch):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+
+        response = client.get(
+            f'/api/drafts/{draft_id}/file?path=../outside.ttf',
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+
+    def test_download_rejects_symlink_escape(
+        self, client, auth_headers, preset_with_scripts, monkeypatch, drafts_base, tmp_path
+    ):
+        draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
+        outside = tmp_path / 'outside.ttf'
+        outside.write_bytes(TTF_CONTENT)
+        scripts_dir = os.path.join(drafts_base, draft_id, 'scripts')
+        os.symlink(outside, os.path.join(scripts_dir, 'linked.ttf'))
+
+        response = client.get(
+            f'/api/drafts/{draft_id}/file?path=linked.ttf',
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+
     def test_rename_font_preserving_extension(self, client, auth_headers, preset_with_scripts, monkeypatch, drafts_base):
         draft_id = self._create_draft(client, auth_headers, monkeypatch, preset_with_scripts)
         client.post(

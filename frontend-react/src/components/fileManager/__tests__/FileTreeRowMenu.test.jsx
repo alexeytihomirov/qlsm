@@ -61,3 +61,23 @@ describe('FileTreeRowMenu new folder', () => {
     expect(queryByText('New Folder')).toBeNull();
   });
 });
+
+describe('FileTreeRowMenu binary actions', () => {
+  it.each(['font', 'binary'])('keeps Download and hides Copy Content for %s files', async (fileType) => {
+    const user = userEvent.setup();
+    const { getByLabelText, getByText, queryByText } = render(
+      <FileTreeRowMenu
+        itemType="file"
+        fileType={fileType}
+        capabilities={CAPS}
+        onDownload={vi.fn()}
+        onCopyContent={vi.fn()}
+      />,
+    );
+
+    await user.click(getByLabelText('file actions'));
+
+    expect(getByText('Download')).toBeInTheDocument();
+    expect(queryByText('Copy Content')).not.toBeInTheDocument();
+  });
+});

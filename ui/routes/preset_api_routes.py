@@ -18,7 +18,7 @@ from ui.preset_support import (
     validate_user_preset_name,
 )
 from ui.routes.draft_routes import ELF_MAGIC, MAX_BINARY_FILE_SIZE
-from ui.font_files import FONT_EXTENSIONS, MAX_FONT_FILE_SIZE, validate_font_content
+from ui.font_files import FONT_EXTENSIONS, validate_font_content
 from ui.config_path_utils import (
     RESERVED_CONFIG_FOLDER_NAMES,
     MAX_CONFIG_FOLDER_DEPTH,
@@ -43,6 +43,7 @@ CONFIG_FILE_MAP = {
 API_TO_FILE_MAP = {v: k for k, v in CONFIG_FILE_MAP.items()}
 ALLOWED_PRESET_CONFIG_EXTENSIONS = {'.cfg', '.txt', '.ent'}
 ALLOWED_PRESET_FACTORY_EXTENSIONS = {'.factories'}
+ALLOWED_PRESET_SCRIPT_EXTENSIONS = {'.py', '.txt', '.so'} | FONT_EXTENSIONS
 PROTECTED_CONFIG_FILES = set(CONFIG_FILE_MAP.keys())
 EXPORT_FORMAT_VERSION = 1
 EXPORT_EXCLUDED_DIRS = {'__pycache__'}
@@ -304,13 +305,62 @@ def _normalize_preset_factory_files(factories_data):
     return factories
 
 
-def _validate_preset_write_payload(data, has_config_updates=True):
+def _validate_preset_scripts_payload(scripts_data, scripts_dir=None):
+    """Validate every legacy JSON script key before any filesystem mutation."""
+    if not isinstance(scripts_data, dict):
+        raise ValueError("'scripts' must be a dict")
+
+    validated = []
+    root = os.path.realpath(scripts_dir) if scripts_dir is not None else None
+    for rel_path, content in scripts_data.items():
+        if (
+            not isinstance(rel_path, str) or not rel_path or
+            os.path.isabs(rel_path) or '\\' in rel_path
+        ):
+            raise ValueError(f"Invalid script path: {rel_path}")
+
+        segments = rel_path.split('/')
+        if len(segments) > MAX_CONFIG_FILE_DEPTH:
+            raise ValueError(f"Invalid script path: {rel_path}")
+        for index, segment in enumerate(segments):
+            allowed = (
+                ALLOWED_PRESET_SCRIPT_EXTENSIONS
+                if index == len(segments) - 1
+                else None
+            )
+            error = _shared_validate_path_segment(segment, allowed)
+            if error:
+                raise ValueError(f"Invalid script path: {rel_path}")
+
+        full_path = None
+        if root is not None:
+            full_path = os.path.realpath(os.path.join(root, *segments))
+            try:
+                is_inside_root = os.path.commonpath([root, full_path]) == root
+            except ValueError:
+                is_inside_root = False
+            if not is_inside_root or full_path == root:
+                raise ValueError(f"Invalid script path: {rel_path}")
+        validated.append((rel_path, content, full_path))
+    return validated
+
+
+def _validate_preset_write_payload(
+    data, has_config_updates=True, preset_path=None
+):
     if has_config_updates:
         _normalize_preset_config_files(data)
     if 'config_folders' in data:
         _normalize_config_folders(data['config_folders'])
     if 'factories' in data:
         _normalize_preset_factory_files(data['factories'])
+    if 'scripts' in data:
+        scripts_dir = (
+            os.path.join(preset_path, 'scripts')
+            if preset_path is not None
+            else None
+        )
+        _validate_preset_scripts_payload(data['scripts'], scripts_dir)
 
 
 def _validate_checked_plugins_payload(data):
@@ -442,19 +492,14 @@ def _read_preset_scripts(preset_path):
 
 def _write_preset_scripts(preset_path, scripts_data):
     """Write scripts to a preset's scripts/ folder."""
-    if not scripts_data:
+    scripts_dir = os.path.join(preset_path, 'scripts')
+    validated_scripts = _validate_preset_scripts_payload(scripts_data, scripts_dir)
+    if not validated_scripts:
         return
 
-    scripts_dir = os.path.join(preset_path, 'scripts')
     os.makedirs(scripts_dir, exist_ok=True)
 
-    for rel_path, content in scripts_data.items():
-        # Security: ensure path doesn't escape scripts directory
-        full_path = os.path.normpath(os.path.join(scripts_dir, rel_path))
-        if not full_path.startswith(os.path.normpath(scripts_dir)):
-            current_app.logger.warning(f"Skipping script with invalid path: {rel_path}")
-            continue
-
+    for rel_path, content, full_path in validated_scripts:
         # Create parent directories if needed
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         ext = os.path.splitext(rel_path)[1].lower()
@@ -893,7 +938,7 @@ def create_preset_api():
             return jsonify({"error": {"message": "Draft not found"}}), 400
 
     try:
-        _validate_preset_write_payload(data)
+        _validate_preset_write_payload(data, preset_path=preset_path)
     except ValueError as e:
         return _validation_error_response(e)
 
@@ -1115,7 +1160,9 @@ def update_preset_api(preset_id):
         key in data for key in API_TO_FILE_MAP.keys()
     )
     try:
-        _validate_preset_write_payload(data, has_config_updates)
+        _validate_preset_write_payload(
+            data, has_config_updates, preset_path=preset.path
+        )
     except ValueError as e:
         return _validation_error_response(e)
 

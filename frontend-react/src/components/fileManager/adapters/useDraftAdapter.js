@@ -7,6 +7,7 @@ export function useDraftAdapter(workspaceParams) {
     draftId: draft.draftId,
     tree: draft.tree || [],
     readContent: draft.readContent,
+    downloadFile: draft.downloadFile,
     writeContent: draft.writeContent,
     upload: draft.upload,
     deleteFile: draft.deleteFile,

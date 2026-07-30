@@ -10,7 +10,7 @@ import shutil
 import time
 import uuid
 import sqlalchemy
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required
 from werkzeug.utils import secure_filename
 from ui import db
@@ -215,9 +215,12 @@ ELF_MAGIC = b'\x7fELF'
 
 def _is_safe_draft_path(draft_scripts_path, relative_path):
     """Validate that a relative path doesn't escape the draft directory."""
-    full_path = os.path.normpath(os.path.join(draft_scripts_path, relative_path))
-    safe_prefix = os.path.normpath(draft_scripts_path) + os.sep
-    return full_path.startswith(safe_prefix) or full_path == os.path.normpath(draft_scripts_path)
+    root = os.path.realpath(draft_scripts_path)
+    full_path = os.path.realpath(os.path.join(root, relative_path))
+    try:
+        return os.path.commonpath([root, full_path]) == root
+    except ValueError:
+        return False
 
 
 def _normalize_draft_file_path(relative_path):
@@ -371,6 +374,35 @@ def get_draft_content(draft_id):
         return jsonify({"error": {"message": "File is not valid UTF-8 text"}}), 400
 
     return jsonify({"data": {"path": path, "content": content}}), 200
+
+
+@draft_api_bp.route('/<draft_id>/file', methods=['GET'])
+@jwt_required()
+def download_draft_file(draft_id):
+    """Download an allowed draft file without decoding or re-encoding it."""
+    if not _validate_draft_id(draft_id):
+        return jsonify({"error": {"message": "Invalid draft ID"}}), 400
+    if not _draft_exists(draft_id):
+        return jsonify({"error": {"message": "Draft not found"}}), 404
+
+    path = _normalize_draft_file_path(request.args.get('path'))
+    if path is None:
+        return jsonify({"error": {"message": "Invalid file path"}}), 400
+    if os.path.splitext(path)[1].lower() not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": {"message": "Unsupported file extension"}}), 400
+
+    scripts_path = _get_draft_scripts_path(draft_id)
+    full_path = os.path.realpath(os.path.join(scripts_path, *path.split('/')))
+    if not _is_safe_draft_path(scripts_path, path):
+        return jsonify({"error": {"message": "Invalid file path"}}), 400
+    if not os.path.isfile(full_path):
+        return jsonify({"error": {"message": "File not found"}}), 404
+
+    return send_file(
+        full_path,
+        as_attachment=True,
+        download_name=os.path.basename(path),
+    )
 
 
 @draft_api_bp.route('/<draft_id>/content', methods=['PUT'])

@@ -1,3 +1,5 @@
+import { FONT_EXTENSIONS } from './fileManagerUtils';
+
 export const CONFIG_CAPS = {
   canCreate: true,
   canUpload: true,
@@ -12,11 +14,6 @@ export const CONFIG_CAPS = {
   protectedFiles: ['server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt'],
   reservedFolderNames: ['scripts', 'factories'],
 };
-
-export const FONT_EXTENSIONS = [
-  '.ttf', '.otf', '.ttc', '.otc', '.woff', '.woff2',
-  '.eot', '.fon', '.fnt', '.pfb', '.pfa', '.pfm', '.afm',
-];
 
 export const PLUGIN_CAPS = {
   canCreate: true,

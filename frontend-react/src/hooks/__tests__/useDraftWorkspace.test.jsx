@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createDraft: vi.fn(),
   deleteDraftFile: vi.fn(),
   discardDraft: vi.fn(),
+  downloadDraftFile: vi.fn(),
   getDraftContent: vi.fn(),
   getDraftTree: vi.fn(),
   renameDraftFile: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../../services/draftApi', () => ({
   createDraft: mocks.createDraft,
   deleteDraftFile: mocks.deleteDraftFile,
   discardDraft: mocks.discardDraft,
+  downloadDraftFile: mocks.downloadDraftFile,
   getDraftContent: mocks.getDraftContent,
   getDraftTree: mocks.getDraftTree,
   renameDraftFile: mocks.renameDraftFile,
@@ -107,5 +109,21 @@ describe('useDraftWorkspace', () => {
     await waitFor(() => expect(result.current.tree).toEqual([
       { type: 'file', name: 'new.py', path: 'new.py' },
     ]));
+  });
+
+  it('downloads a raw draft file without marking the workspace dirty', async () => {
+    const blob = new Blob([new Uint8Array([0, 255, 128])]);
+    mocks.createDraft.mockResolvedValue({ draft_id: 'draft-1' });
+    mocks.getDraftTree.mockResolvedValue([]);
+    mocks.downloadDraftFile.mockResolvedValue(blob);
+    const { result } = renderHook(
+      () => useDraftWorkspace({ source: 'preset', preset: 'default', active: true })
+    );
+    await waitFor(() => expect(result.current.draftId).toBe('draft-1'));
+
+    await expect(result.current.downloadFile('fonts/score.ttf')).resolves.toBe(blob);
+
+    expect(mocks.downloadDraftFile).toHaveBeenCalledWith('draft-1', 'fonts/score.ttf');
+    expect(result.current.hasChanges).toBe(false);
   });
 });
