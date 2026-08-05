@@ -433,6 +433,15 @@ describe('EditInstanceConfigModal preset saving', () => {
     const toggle = await screen.findByRole('button', { name: /toggle 99k lan rate/i });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
 
+    // Drive restartAfterSave to false before the preset load so the
+    // post-load assertion is diagnostic of the forcing logic in
+    // handleLoadPreset, rather than just observing the mount-time default
+    // (restartAfterSave starts true on open, per line ~100/~318).
+    const restartToggle = screen.getByRole('button', { name: /toggle restart after save/i });
+    expect(restartToggle).not.toBeDisabled();
+    fireEvent.click(restartToggle);
+    expect(restartToggle).toHaveAttribute('aria-pressed', 'false');
+
     await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
@@ -440,7 +449,6 @@ describe('EditInstanceConfigModal preset saving', () => {
     await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith('99'));
     await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
 
-    const restartToggle = screen.getByRole('button', { name: /toggle restart after save/i });
     expect(restartToggle).toHaveAttribute('aria-pressed', 'true');
   });
 
