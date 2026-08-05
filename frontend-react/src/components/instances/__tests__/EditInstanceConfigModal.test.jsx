@@ -404,6 +404,34 @@ describe('EditInstanceConfigModal preset saving', () => {
     expect(mocks.createPreset.mock.calls[0][0].lan_rate_enabled).toBe(true);
   });
 
+  it('includes lan_rate_enabled: false when saving a preset with the toggle off', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      host_name: 'test-host',
+      host_os_type: 'debian',
+      lan_rate_enabled: false,
+      status: 'running',
+      name: 'inst',
+      qlx_plugins: '',
+    });
+
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /save preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+
+    await waitFor(() => expect(mocks.createPreset).toHaveBeenCalledTimes(1));
+    expect(mocks.createPreset.mock.calls[0][0].lan_rate_enabled).toBe(false);
+  });
+
   it('applies lan_rate_enabled from a loaded preset and forces a restart', async () => {
     mocks.getInstanceById.mockResolvedValue({
       host_name: 'test-host',
