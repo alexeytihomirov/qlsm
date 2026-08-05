@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PLUGIN_HINT_TEXT,
+  folderHasPluginFiles,
   getPluginHintReason,
   isEnableablePluginPath,
   partitionCheckedPaths,
@@ -34,21 +35,53 @@ describe('getPluginHintReason', () => {
     expect(getPluginHintReason('essentials.py')).toBeNull();
   });
 
-  it('returns subfolder for a nested plugin', () => {
-    expect(getPluginHintReason('extras/textart.py')).toBe('subfolder');
+  it('returns package-marker for a root __init__.py', () => {
+    expect(getPluginHintReason('__init__.py')).toBe('package-marker');
   });
 
-  it('prefers package-marker over subfolder for a nested __init__.py', () => {
-    expect(getPluginHintReason('extras/__init__.py')).toBe('package-marker');
+  it('returns null inside a subfolder — the folder row carries the hint', () => {
+    expect(getPluginHintReason('extras/textart.py')).toBeNull();
+    expect(getPluginHintReason('extras/__init__.py')).toBeNull();
   });
 
   it('returns null for non-python files so they get no hint', () => {
-    expect(getPluginHintReason('extras/notes.txt')).toBeNull();
+    expect(getPluginHintReason('notes.txt')).toBeNull();
   });
 
   it('maps every reason to hint copy', () => {
     expect(PLUGIN_HINT_TEXT.subfolder).toMatch(/subfolders can't be enabled directly/);
     expect(PLUGIN_HINT_TEXT['package-marker']).toMatch(/marks a package/);
+  });
+});
+
+describe('folderHasPluginFiles', () => {
+  it('is true for a folder holding a .py file', () => {
+    expect(folderHasPluginFiles({
+      type: 'folder',
+      children: [{ name: 'admin.py', path: 'extras/admin.py', type: 'file' }],
+    })).toBe(true);
+  });
+
+  it('is true when the .py file sits in a nested folder', () => {
+    expect(folderHasPluginFiles({
+      type: 'folder',
+      children: [{
+        type: 'folder',
+        children: [{ name: 'admin.py', path: 'extras/deep/admin.py', type: 'file' }],
+      }],
+    })).toBe(true);
+  });
+
+  it('is false for a folder with no plugin files', () => {
+    expect(folderHasPluginFiles({
+      type: 'folder',
+      children: [{ name: 'notes.txt', path: 'extras/notes.txt', type: 'file' }],
+    })).toBe(false);
+  });
+
+  it('is false for an empty or missing folder', () => {
+    expect(folderHasPluginFiles({ type: 'folder', children: [] })).toBe(false);
+    expect(folderHasPluginFiles(undefined)).toBe(false);
   });
 });
 
