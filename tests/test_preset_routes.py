@@ -504,6 +504,79 @@ def test_update_preset_enabled_hooks(client, app, tmp_path, monkeypatch):
     assert get_response.get_json()['data'].get('enabled_hooks') == hooks
 
 
+def test_create_preset_with_lan_rate_enabled(client, app):
+    """Preset created with lan_rate_enabled persists and returns it."""
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'lanrated',
+        'description': '',
+        'lan_rate_enabled': True,
+    })
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data.get('lan_rate_enabled') is True
+
+
+def test_create_preset_lan_rate_enabled_invalid_type(client, app):
+    """lan_rate_enabled must be a boolean."""
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'badlanrate',
+        'description': '',
+        'lan_rate_enabled': 'yes',
+    })
+    assert response.status_code == 400
+    assert 'lan_rate_enabled must be a boolean' in response.get_json()['error']['message']
+
+
+def test_get_preset_returns_lan_rate_enabled(client, app, tmp_path, monkeypatch):
+    """GET preset returns lan_rate_enabled saved with it."""
+    monkeypatch.chdir(tmp_path)
+    with app.app_context():
+        preset_path = os.path.join('configs', 'presets', 'lrtest')
+        os.makedirs(preset_path, exist_ok=True)
+        import json as _json
+        with open(os.path.join(preset_path, 'lan_rate_enabled.json'), 'w') as f:
+            _json.dump(True, f)
+        preset = create_preset(name='lrtest', description='', path=preset_path)
+        preset_id = preset.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.get(f'/api/presets/{preset_id}', headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()['data'].get('lan_rate_enabled') is True
+
+
+def test_get_preset_lan_rate_enabled_none_when_absent(client, app, tmp_path, monkeypatch):
+    """GET preset returns lan_rate_enabled=null when absent (legacy preset)."""
+    monkeypatch.chdir(tmp_path)
+    with app.app_context():
+        preset_path = os.path.join('configs', 'presets', 'legacylan')
+        os.makedirs(preset_path, exist_ok=True)
+        preset = create_preset(name='legacylan', description='', path=preset_path)
+        preset_id = preset.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.get(f'/api/presets/{preset_id}', headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()['data'].get('lan_rate_enabled') is None
+
+
+def test_update_preset_lan_rate_enabled(client, app, tmp_path, monkeypatch):
+    """PUT preset with lan_rate_enabled persists and returns updated value."""
+    monkeypatch.chdir(tmp_path)
+    preset_id, _ = _create_preset_folder(app, 'lrupdate', files=BASE_CONFIG_MAP)
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.put(f'/api/presets/{preset_id}', headers=headers, json={
+        'lan_rate_enabled': True,
+    })
+    assert response.status_code == 200
+    assert response.get_json()['data'].get('lan_rate_enabled') is True
+
+    get_response = client.get(f'/api/presets/{preset_id}', headers=headers)
+    assert get_response.get_json()['data'].get('lan_rate_enabled') is True
+
+
 def test_create_preset_with_scripts(client, app):
     """Preset with scripts data writes script files."""
     headers = auth_headers(app, DEFAULT_USER)

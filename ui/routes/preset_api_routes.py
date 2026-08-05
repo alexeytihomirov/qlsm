@@ -115,6 +115,7 @@ def _preset_export_manifest(preset, binary_metadata_count):
             'checked_plugins': True,
             'checked_factories': True,
             'enabled_hooks': True,
+            'lan_rate_enabled': True,
             'binary_metadata': True,
         },
         'counts': {
@@ -471,6 +472,14 @@ def _validate_enabled_hooks_payload(data):
     return None
 
 
+def _validate_lan_rate_enabled_payload(data):
+    if 'lan_rate_enabled' not in data:
+        return None
+    if not isinstance(data['lan_rate_enabled'], bool):
+        return "lan_rate_enabled must be a boolean"
+    return None
+
+
 def _validation_error_response(error):
     return jsonify({"error": {"message": str(error)}}), 400
 
@@ -785,6 +794,34 @@ def _write_preset_enabled_hooks(preset_path, enabled_hooks):
         current_app.logger.error(f"Error writing enabled_hooks.json to {filepath}: {e}")
 
 
+def _read_preset_lan_rate_enabled(preset_path):
+    """Read lan_rate_enabled.json from a preset folder.
+    Returns True/False, or None if the file does not exist — None means the
+    preset never recorded a 99k LAN Rate preference.
+    """
+    filepath = os.path.join(preset_path, 'lan_rate_enabled.json')
+    if not os.path.exists(filepath):
+        return None
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        current_app.logger.error(f"Error reading lan_rate_enabled.json from {filepath}: {e}")
+        return None
+
+
+def _write_preset_lan_rate_enabled(preset_path, value):
+    """Write lan_rate_enabled.json to a preset folder."""
+    os.makedirs(preset_path, exist_ok=True)
+    filepath = os.path.join(preset_path, 'lan_rate_enabled.json')
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(value, f)
+        current_app.logger.info(f"Wrote lan_rate_enabled.json: {filepath}")
+    except Exception as e:
+        current_app.logger.error(f"Error writing lan_rate_enabled.json to {filepath}: {e}")
+
+
 def _list_preset_config_files(preset_path):
     """Yield relative managed config paths, excluding reserved preset subdirs."""
     if not os.path.isdir(preset_path):
@@ -986,6 +1023,10 @@ def create_preset_api():
     if enabled_hooks_error:
         return jsonify({"error": {"message": enabled_hooks_error}}), 400
 
+    lan_rate_enabled_error = _validate_lan_rate_enabled_payload(data)
+    if lan_rate_enabled_error:
+        return jsonify({"error": {"message": lan_rate_enabled_error}}), 400
+
     description = data.get('description', '')
     preset_path = os.path.join(PRESETS_DIR, name)
 
@@ -1050,6 +1091,9 @@ def create_preset_api():
         if 'enabled_hooks' in data:
             _write_preset_enabled_hooks(preset_path, data['enabled_hooks'])
 
+        if 'lan_rate_enabled' in data:
+            _write_preset_lan_rate_enabled(preset_path, data['lan_rate_enabled'])
+
         # Step 2: Create DB record
         preset_data = {
             'name': name,
@@ -1075,6 +1119,7 @@ def create_preset_api():
         response_data['checked_plugins'] = _read_preset_checked_plugins(preset_path)
         response_data['checked_factories'] = _read_preset_checked_factories(preset_path)
         response_data['enabled_hooks'] = _read_preset_enabled_hooks(preset_path)
+        response_data['lan_rate_enabled'] = _read_preset_lan_rate_enabled(preset_path)
 
         if metadata_copied:
             db.session.commit()
@@ -1123,6 +1168,7 @@ def get_preset_api(preset_id):
     response_data['checked_plugins'] = _read_preset_checked_plugins(preset.path)
     response_data['checked_factories'] = _read_preset_checked_factories(preset.path)
     response_data['enabled_hooks'] = _read_preset_enabled_hooks(preset.path)
+    response_data['lan_rate_enabled'] = _read_preset_lan_rate_enabled(preset.path)
     response_data['user_hooks'] = _read_preset_user_hooks(preset)
 
     return jsonify({"data": response_data})
@@ -1204,6 +1250,10 @@ def update_preset_api(preset_id):
     if enabled_hooks_error:
         return jsonify({"error": {"message": enabled_hooks_error}}), 400
 
+    lan_rate_enabled_error = _validate_lan_rate_enabled_payload(data)
+    if lan_rate_enabled_error:
+        return jsonify({"error": {"message": lan_rate_enabled_error}}), 400
+
     # Check for name change
     if name_provided and new_name != original_preset_name:
         is_valid, error, reason = validate_user_preset_name(
@@ -1277,6 +1327,9 @@ def update_preset_api(preset_id):
         if 'enabled_hooks' in data:
             _write_preset_enabled_hooks(preset.path, data['enabled_hooks'])
 
+        if 'lan_rate_enabled' in data:
+            _write_preset_lan_rate_enabled(preset.path, data['lan_rate_enabled'])
+
         # Handle name change (rename folder)
         renamed_preset = name_provided and new_name != original_preset_name
         if renamed_preset:
@@ -1325,6 +1378,7 @@ def update_preset_api(preset_id):
             response_data['checked_plugins'] = _read_preset_checked_plugins(updated_preset.path)
             response_data['checked_factories'] = _read_preset_checked_factories(updated_preset.path)
             response_data['enabled_hooks'] = _read_preset_enabled_hooks(updated_preset.path)
+            response_data['lan_rate_enabled'] = _read_preset_lan_rate_enabled(updated_preset.path)
 
             if metadata_copied or metadata_renamed:
                 db.session.commit()
