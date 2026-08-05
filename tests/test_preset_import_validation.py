@@ -251,7 +251,7 @@ def test_enabled_hooks_none_when_absent():
 
 def test_rejects_invalid_lan_rate_enabled():
     raw = build_zip(extra={'lan_rate_enabled.json': json.dumps('yes')})
-    with pytest.raises(PresetImportError, match='lan_rate_enabled'):
+    with pytest.raises(PresetImportError, match='must contain a boolean'):
         parse_import_archive(raw)
 
 
