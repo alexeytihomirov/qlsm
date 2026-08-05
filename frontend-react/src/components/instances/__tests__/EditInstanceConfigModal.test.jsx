@@ -81,7 +81,7 @@ vi.mock('../../ConfirmationModal', () => ({
 }));
 
 vi.mock('../../presetManager/PresetManagerModal', () => ({
-  default: ({ isOpen, onSavePreset, savedPreset }) => (
+  default: ({ isOpen, onSavePreset, onLoadPreset, savedPreset }) => (
     isOpen ? (
       <div data-testid="preset-manager">
         <button
@@ -89,6 +89,12 @@ vi.mock('../../presetManager/PresetManagerModal', () => ({
           onClick={() => onSavePreset({ name: 'saved-from-edit', description: 'copy' })}
         >
           Confirm Save Preset
+        </button>
+        <button
+          type="button"
+          onClick={() => onLoadPreset('99')}
+        >
+          Confirm Load Preset
         </button>
         {savedPreset && (
           <button
@@ -255,6 +261,34 @@ vi.mock('../../../codemirror-lang-qlent', () => ({
   qlentLinter: mocks.qlentLinter,
 }));
 
+const baseDraftWorkspace = {
+  draftId: 'draft-123',
+  tree: [
+    {
+      type: 'folder',
+      name: 'discord_extensions',
+      path: 'discord_extensions',
+      children: [
+        {
+          type: 'file',
+          name: 'balance.py',
+          path: 'discord_extensions/balance.py',
+        },
+      ],
+    },
+  ],
+  loading: false,
+  error: null,
+  refreshTree: vi.fn(),
+  readContent: vi.fn(),
+  writeContent: vi.fn(),
+  upload: vi.fn(),
+  deleteFile: vi.fn(),
+  commit: vi.fn(),
+  discard: vi.fn(),
+  consume: vi.fn(),
+};
+
 describe('EditInstanceConfigModal preset saving', () => {
   let EditInstanceConfigModal;
 
@@ -299,33 +333,7 @@ describe('EditInstanceConfigModal preset saving', () => {
     mocks.updateInstance.mockResolvedValue({});
     mocks.updateInstanceConfig.mockResolvedValue({ message: 'ok' });
     mocks.updatePreset.mockResolvedValue({ message: 'updated', data: { id: 42, name: 'saved-from-edit' } });
-    mocks.useDraftWorkspace.mockReturnValue({
-      draftId: 'draft-123',
-      tree: [
-        {
-          type: 'folder',
-          name: 'discord_extensions',
-          path: 'discord_extensions',
-          children: [
-            {
-              type: 'file',
-              name: 'balance.py',
-              path: 'discord_extensions/balance.py',
-            },
-          ],
-        },
-      ],
-      loading: false,
-      error: null,
-      refreshTree: vi.fn(),
-      readContent: vi.fn(),
-      writeContent: vi.fn(),
-      upload: vi.fn(),
-      deleteFile: vi.fn(),
-      commit: vi.fn(),
-      discard: vi.fn(),
-      consume: vi.fn(),
-    });
+    mocks.useDraftWorkspace.mockReturnValue(baseDraftWorkspace);
     window.URL.createObjectURL = vi.fn(() => 'blob:qlsm-preset');
     window.URL.revokeObjectURL = vi.fn();
     vi.spyOn(document.body, 'appendChild');
@@ -333,6 +341,13 @@ describe('EditInstanceConfigModal preset saving', () => {
   });
 
   it('preserves checked plugin file paths when saving a preset from edit mode', async () => {
+    // Root-level plugin (not a subfolder match) so it's actually enableable
+    // and gets ticked by the load-resolution effect.
+    mocks.useDraftWorkspace.mockReturnValue({
+      ...baseDraftWorkspace,
+      tree: [{ type: 'file', name: 'balance.py', path: 'balance.py' }],
+    });
+
     render(
       <EditInstanceConfigModal
         isOpen={true}
@@ -352,7 +367,9 @@ describe('EditInstanceConfigModal preset saving', () => {
     expect(mocks.createPreset).toHaveBeenCalledWith(
       expect.objectContaining({
         draft_id: 'draft-123',
-        checked_plugins: ['discord_extensions/balance.py'],
+        // Full path (extension retained) proves Save Preset preserves the raw
+        // checkedPlugins entries rather than flattening them like Save Configuration does.
+        checked_plugins: ['balance.py'],
         factories: {},
         checked_factories: [],
       })
@@ -840,5 +857,183 @@ describe('EditInstanceConfigModal preset saving', () => {
       enabledOrder: ['a.so'],
       dirty: false,
     }));
+  });
+
+  describe('non-enableable plugins', () => {
+    const getPluginManagerProps = () => mocks.fileManagerProps
+      .filter(props => props.binaryContext?.contextType === 'instance')
+      .at(-1);
+
+    it('does not tick a qlx_plugins name that only exists in a subfolder, and shows the notice', async () => {
+      mocks.getInstanceById.mockResolvedValue({
+        host_name: 'test-host',
+        lan_rate_enabled: false,
+        status: 'running',
+        name: 'inst',
+        qlx_plugins: 'admin, essentials',
+      });
+      mocks.useDraftWorkspace.mockReturnValue({
+        ...baseDraftWorkspace,
+        tree: [
+          {
+            type: 'folder',
+            name: 'discord_extensions',
+            path: 'discord_extensions',
+            children: [
+              { type: 'file', name: 'admin.py', path: 'discord_extensions/admin.py' },
+            ],
+          },
+          { type: 'file', name: 'essentials.py', path: 'essentials.py' },
+        ],
+      });
+
+      render(
+        <EditInstanceConfigModal
+          isOpen={true}
+          onClose={vi.fn()}
+          instanceId={1}
+          instanceName="Test123"
+          onConfigSaved={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /plugins/i })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /plugins/i }));
+
+      await waitFor(() => {
+        expect([...(getPluginManagerProps()?.checkedFiles ?? [])]).toEqual(['essentials.py']);
+      });
+      expect(screen.getByRole('status')).toHaveTextContent(
+        "1 plugin that can't be enabled was deselected"
+      );
+    });
+
+    it('drops non-enableable entries when loading a preset and shows the notice', async () => {
+      mocks.getInstanceById.mockResolvedValue({
+        host_name: 'test-host',
+        lan_rate_enabled: false,
+        status: 'running',
+        name: 'inst',
+        qlx_plugins: '',
+      });
+      mocks.getPresetById.mockResolvedValue({
+        name: 'my-preset',
+        configs: {},
+        factories: {},
+        checked_plugins: ['balance.py', 'extras/textart.py', '__init__.py'],
+      });
+
+      render(
+        <EditInstanceConfigModal
+          isOpen={true}
+          onClose={vi.fn()}
+          instanceId={1}
+          instanceName="Test123"
+          onConfigSaved={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+      await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith('99'));
+
+      fireEvent.click(screen.getByRole('button', { name: /plugins/i }));
+      await waitFor(() => {
+        expect([...(getPluginManagerProps()?.checkedFiles ?? [])]).toEqual(['balance.py']);
+      });
+      expect(screen.getByRole('status')).toHaveTextContent(
+        "2 plugins that can't be enabled were deselected"
+      );
+    });
+
+    it('excludes subfolder plugins from the saved checked_plugins payload', async () => {
+      mocks.getInstanceById.mockResolvedValue({
+        host_name: 'test-host',
+        lan_rate_enabled: false,
+        status: 'running',
+        name: 'inst',
+        qlx_plugins: 'admin, essentials',
+      });
+      mocks.useDraftWorkspace.mockReturnValue({
+        ...baseDraftWorkspace,
+        tree: [
+          {
+            type: 'folder',
+            name: 'discord_extensions',
+            path: 'discord_extensions',
+            children: [
+              { type: 'file', name: 'admin.py', path: 'discord_extensions/admin.py' },
+            ],
+          },
+          { type: 'file', name: 'essentials.py', path: 'essentials.py' },
+        ],
+      });
+
+      render(
+        <EditInstanceConfigModal
+          isOpen={true}
+          onClose={vi.fn()}
+          instanceId={1}
+          instanceName="Test123"
+          onConfigSaved={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /save configuration/i })).toBeInTheDocument());
+      // Wait for the load-resolution effect to settle before saving, or the
+      // click can race ahead of the async plugin-tree resolution.
+      fireEvent.click(screen.getByRole('button', { name: /plugins/i }));
+      await waitFor(() => {
+        expect([...(getPluginManagerProps()?.checkedFiles ?? [])]).toEqual(['essentials.py']);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+
+      await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalledTimes(1));
+      const payload = mocks.updateInstanceConfig.mock.calls[0][1];
+      expect(payload.checked_plugins).not.toContain('admin');
+      expect(payload.checked_plugins).toEqual(['essentials']);
+    });
+
+    it('hides the notice once dismissed', async () => {
+      mocks.getInstanceById.mockResolvedValue({
+        host_name: 'test-host',
+        lan_rate_enabled: false,
+        status: 'running',
+        name: 'inst',
+        qlx_plugins: 'admin, essentials',
+      });
+      mocks.useDraftWorkspace.mockReturnValue({
+        ...baseDraftWorkspace,
+        tree: [
+          {
+            type: 'folder',
+            name: 'discord_extensions',
+            path: 'discord_extensions',
+            children: [
+              { type: 'file', name: 'admin.py', path: 'discord_extensions/admin.py' },
+            ],
+          },
+          { type: 'file', name: 'essentials.py', path: 'essentials.py' },
+        ],
+      });
+
+      render(
+        <EditInstanceConfigModal
+          isOpen={true}
+          onClose={vi.fn()}
+          instanceId={1}
+          instanceName="Test123"
+          onConfigSaved={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
   });
 });
