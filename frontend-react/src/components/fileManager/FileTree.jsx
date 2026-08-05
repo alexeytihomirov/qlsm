@@ -4,7 +4,12 @@ import { Box, Code, FileText, Folder, FolderOpen, Lock, Search, Type } from 'luc
 import FileTreeRowMenu from './FileTreeRowMenu';
 import InfoTooltip from '../common/InfoTooltip';
 import { getFileType, sortFileTree, MAX_CONFIG_FOLDER_DEPTH } from './fileManagerUtils';
-import { getPluginHintReason, isEnableablePluginPath, PLUGIN_HINT_TEXT } from './pluginSelection';
+import {
+  folderHasPluginFiles,
+  getPluginHintReason,
+  isEnableablePluginPath,
+  PLUGIN_HINT_TEXT,
+} from './pluginSelection';
 
 const FILE_TYPE_ICONS = {
   python: Code,
@@ -61,9 +66,13 @@ function TreeItem({
     ? 'text-yellow-400'
     : (FILE_TYPE_COLORS[fileType] || 'text-gray-400');
   const showCheckbox = isCheckableFile(item, fileType, checkable, capabilities);
-  const hintReason = !isFolder && checkable && capabilities?.rootOnlyCheckable && !showCheckbox
+  const rootOnly = checkable && !!capabilities?.rootOnlyCheckable;
+  const hintReason = !isFolder && rootOnly && !showCheckbox
     ? getPluginHintReason(item.path)
     : null;
+  // One hint per open folder, next to its name, instead of one per child row.
+  const showFolderHint = isFolder && rootOnly && foldersEnabled && expanded
+    && folderHasPluginFiles(item);
 
   if (isFolder && !foldersEnabled) {
     return (
@@ -133,7 +142,20 @@ function TreeItem({
             />
           )}
           <Icon className={`w-4 h-4 flex-shrink-0 ${iconColor}`} />
-          <span className="truncate flex-1 min-w-0">{item.name}</span>
+          <span className={`truncate min-w-0 ${showFolderHint ? '' : 'flex-1'}`}>{item.name}</span>
+          {/* Swallowing the click keeps a reach for the hint from collapsing the folder. */}
+          {showFolderHint && (
+            <span
+              className="flex flex-shrink-0 items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <InfoTooltip
+                text={PLUGIN_HINT_TEXT.subfolder}
+                size={13}
+                testId={`plugin-hint-${item.path}`}
+              />
+            </span>
+          )}
           {item.protected && (
             <Lock className="w-3 h-3 flex-shrink-0 text-[var(--text-muted)]" />
           )}

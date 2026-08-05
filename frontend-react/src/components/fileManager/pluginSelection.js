@@ -18,11 +18,23 @@ export function isEnableablePluginPath(path = '') {
   return path !== '__init__.py';
 }
 
+// Hint for a file row. Files inside a subfolder answer null: the folder row
+// carries a single 'subfolder' hint for everything under it, rather than every
+// child repeating the same explanation.
 export function getPluginHintReason(path = '') {
   if (!path.endsWith('.py')) return null;
-  if (basename(path) === '__init__.py') return 'package-marker';
-  if (path.includes('/')) return 'subfolder';
-  return null;
+  if (path.includes('/')) return null;
+  return path === '__init__.py' ? 'package-marker' : null;
+}
+
+// Whether a folder row should carry the 'subfolder' hint — only worth showing
+// when the folder actually holds plugin files somewhere beneath it.
+export function folderHasPluginFiles(node) {
+  return (node?.children || []).some(child => (
+    child.type === 'folder'
+      ? folderHasPluginFiles(child)
+      : (child.path || '').endsWith('.py')
+  ));
 }
 
 export function partitionCheckedPaths(paths = []) {

@@ -4,6 +4,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.22.0` | 2026-08-05 | [c433680](https://github.com/dngrtech/qlsm/commit/c433680) | Bug fixes and improvements. |
 | `v1.21.0` | 2026-08-04 | [#164](https://github.com/dngrtech/qlsm/pull/164) | Restrict plugin selection to top-level plugins; files in subfolders and `__init__.py` can no longer be enabled. |
 | `v1.20.0` | 2026-07-30 | [#163](https://github.com/dngrtech/qlsm/pull/163) | Add validated upload, preset round-tripping, and download/replace UI for font assets used by Quake Live plugins. |
 | `v1.19.3` | 2026-07-30 | [#162](https://github.com/dngrtech/qlsm/pull/162) | Fix a crash when saving a preset after clearing its name, and prevent an in-flight name validation from saving a stale name. |

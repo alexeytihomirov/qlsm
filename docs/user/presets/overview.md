@@ -37,8 +37,9 @@ Instead of editing `qlx_plugins` manually, presets use checkboxes. Check the plu
 
 Only plugins in the top level of the Plugins tab can be checked. Files inside subfolders
 have no checkbox — they are helper modules that a top-level plugin imports, and minqlx
-cannot load them by name. `__init__.py` has no checkbox either; it marks a package rather
-than being a plugin. Hover the icon next to such a file to see why.
+cannot load them by name — expand a subfolder and hover the info icon beside the folder
+name for the explanation. `__init__.py` has no checkbox either; it marks a package rather
+than being a plugin, and shows its own icon.
 
 Presets saved before this rule existed may have had subfolder plugins ticked. Those
 entries are dropped when the preset loads, and a notice on the Plugins tab tells you how

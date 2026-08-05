@@ -167,22 +167,58 @@ describe('FileTree', () => {
       expect(screen.getByTestId('plugin-hint-__init__.py')).toBeInTheDocument();
     });
 
-    it('replaces the checkbox with a hint on a subfolder plugin', () => {
+    it('hides the folder hint while the folder is collapsed', () => {
+      renderPluginTree();
+      expect(screen.queryByTestId('plugin-hint-discord_extensions')).not.toBeInTheDocument();
+    });
+
+    it('shows one hint on the folder, not on its children, once expanded', () => {
       renderPluginTree();
       fireEvent.click(screen.getByRole('button', { name: /discord_extensions/i }));
 
-      expect(screen.getByTestId('plugin-hint-discord_extensions/admin.py')).toBeInTheDocument();
+      expect(screen.getByTestId('plugin-hint-discord_extensions')).toBeInTheDocument();
+      expect(screen.queryByTestId('plugin-hint-discord_extensions/admin.py')).not.toBeInTheDocument();
       expect(screen.getAllByRole('checkbox')).toHaveLength(1);
     });
 
-    it('shows the subfolder explanation on hover', () => {
+    it('hides the folder hint again when the folder is collapsed', () => {
+      renderPluginTree();
+      const folder = screen.getByRole('button', { name: /discord_extensions/i });
+      fireEvent.click(folder);
+      fireEvent.click(folder);
+
+      expect(screen.queryByTestId('plugin-hint-discord_extensions')).not.toBeInTheDocument();
+    });
+
+    it('shows the subfolder explanation on folder hover', () => {
       renderPluginTree();
       fireEvent.click(screen.getByRole('button', { name: /discord_extensions/i }));
-      fireEvent.mouseEnter(screen.getByTestId('plugin-hint-discord_extensions/admin.py'));
+      fireEvent.mouseEnter(screen.getByTestId('plugin-hint-discord_extensions'));
 
       expect(screen.getByRole('tooltip')).toHaveTextContent(
         /Plugins in subfolders can't be enabled directly/,
       );
+    });
+
+    it('leaves a hint off a folder that holds no plugin files', () => {
+      render(
+        <FolderHarness
+          files={[{
+            name: 'assets',
+            path: 'assets',
+            type: 'folder',
+            children: [{ name: 'notes.txt', path: 'assets/notes.txt', type: 'file' }],
+          }]}
+          foldersEnabled
+          checkable
+          checkedFiles={new Set()}
+          onCheck={vi.fn()}
+          capabilities={PLUGIN_CAPS}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /assets/i }));
+
+      expect(screen.queryByTestId('plugin-hint-assets')).not.toBeInTheDocument();
     });
 
     it('shows the package-marker explanation on __init__.py hover', () => {

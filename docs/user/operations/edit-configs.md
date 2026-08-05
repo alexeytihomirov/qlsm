@@ -106,9 +106,9 @@ The `Plugins` tab manages Python plugins for this instance:
 - folders and files in the plugin tree
 - `.py`, `.txt`, native `.so` plugin files, and font files (`.ttf`, `.otf`, `.ttc`, `.otc`, `.woff`, `.woff2`, `.eot`, `.fon`, `.fnt`, `.pfb`, `.pfa`, `.pfm`, `.afm`) for plugins that bundle a font asset
 - checkbox selection for which Python plugins are included in `qlx_plugins` — top-level
-  `.py` files only. Subfolder plugins and `__init__.py` show an info icon instead of a
-  checkbox, explaining that they are referenced by a top-level plugin rather than enabled
-  on their own.
+  `.py` files only. Files inside a subfolder have no checkbox: expand the folder and hover
+  the info icon beside its name for the reason. Top-level `__init__.py` carries its own
+  info icon in place of a checkbox.
 - `Validate` button for checking Python plugin files
 - binary file details and descriptions for `.so` files
 
