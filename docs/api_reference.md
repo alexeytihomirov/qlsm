@@ -791,7 +791,7 @@ GET /presets/validate-name?name=my-preset
 
 `enabled_hooks` is an optional list of `.so` filenames (LD_PRELOAD order) recording which of the preset's `user-hooks/` files should be enabled when the preset is loaded onto an instance. It must be a list of `.so` filenames. When saving a preset from an instance's current state, the frontend populates this from that instance's currently-enabled hooks. `null`/absent means the preset predates this feature or was saved without any hooks captured.
 
-`lan_rate_enabled` is an optional boolean recording whether [99k LAN Rate](../features/99k-lan-rate.md) was enabled on the instance the preset was saved from. It must be `true` or `false` if present. `null`/absent means the preset predates this feature. On load, the frontend applies the saved value to the target's LAN rate toggle unless the value is `null`, in which case the target's current toggle is left untouched.
+`lan_rate_enabled` is an optional boolean recording whether [99k LAN Rate](user/features/99k-lan-rate.md) was enabled on the instance the preset was saved from. It must be `true` or `false` if present. `null`/absent means the preset predates this feature. On load, the frontend applies the saved value to the target's LAN rate toggle unless the value is `null`, in which case the target's current toggle is left untouched.
 
 `binary_meta_source` is optional on `POST /presets` and `PUT /presets/<id>`. When provided, matching `.so` file descriptions are copied from the source context into the target preset context. Use this when saving an instance or another preset as a new preset.
 

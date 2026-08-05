@@ -517,6 +517,7 @@ describe('AddInstanceForm draft lifecycle', () => {
       name: 'legacy-preset',
       configs: {},
       factories: {},
+      lan_rate_enabled: null,
     });
 
     render(

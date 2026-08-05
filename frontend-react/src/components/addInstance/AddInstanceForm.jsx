@@ -538,6 +538,16 @@ function AddInstanceForm({
     prevPortRef.current = port;
   }, [port, syncConfigFile]);
 
+  const effectiveHostId = selectedHostId || (initialHostId ? String(initialHostId) : '');
+  const selectedHost = (initialData.hosts || []).find((host) => String(host.id) === String(effectiveHostId));
+  const selectedHostOsType = selectedHost?.os_type ?? null;
+  const hasSelectedHost = Boolean(selectedHost);
+  const selectedHostShape = { os_type: selectedHostOsType, lan_rate_uses_hook: selectedHost?.lan_rate_uses_hook ?? false };
+  const lanRateSupported = !hasSelectedHost || isLanRateSupported(selectedHostShape);
+  const lanRateUnavailableReason = hasSelectedHost && !lanRateSupported
+    ? getLanRateUnsupportedMessage(selectedHostShape)
+    : null;
+
   // Handle loading a preset
   const handleLoadPreset = useCallback(async (presetId) => {
     setIsLoadingPreset(true);
@@ -622,11 +632,13 @@ function AddInstanceForm({
       initialCheckedPluginsRef.current = nextCheckedBaseline;
 
       // lan_rate_enabled: null/undefined = the preset pre-dates this feature —
-      // leave whatever the toggle is currently set to. The existing
-      // lanRateSupported auto-disable effect (below, keyed on lanRateEnabled)
-      // clamps this if the target host doesn't support it.
+      // leave whatever the toggle is currently set to. Clamp inline (rather
+      // than relying solely on the reactive lanRateSupported auto-disable
+      // effect below) so the initial/loaded-preset refs never capture an
+      // unclamped value — otherwise the "preset modified" badge lights up
+      // spuriously and Overwrite Preset could silently strip the setting.
       const nextLanRate = presetData.lan_rate_enabled != null
-        ? presetData.lan_rate_enabled
+        ? (presetData.lan_rate_enabled && !lanRateSupported ? false : presetData.lan_rate_enabled)
         : lanRateEnabled;
       setLanRateEnabled(nextLanRate);
       initialLanRateEnabledRef.current = nextLanRate;
@@ -638,7 +650,7 @@ function AddInstanceForm({
     } finally {
       setIsLoadingPreset(false);
     }
-  }, [checkedPlugins, lanRateEnabled, resetConfigs, resetFactories, syncConfigState]);
+  }, [checkedPlugins, lanRateEnabled, lanRateSupported, resetConfigs, resetFactories, syncConfigState]);
 
 
   // Handle saving current config as a preset
@@ -872,15 +884,6 @@ function AddInstanceForm({
     factoriesAdapter,
     handleConfigContentUpdate,
   ]);
-  const effectiveHostId = selectedHostId || (initialHostId ? String(initialHostId) : '');
-  const selectedHost = (initialData.hosts || []).find((host) => String(host.id) === String(effectiveHostId));
-  const selectedHostOsType = selectedHost?.os_type ?? null;
-  const hasSelectedHost = Boolean(selectedHost);
-  const selectedHostShape = { os_type: selectedHostOsType, lan_rate_uses_hook: selectedHost?.lan_rate_uses_hook ?? false };
-  const lanRateSupported = !hasSelectedHost || isLanRateSupported(selectedHostShape);
-  const lanRateUnavailableReason = hasSelectedHost && !lanRateSupported
-    ? getLanRateUnsupportedMessage(selectedHostShape)
-    : null;
 
   useEffect(() => {
     if (!lanRateSupported && lanRateEnabled) {

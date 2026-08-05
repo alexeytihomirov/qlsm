@@ -488,6 +488,44 @@ describe('EditInstanceConfigModal preset saving', () => {
     await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'false'));
   });
 
+  it('does not disable an already-enabled legacy-host instance when the loaded preset also wants it on', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      host_name: 'ubuntu-host',
+      host_os_type: 'ubuntu',
+      host_lan_rate_uses_hook: false,
+      lan_rate_enabled: true,
+      status: 'running',
+      name: 'UbuntuInst',
+      qlx_plugins: '',
+    });
+    mocks.getPresetById.mockResolvedValue({
+      name: 'lan-preset',
+      configs: {},
+      factories: {},
+      lan_rate_enabled: true,
+    });
+
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="UbuntuInst"
+        onConfigSaved={vi.fn()}
+      />
+    );
+
+    const toggle = await screen.findByRole('button', { name: /toggle 99k lan rate/i });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith('99'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('leaves the lan rate toggle untouched when the loaded preset has no recorded value', async () => {
     mocks.getInstanceById.mockResolvedValue({
       host_name: 'test-host',
@@ -501,6 +539,7 @@ describe('EditInstanceConfigModal preset saving', () => {
       name: 'legacy-preset',
       configs: {},
       factories: {},
+      lan_rate_enabled: null,
     });
 
     render(

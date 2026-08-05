@@ -22,7 +22,6 @@ import HooksTab from './HooksTab';
 import {
   canEnableLanRate,
   getLanRateUnsupportedMessage,
-  isLanRateSupported,
 } from '../../utils/lanRateCompatibility';
 
 const CONFIG_FILES_ORDER = ['server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt'];
@@ -531,14 +530,16 @@ function EditInstanceConfigModal({
       // when the preset wants it on but the host can't support it — this modal
       // has no reactive auto-disable effect like AddInstanceForm, so an
       // unclamped true here would leave the toggle on AND locked (unable to be
-      // switched off through the gated manual-toggle handler).
+      // switched off through the gated manual-toggle handler). Use
+      // canEnableLanRate (not isLanRateSupported) so an already-enabled
+      // legacy-host instance stays enabled when the preset agrees — matching
+      // the same leniency the manual-toggle gate (canToggleLanRate) applies.
       if (presetData.lan_rate_enabled != null) {
-        const nextLanRate = presetData.lan_rate_enabled && !isLanRateSupported({
-          os_type: hostOsType,
-          lan_rate_uses_hook: hostLanRateUsesHook,
-        })
-          ? false
-          : presetData.lan_rate_enabled;
+        const canEnable = canEnableLanRate({
+          host: { os_type: hostOsType, lan_rate_uses_hook: hostLanRateUsesHook },
+          currentEnabled: originalLanRateEnabled,
+        });
+        const nextLanRate = presetData.lan_rate_enabled && !canEnable ? false : presetData.lan_rate_enabled;
         setLanRateEnabled(nextLanRate);
         if (nextLanRate !== originalLanRateEnabled) setRestartAfterSave(true);
       }
