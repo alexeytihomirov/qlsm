@@ -137,6 +137,7 @@ docs/*
 !docs/architecture.md
 !docs/api_reference.md
 !docs/development_guidelines.md
+!docs/design-system.md
 !docs/requirements.txt
 !docs/user/
 !docs/user/**
