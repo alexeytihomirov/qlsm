@@ -61,6 +61,7 @@ def test_parses_full_valid_archive():
         'checked_plugins.json': json.dumps(['balance.py']),
         'checked_factories.json': json.dumps(['ca.factories']),
         'enabled_hooks.json': json.dumps(['custom_hook.so']),
+        'lan_rate_enabled.json': json.dumps(True),
         'binary_metadata.json': json.dumps({'format_version': 1, 'metadata': [
             {'file_path': 'custom_hook.so', 'description': '99k hook'},
             {'file_path': 'stale.so', 'description': 'dropped'},
@@ -80,6 +81,7 @@ def test_parses_full_valid_archive():
     assert bundle['checked_plugins'] == ['balance.py']
     assert bundle['checked_factories'] == ['ca.factories']
     assert bundle['enabled_hooks'] == ['custom_hook.so']
+    assert bundle['lan_rate_enabled'] is True
     assert bundle['binary_metadata'] == [
         {'file_path': 'custom_hook.so', 'description': '99k hook'},
     ]
@@ -245,6 +247,24 @@ def test_enabled_hooks_none_when_absent():
     raw = build_zip()
     bundle = parse_import_archive(raw)
     assert bundle['enabled_hooks'] is None
+
+
+def test_rejects_invalid_lan_rate_enabled():
+    raw = build_zip(extra={'lan_rate_enabled.json': json.dumps('yes')})
+    with pytest.raises(PresetImportError, match='lan_rate_enabled'):
+        parse_import_archive(raw)
+
+
+def test_parses_lan_rate_enabled_false():
+    raw = build_zip(extra={'lan_rate_enabled.json': json.dumps(False)})
+    bundle = parse_import_archive(raw)
+    assert bundle['lan_rate_enabled'] is False
+
+
+def test_lan_rate_enabled_none_when_absent():
+    raw = build_zip()
+    bundle = parse_import_archive(raw)
+    assert bundle['lan_rate_enabled'] is None
 
 
 TTF_CONTENT = b'\x00\x01\x00\x00' + b'\x00' * 20

@@ -212,6 +212,12 @@ def _validate_checked_lists(bundle):
         raise PresetImportError("enabled_hooks.json must contain a list of .so filenames.")
 
 
+def _validate_lan_rate_enabled(bundle):
+    lan_rate_enabled = bundle['lan_rate_enabled']
+    if lan_rate_enabled is not None and not isinstance(lan_rate_enabled, bool):
+        raise PresetImportError("lan_rate_enabled.json must contain a boolean.")
+
+
 def _normalize_enabled_hooks(enabled_hooks, user_hooks):
     """Drop entries that don't correspond to a hook actually present in the archive."""
     if enabled_hooks is None:
@@ -259,6 +265,7 @@ def parse_import_archive(raw_bytes):
     bundle = {
         'configs': {}, 'factories': {}, 'scripts': {}, 'user_hooks': {},
         'checked_plugins': None, 'checked_factories': None, 'enabled_hooks': None,
+        'lan_rate_enabled': None,
         'manifest': None, 'binary_metadata': None,
     }
 
@@ -289,6 +296,8 @@ def parse_import_archive(raw_bytes):
                 bundle['checked_factories'] = _read_json(archive, info, 'Checked factories')
             elif name == 'enabled_hooks.json':
                 bundle['enabled_hooks'] = _read_json(archive, info, 'Enabled hooks')
+            elif name == 'lan_rate_enabled.json':
+                bundle['lan_rate_enabled'] = _read_json(archive, info, 'LAN rate enabled')
             elif name.startswith('factories/'):
                 filename = name[len('factories/'):]
                 try:
@@ -316,6 +325,7 @@ def parse_import_archive(raw_bytes):
 
     _validate_manifest(bundle['manifest'])
     _validate_checked_lists(bundle)
+    _validate_lan_rate_enabled(bundle)
     bundle['binary_metadata'] = _normalize_binary_metadata(
         bundle['binary_metadata'], bundle['user_hooks']
     )
