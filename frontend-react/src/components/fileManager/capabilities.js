@@ -24,6 +24,9 @@ export const PLUGIN_CAPS = {
   canCreateFolder: true,
   canCheckEnable: true,
   canValidate: true,
+  // Only root-level .py files (excluding __init__.py) can be enabled — see
+  // pluginSelection.js. Everything else renders a hint instead of a checkbox.
+  rootOnlyCheckable: true,
   allowedExtensions: ['.py', '.txt', '.so', ...FONT_EXTENSIONS],
   nonEditableExtensions: ['.so', ...FONT_EXTENSIONS],
   newFileTemplate: () => '',

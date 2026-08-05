@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import FileTree from '../FileTree';
+import { PLUGIN_CAPS } from '../capabilities';
 
 function rowTexts(tree) {
   return within(tree).getAllByRole('button')
@@ -126,5 +127,83 @@ describe('FileTree', () => {
     fireEvent.click(within(tree).getAllByRole('checkbox')[2]);
 
     expect(rowTexts(tree)).toEqual(['alpha.py', 'bravo.py', 'zeta.py']);
+  });
+
+  describe('rootOnlyCheckable', () => {
+    const pluginFiles = [
+      {
+        name: 'discord_extensions',
+        path: 'discord_extensions',
+        type: 'folder',
+        children: [
+          { name: 'admin.py', path: 'discord_extensions/admin.py', type: 'file' },
+        ],
+      },
+      { name: 'essentials.py', path: 'essentials.py', type: 'file' },
+      { name: '__init__.py', path: '__init__.py', type: 'file' },
+    ];
+
+    function renderPluginTree() {
+      return render(
+        <FolderHarness
+          files={pluginFiles}
+          foldersEnabled
+          checkable
+          checkedFiles={new Set()}
+          onCheck={vi.fn()}
+          capabilities={PLUGIN_CAPS}
+        />,
+      );
+    }
+
+    it('keeps the checkbox on a root-level plugin', () => {
+      renderPluginTree();
+      expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+      expect(screen.queryByTestId('plugin-hint-essentials.py')).not.toBeInTheDocument();
+    });
+
+    it('replaces the checkbox with a hint on __init__.py', () => {
+      renderPluginTree();
+      expect(screen.getByTestId('plugin-hint-__init__.py')).toBeInTheDocument();
+    });
+
+    it('replaces the checkbox with a hint on a subfolder plugin', () => {
+      renderPluginTree();
+      fireEvent.click(screen.getByRole('button', { name: /discord_extensions/i }));
+
+      expect(screen.getByTestId('plugin-hint-discord_extensions/admin.py')).toBeInTheDocument();
+      expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    });
+
+    it('shows the subfolder explanation on hover', () => {
+      renderPluginTree();
+      fireEvent.click(screen.getByRole('button', { name: /discord_extensions/i }));
+      fireEvent.mouseEnter(screen.getByTestId('plugin-hint-discord_extensions/admin.py'));
+
+      expect(screen.getByRole('tooltip')).toHaveTextContent(
+        /Plugins in subfolders can't be enabled directly/,
+      );
+    });
+
+    it('shows the package-marker explanation on __init__.py hover', () => {
+      renderPluginTree();
+      fireEvent.mouseEnter(screen.getByTestId('plugin-hint-__init__.py'));
+
+      expect(screen.getByRole('tooltip')).toHaveTextContent(/marks a package/);
+    });
+
+    it('leaves factories checkable when the flag is absent', () => {
+      render(
+        <FileTree
+          files={[{ name: 'ffa.factories', path: 'ffa.factories', type: 'file' }]}
+          onSelectFile={vi.fn()}
+          checkable
+          checkedFiles={new Set()}
+          onCheck={vi.fn()}
+          capabilities={{}}
+        />,
+      );
+      expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    });
   });
 });

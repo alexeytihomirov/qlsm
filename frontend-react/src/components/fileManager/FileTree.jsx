@@ -2,7 +2,9 @@ import { useMemo, useRef, useState } from 'react';
 import { Box, Code, FileText, Folder, FolderOpen, Lock, Search, Type } from 'lucide-react';
 
 import FileTreeRowMenu from './FileTreeRowMenu';
+import InfoTooltip from '../common/InfoTooltip';
 import { getFileType, sortFileTree, MAX_CONFIG_FOLDER_DEPTH } from './fileManagerUtils';
+import { getPluginHintReason, isEnableablePluginPath, PLUGIN_HINT_TEXT } from './pluginSelection';
 
 const FILE_TYPE_ICONS = {
   python: Code,
@@ -18,9 +20,11 @@ const FILE_TYPE_COLORS = {
   font: 'text-pink-400',
 };
 
-function isCheckableFile(item, fileType, checkable) {
+function isCheckableFile(item, fileType, checkable, capabilities) {
   if (!checkable || item.type === 'folder') return false;
-  return fileType === 'python' || item.name?.endsWith('.factories');
+  if (fileType !== 'python' && !item.name?.endsWith('.factories')) return false;
+  if (capabilities?.rootOnlyCheckable && !isEnableablePluginPath(item.path)) return false;
+  return true;
 }
 
 function getTreeSignature(items = []) {
@@ -56,7 +60,10 @@ function TreeItem({
   const iconColor = isFolder
     ? 'text-yellow-400'
     : (FILE_TYPE_COLORS[fileType] || 'text-gray-400');
-  const showCheckbox = isCheckableFile(item, fileType, checkable);
+  const showCheckbox = isCheckableFile(item, fileType, checkable, capabilities);
+  const hintReason = !isFolder && checkable && capabilities?.rootOnlyCheckable && !showCheckbox
+    ? getPluginHintReason(item.path)
+    : null;
 
   if (isFolder && !foldersEnabled) {
     return (
@@ -115,6 +122,14 @@ function TreeItem({
               }}
               onClick={(e) => e.stopPropagation()}
               className="h-3.5 w-3.5 rounded border-gray-500 text-blue-500 focus:ring-blue-500 flex-shrink-0"
+            />
+          )}
+          {hintReason && (
+            <InfoTooltip
+              text={PLUGIN_HINT_TEXT[hintReason]}
+              size={14}
+              testId={`plugin-hint-${item.path}`}
+              className="flex-shrink-0"
             />
           )}
           <Icon className={`w-4 h-4 flex-shrink-0 ${iconColor}`} />

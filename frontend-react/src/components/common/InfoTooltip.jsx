@@ -12,8 +12,9 @@ import { Info } from 'lucide-react';
  * @param {string}  [iconClassName] - Extra classes for the icon wrapper
  * @param {string}  [className]     - Extra classes for the outer container
  * @param {'info'|'cyan'|'warning'|'danger'} [variant='info'] - Color scheme
+ * @param {string} [testId] - data-testid for the hover target
  */
-function InfoTooltip({ text, size = 14, placement = 'top', iconClassName = '', className = '', variant = 'info' }) {
+function InfoTooltip({ text, size = 14, placement = 'top', iconClassName = '', className = '', variant = 'info', testId }) {
   const [open, setOpen] = useState(false);
   const arrowRef = useRef(null);
   const hoverTimeout = useRef(null);
@@ -86,6 +87,7 @@ function InfoTooltip({ text, size = 14, placement = 'top', iconClassName = '', c
     <span className={`inline-flex items-center ${className}`}>
       <span
         ref={refs.setReference}
+        data-testid={testId}
         onMouseEnter={handleEnter}
         onMouseLeave={handleLeave}
         className={`inline-flex cursor-help transition-colors duration-150 ${iconClassName}`}
