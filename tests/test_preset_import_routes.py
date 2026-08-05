@@ -184,6 +184,32 @@ def test_import_preset_without_enabled_hooks_json(client, app, presets_base):
     assert not (preset_dir / 'enabled_hooks.json').exists()
 
 
+def test_import_creates_preset_with_lan_rate_enabled(client, app, presets_base):
+    zip_buffer = build_zip(extra={
+        'lan_rate_enabled.json': json.dumps(True),
+    })
+    response = post_import(client, app, zip_buffer)
+
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data['lan_rate_enabled'] is True
+
+    preset_dir = presets_base / 'imported'
+    with open(preset_dir / 'lan_rate_enabled.json') as f:
+        assert json.load(f) is True
+
+
+def test_import_preset_without_lan_rate_enabled_json(client, app, presets_base):
+    """Legacy/no-lan-rate exports don't write lan_rate_enabled.json and return null."""
+    response = post_import(client, app, build_zip())
+
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data['lan_rate_enabled'] is None
+    preset_dir = presets_base / 'imported'
+    assert not (preset_dir / 'lan_rate_enabled.json').exists()
+
+
 def test_import_metadata_failure_rolls_back_row_and_folder(client, app, presets_base, monkeypatch):
     def fail_metadata(*_args, **_kwargs):
         raise ValueError('forced metadata failure')

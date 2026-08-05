@@ -18,6 +18,7 @@ from ui.routes.preset_api_routes import (
     _read_preset_configs,
     _read_preset_enabled_hooks,
     _read_preset_factories,
+    _read_preset_lan_rate_enabled,
     _read_preset_scripts,
     _resolve_export_root,
     _write_preset_checked_factories,
@@ -25,6 +26,7 @@ from ui.routes.preset_api_routes import (
     _write_preset_configs,
     _write_preset_enabled_hooks,
     _write_preset_factories,
+    _write_preset_lan_rate_enabled,
     _write_preset_scripts,
 )
 from ui.routes.preset_import_validation import (
@@ -105,6 +107,8 @@ def _write_import_bundle(preset_path, bundle):
         _write_preset_checked_factories(preset_path, bundle['checked_factories'])
     if bundle['enabled_hooks'] is not None:
         _write_preset_enabled_hooks(preset_path, bundle['enabled_hooks'])
+    if bundle['lan_rate_enabled'] is not None:
+        _write_preset_lan_rate_enabled(preset_path, bundle['lan_rate_enabled'])
 
 
 def _replace_binary_metadata(preset_name, entries):
@@ -128,6 +132,7 @@ def _preset_response(preset):
     data['checked_plugins'] = _read_preset_checked_plugins(preset.path)
     data['checked_factories'] = _read_preset_checked_factories(preset.path)
     data['enabled_hooks'] = _read_preset_enabled_hooks(preset.path)
+    data['lan_rate_enabled'] = _read_preset_lan_rate_enabled(preset.path)
     return data
 
 
