@@ -750,4 +750,105 @@ describe('AddInstanceForm draft lifecycle', () => {
     expect(factoryManagerProps.getLinterSourceForFile('notes.txt')).toBeNull();
     expect(factoryManagerProps.onExpandEditor).toEqual(expect.any(Function));
   });
+
+  describe('non-enableable plugins', () => {
+    it('drops non-enableable entries from defaultCheckedPlugins', async () => {
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+            defaultCheckedPlugins: ['balance.py', 'extras/textart.py'],
+          }}
+          initialHostId={null}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        /1 plugin that can't be enabled was deselected/i
+      );
+    });
+
+    it('drops non-enableable entries when loading a preset', async () => {
+      mocks.getPresetById.mockResolvedValue({
+        checked_plugins: ['balance.py', 'discord_extensions/admin.py', '__init__.py'],
+      });
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [{ id: 1, name: 'my-preset', is_builtin: false }],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+      await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        /2 plugins that can't be enabled were deselected/i
+      );
+    });
+
+    it('omits subfolder plugins from checked_plugins and qlx_plugins on submit', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+            defaultCheckedPlugins: ['balance.py', 'discord_extensions/admin.py'],
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitData = onSubmit.mock.calls[0][0];
+      expect(submitData.checked_plugins).toEqual(['balance']);
+      expect(submitData.qlx_plugins).toBe('balance');
+    });
+  });
 });
