@@ -376,6 +376,146 @@ describe('EditInstanceConfigModal preset saving', () => {
     );
   });
 
+  it('includes lan_rate_enabled when saving a preset from edit mode', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      host_name: 'test-host',
+      host_os_type: 'debian',
+      lan_rate_enabled: true,
+      status: 'running',
+      name: 'inst',
+      qlx_plugins: '',
+    });
+
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /save preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+
+    await waitFor(() => expect(mocks.createPreset).toHaveBeenCalledTimes(1));
+    expect(mocks.createPreset.mock.calls[0][0].lan_rate_enabled).toBe(true);
+  });
+
+  it('applies lan_rate_enabled from a loaded preset and forces a restart', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      host_name: 'test-host',
+      host_os_type: 'debian',
+      lan_rate_enabled: false,
+      status: 'running',
+      name: 'inst',
+      qlx_plugins: '',
+    });
+    mocks.getPresetById.mockResolvedValue({
+      name: 'lan-preset',
+      configs: {},
+      factories: {},
+      lan_rate_enabled: true,
+    });
+
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+      />
+    );
+
+    const toggle = await screen.findByRole('button', { name: /toggle 99k lan rate/i });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith('99'));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
+
+    const restartToggle = screen.getByRole('button', { name: /toggle restart after save/i });
+    expect(restartToggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('clamps a preset lan_rate_enabled=true to false on an unsupported host', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      host_name: 'ubuntu-host',
+      host_os_type: 'ubuntu',
+      host_lan_rate_uses_hook: false,
+      lan_rate_enabled: false,
+      name: 'UbuntuInst',
+      qlx_plugins: '',
+    });
+    mocks.getPresetById.mockResolvedValue({
+      name: 'lan-preset',
+      configs: {},
+      factories: {},
+      lan_rate_enabled: true,
+    });
+
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="UbuntuInst"
+        onConfigSaved={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith('99'));
+
+    const toggle = await screen.findByRole('button', { name: /toggle 99k lan rate/i });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'false'));
+  });
+
+  it('leaves the lan rate toggle untouched when the loaded preset has no recorded value', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      host_name: 'test-host',
+      host_os_type: 'debian',
+      lan_rate_enabled: true,
+      status: 'running',
+      name: 'inst',
+      qlx_plugins: '',
+    });
+    mocks.getPresetById.mockResolvedValue({
+      name: 'legacy-preset',
+      configs: {},
+      factories: {},
+    });
+
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+      />
+    );
+
+    const toggle = await screen.findByRole('button', { name: /toggle 99k lan rate/i });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith('99'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('keeps the save modal open and downloads the saved preset archive', async () => {
     const onClose = vi.fn();
 
