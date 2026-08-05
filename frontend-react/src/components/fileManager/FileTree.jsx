@@ -145,10 +145,13 @@ function TreeItem({
           <span className={`truncate min-w-0 ${showFolderHint ? '' : 'flex-1'}`}>{item.name}</span>
           {/* Swallowing the click keeps a reach for the hint from collapsing the folder. */}
           {showFolderHint && (
-            <span className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <span
+              className="flex flex-shrink-0 items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
               <InfoTooltip
                 text={PLUGIN_HINT_TEXT.subfolder}
-                size={14}
+                size={13}
                 testId={`plugin-hint-${item.path}`}
               />
             </span>
