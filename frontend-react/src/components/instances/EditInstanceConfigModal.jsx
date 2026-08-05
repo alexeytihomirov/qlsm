@@ -213,7 +213,7 @@ function EditInstanceConfigModal({
       setCheckedPlugins(nextCheckedPlugins);
     }
     if (droppedNames.length > 0) {
-      setDroppedPluginCount(count => count + droppedNames.length);
+      setDroppedPluginCount(droppedNames.length);
     }
   }, [rawQlxPlugins, pluginTree]);
 
