@@ -9,6 +9,8 @@ import ExpandedEditorModal from '../ExpandedEditorModal';
 import ConfirmationModal from '../ConfirmationModal';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
 import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, useStateAdapter, useDraftAdapter } from '../fileManager';
+import SubfolderPluginNotice from '../fileManager/SubfolderPluginNotice';
+import { partitionCheckedPaths, resolveRootPluginPaths, toQlxPluginNames } from '../fileManager/pluginSelection';
 import { useNotification } from '../NotificationProvider';
 import InfoTooltip from '../common/InfoTooltip';
 import { qlcfgLanguage, createQlCfgLinter, stripManagedCvars } from '../../codemirror-lang-qlcfg';
@@ -127,6 +129,8 @@ function EditInstanceConfigModal({
   const [scriptHostName, setScriptHostName] = useState(null);
   const [draftPreset, setDraftPreset] = useState(null); // null = seed from instance; string = seed from preset
   const [rawQlxPlugins, setRawQlxPlugins] = useState([]); // bare plugin names from instance
+  const [droppedPluginCount, setDroppedPluginCount] = useState(0);
+  const [pluginNoticeDismissed, setPluginNoticeDismissed] = useState(false);
   const pluginFileManagerRef = useRef(null);
   const pluginsSyncedRef = useRef(false);
   const hookLoadSeqRef = useRef(0);
@@ -195,27 +199,21 @@ function EditInstanceConfigModal({
   const { files: serializedConfigFiles } = serializeConfigs();
   const serverCfgContent = serializedConfigFiles['server.cfg'] || '';
 
-  // Resolve raw qlx_plugins names to full tree paths once on initial load
+  // Resolve raw qlx_plugins names to full tree paths once on initial load.
+  // Only root-level files can match — a name that resolves solely to a
+  // subfolder file is dropped and surfaced in the notice.
   useEffect(() => {
     if (pluginsSyncedRef.current) return;
     if (rawQlxPlugins.length === 0 || pluginTree.length === 0) return;
-    const fullPaths = [];
-    const collectPaths = (node) => {
-      if (node.type === 'file' && node.name.endsWith('.py') && node.name !== '__init__.py') {
-        const basename = node.name.replace('.py', '');
-        if (rawQlxPlugins.includes(basename)) {
-          fullPaths.push(node.path);
-        }
-      } else if (node.type === 'folder' && node.children) {
-        node.children.forEach(collectPaths);
-      }
-    };
-    pluginTree.forEach(collectPaths);
+    const { paths, droppedNames } = resolveRootPluginPaths(pluginTree, rawQlxPlugins);
     pluginsSyncedRef.current = true;
-    const nextCheckedPlugins = new Set(fullPaths);
+    const nextCheckedPlugins = new Set(paths);
     setInitialCheckedPlugins(nextCheckedPlugins);
-    if (fullPaths.length > 0) {
+    if (paths.length > 0) {
       setCheckedPlugins(nextCheckedPlugins);
+    }
+    if (droppedNames.length > 0) {
+      setDroppedPluginCount(droppedNames.length);
     }
   }, [rawQlxPlugins, pluginTree]);
 
@@ -311,6 +309,8 @@ function EditInstanceConfigModal({
         setHooksLoaded(false);
         setInstanceStatus(null);
         pluginsSyncedRef.current = false;
+        setDroppedPluginCount(0);
+        setPluginNoticeDismissed(false);
         setFactoryServerTree([]);
 
         // Reset restart toggle to default (true) when opening
@@ -516,7 +516,10 @@ function EditInstanceConfigModal({
           )
         : (presetData.factories || {});
       resetFactories(factoriesToLoad);
-      setCheckedPlugins(new Set(presetData.checked_plugins || []));
+      const { selectable, dropped } = partitionCheckedPaths(presetData.checked_plugins || []);
+      setCheckedPlugins(selectable);
+      setDroppedPluginCount(dropped.length);
+      setPluginNoticeDismissed(false);
       setDraftPreset(presetData.name);
       if (presetData.enabled_hooks !== undefined && presetData.enabled_hooks !== null) {
         setHookEnabledOrder(presetData.enabled_hooks);
@@ -686,9 +689,7 @@ function EditInstanceConfigModal({
         config_folders: cfgFolders,
         factories: serializeFactories().files,
         draft_id: pluginDraftId,
-        checked_plugins: Array.from(checkedPlugins)
-          .filter(p => p.endsWith('.py') && !p.endsWith('__init__.py'))
-          .map(p => p.replace(/\.py$/, '').replace(/^.*\//, '')),
+        checked_plugins: toQlxPluginNames(checkedPlugins),
       };
       if (hooksLoaded) {
         configPayload.enabled_hooks = hookEnabledOrder;
@@ -1030,23 +1031,29 @@ function EditInstanceConfigModal({
                               getLinterSourceForFile={getLinterSource}
                             />
                           </div>
-                          <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0' : 'hidden'}>
-                            <FileManager
-                              ref={pluginFileManagerRef}
-                              adapter={pluginsAdapter}
-                              capabilities={PLUGIN_CAPS}
-                              checkable
-                              checkedFiles={checkedPlugins}
-                              onCheck={togglePluginSelection}
-                              onExpandEditor={handleExpandPluginEditor}
-                              getLanguageForFile={getPluginLanguage}
-                              getBinaryMeta={handleGetBinaryMeta}
-                              saveBinaryMeta={handleSaveBinaryMeta}
-                              binaryContext={{
-                                contextType: 'instance',
-                                contextKey: String(instanceId),
-                              }}
+                          <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+                            <SubfolderPluginNotice
+                              count={pluginNoticeDismissed ? 0 : droppedPluginCount}
+                              onDismiss={() => setPluginNoticeDismissed(true)}
                             />
+                            <div className="flex-1 min-h-0">
+                              <FileManager
+                                ref={pluginFileManagerRef}
+                                adapter={pluginsAdapter}
+                                capabilities={PLUGIN_CAPS}
+                                checkable
+                                checkedFiles={checkedPlugins}
+                                onCheck={togglePluginSelection}
+                                onExpandEditor={handleExpandPluginEditor}
+                                getLanguageForFile={getPluginLanguage}
+                                getBinaryMeta={handleGetBinaryMeta}
+                                saveBinaryMeta={handleSaveBinaryMeta}
+                                binaryContext={{
+                                  contextType: 'instance',
+                                  contextKey: String(instanceId),
+                                }}
+                              />
+                            </div>
                           </div>
                           <div className={activeMainTab === 'factories' ? 'flex-1 min-h-0' : 'hidden'}>
                             <FileManager

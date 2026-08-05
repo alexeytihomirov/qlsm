@@ -786,7 +786,7 @@ GET /presets/validate-name?name=my-preset
 
 `configs` is the preferred format for preset writes. It accepts flat `.cfg` and `.txt` filenames and syncs the preset config set, removing unprotected config files omitted from the map. The protected baseline files `server.cfg`, `mappool.txt`, `access.txt`, and `workshop.txt` cannot be removed. The legacy keys `server_cfg`, `mappool_txt`, `access_txt`, and `workshop_txt` are still accepted for compatibility, but they are partial writes and do not support custom files.
 
-`factories` is a flat `.factories` filename-to-content map and syncs the preset factory set. `checked_plugins` must be a list of strings. `checked_factories` must be a list of `.factories` filenames. `draft_id` copies staged plugin files into the preset without deleting the draft, so the form can continue editing after saving — its sibling `user-hooks/` directory is merge-copied into the preset's `user-hooks/` directory the same way.
+`factories` is a flat `.factories` filename-to-content map and syncs the preset factory set. `checked_plugins` must be a list of strings; entries that are not root-level `.py` files (anything containing `/`, or `__init__.py`) are silently stripped rather than rejected, because minqlx loads every `qlx_plugins` entry as a top-level module and cannot load those. This stripping applies uniformly to preset create, update, and import. `checked_factories` must be a list of `.factories` filenames. `draft_id` copies staged plugin files into the preset without deleting the draft, so the form can continue editing after saving — its sibling `user-hooks/` directory is merge-copied into the preset's `user-hooks/` directory the same way.
 
 `enabled_hooks` is an optional list of `.so` filenames (LD_PRELOAD order) recording which of the preset's `user-hooks/` files should be enabled when the preset is loaded onto an instance. It must be a list of `.so` filenames. When saving a preset from an instance's current state, the frontend populates this from that instance's currently-enabled hooks. `null`/absent means the preset predates this feature or was saved without any hooks captured.
 
@@ -809,7 +809,7 @@ Responses:
 
 `POST /api/presets/import`
 
-Imports a preset from a previously exported ZIP archive. The archive must contain a `manifest.json` with `type: "qlsm-preset-export"` and all four base config files: `server.cfg`, `mappool.txt`, `access.txt`, and `workshop.txt`.
+Imports a preset from a previously exported ZIP archive. The archive must contain a `manifest.json` with `type: "qlsm-preset-export"` and all four base config files: `server.cfg`, `mappool.txt`, `access.txt`, and `workshop.txt`. The archive's `checked_plugins.json` goes through the same root-level-only stripping described above, so an older export containing subfolder or `__init__.py` entries comes back with those dropped.
 
 Multipart form fields:
 

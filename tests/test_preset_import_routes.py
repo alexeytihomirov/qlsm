@@ -317,3 +317,17 @@ def test_import_rejects_invalid_explicit_name(client, app):
     response = post_import(client, app, build_zip(), form={'name': 'bad name!'})
 
     assert response.status_code == 400
+
+
+def test_import_strips_non_enableable_checked_plugins(client, app, presets_base):
+    """An imported bundle can't smuggle in subfolder plugins or __init__.py."""
+    zip_buffer = build_zip(extra={
+        'scripts/balance.py': 'class balance: pass\n',
+        'checked_plugins.json': json.dumps(
+            ['balance.py', 'discord_extensions/admin.py', '__init__.py']),
+    })
+    response = post_import(client, app, zip_buffer)
+
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data['checked_plugins'] == ['balance.py']

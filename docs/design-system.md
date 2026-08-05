@@ -99,8 +99,9 @@ input styles — check `index.css` for the full variant before adding a new one.
 | `RconConsoleModal` | `RconConsoleModal.jsx` | Modal wrapper around the RCON console UI |
 | `CodeMirrorEditor` | `CodeMirrorEditor.jsx` | Shared code editor used by file manager / config editors (near the 500-line file cap — avoid growing further) |
 | `FloatingListbox` | `components/common/FloatingListbox.jsx` | Headless UI `Listbox`-based custom select with floating-ui positioning; supports option badges (`OptionBadge`) and perf chips |
-| `InfoTooltip` | `components/common/InfoTooltip.jsx` | Hover tooltip; props: `size`, `placement` (top/bottom/left/right), `variant` (info/cyan/warning/danger) |
+| `InfoTooltip` | `components/common/InfoTooltip.jsx` | Hover tooltip; props: `size`, `placement` (top/bottom/left/right), `variant` (info/cyan/warning/danger), `testId` (data-testid for the hover target) |
 | `QlColorString` | `components/common/QlColorString.jsx` | Renders Quake Live `^`-color-coded strings as styled spans |
+| `SubfolderPluginNotice` | `components/fileManager/SubfolderPluginNotice.jsx` | Dismissible `.alert-warning` banner; props: `count` (0 renders nothing), `onDismiss`. Parent owns dismissal state |
 
 Feature-scoped directories (`components/hosts`, `instances`, `presetManager`,
 `fileManager`, `addInstance`, `users`, `rcon`) contain additional modals and

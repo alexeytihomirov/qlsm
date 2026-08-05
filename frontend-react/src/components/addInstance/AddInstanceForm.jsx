@@ -8,6 +8,7 @@ import InstanceBasicInfoForm from './InstanceBasicInfoForm';
 import HooksTab from '../instances/HooksTab';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
 import FullScreenConfigEditorModal from '../config/FullScreenConfigEditorModal';
+import SubfolderPluginNotice from '../fileManager/SubfolderPluginNotice';
 import {
   CONFIG_CAPS,
   FACTORY_CAPS,
@@ -16,6 +17,7 @@ import {
   useDraftAdapter,
   useStateAdapter,
 } from '../fileManager';
+import { partitionCheckedPaths, toQlxPluginNames } from '../fileManager/pluginSelection';
 import {
   qlcfgLanguage,
   createQlCfgLinter,
@@ -111,10 +113,8 @@ function areSetsEqual(left, right) {
   return true;
 }
 
-function getSubmitPluginNames(plugins) {
-  return Array.from(plugins)
-    .filter(p => p.endsWith('.py') && !p.endsWith('__init__.py'))
-    .map(p => p.replace(/\.py$/, '').replace(/^.*\//, ''));
+function seedCheckedPlugins(paths) {
+  return partitionCheckedPaths(paths || []);
 }
 
 function AddInstanceForm({
@@ -156,7 +156,10 @@ function AddInstanceForm({
 
   // Scripts tab state
   const [activeMainTab, setActiveMainTab] = useState('config'); // 'config' | 'scripts' | 'factories'
-  const [checkedPlugins, setCheckedPlugins] = useState(new Set(initialData.defaultCheckedPlugins || []));
+  const initialPluginSeed = seedCheckedPlugins(initialData.defaultCheckedPlugins);
+  const [checkedPlugins, setCheckedPlugins] = useState(initialPluginSeed.selectable);
+  const [droppedPluginCount, setDroppedPluginCount] = useState(initialPluginSeed.dropped.length);
+  const [pluginNoticeDismissed, setPluginNoticeDismissed] = useState(false);
   const pluginsManagerRef = useRef(null);
   const [draftPreset, setDraftPreset] = useState('default');
   const [factoryServerTree, setFactoryServerTree] = useState(initialData.defaultFactoryTree || []);
@@ -195,9 +198,9 @@ function AddInstanceForm({
   const initialHostnameRef = useRef('');
   const initialLanRateEnabledRef = useRef(false);
   const initialConfigContentsRef = useRef(normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap()));
-  const initialCheckedPluginsRef = useRef(new Set(initialData.defaultCheckedPlugins || []));
+  const initialCheckedPluginsRef = useRef(initialPluginSeed.selectable);
   const loadedPresetConfigRef = useRef(null); // Stores config contents when preset is loaded, for modification detection
-  const loadedPresetCheckedPluginsRef = useRef(new Set(initialData.defaultCheckedPlugins || []));
+  const loadedPresetCheckedPluginsRef = useRef(initialPluginSeed.selectable);
 
   const readFactoryServerContent = useCallback(async (path) => {
     const data = await getFactoryContent(path, { preset: draftPreset || 'default' });
@@ -389,10 +392,12 @@ function AddInstanceForm({
     setEnabledHookOrder(defaultEnabledHooks);
     initialEnabledHookOrderRef.current = defaultEnabledHooks;
 
-    const defaultCheckedPlugins = new Set(initialData.defaultCheckedPlugins || []);
-    setCheckedPlugins(defaultCheckedPlugins);
-    initialCheckedPluginsRef.current = defaultCheckedPlugins;
-    loadedPresetCheckedPluginsRef.current = defaultCheckedPlugins;
+    const { selectable, dropped } = seedCheckedPlugins(initialData.defaultCheckedPlugins);
+    setCheckedPlugins(selectable);
+    setDroppedPluginCount(dropped.length);
+    setPluginNoticeDismissed(false);
+    initialCheckedPluginsRef.current = selectable;
+    loadedPresetCheckedPluginsRef.current = selectable;
     setDraftPreset('default');
     resetFactories(initialData.defaultFactories || {});
     setFactoryServerTree(initialData.defaultFactoryTree || []);
@@ -604,8 +609,11 @@ function AddInstanceForm({
       // null means the preset pre-dates this feature — keep current defaults.
       let nextCheckedBaseline = new Set(checkedPlugins);
       if (presetData.checked_plugins != null) {
-        nextCheckedBaseline = new Set(presetData.checked_plugins);
-        setCheckedPlugins(nextCheckedBaseline);
+        const { selectable, dropped } = partitionCheckedPaths(presetData.checked_plugins);
+        nextCheckedBaseline = selectable;
+        setCheckedPlugins(selectable);
+        setDroppedPluginCount(dropped.length);
+        setPluginNoticeDismissed(false);
       }
       loadedPresetCheckedPluginsRef.current = nextCheckedBaseline;
       initialCheckedPluginsRef.current = nextCheckedBaseline;
@@ -872,7 +880,7 @@ function AddInstanceForm({
       await pluginsManagerRef.current.flushEdits();
     }
 
-    const checkedPluginNames = getSubmitPluginNames(checkedPlugins);
+    const checkedPluginNames = toQlxPluginNames(checkedPlugins);
     const submitData = {
       name,
       host_id: parseInt(selectedHostId, 10),
@@ -981,23 +989,29 @@ function AddInstanceForm({
                 getLinterSourceForFile={getLinterSourceForFile}
               />
             </div>
-            <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0' : 'hidden'}>
-              <FileManager
-                ref={pluginsManagerRef}
-                adapter={pluginsAdapter}
-                capabilities={PLUGIN_CAPS}
-                checkable
-                checkedFiles={checkedPlugins}
-                onCheck={togglePluginSelection}
-                onExpandEditor={handleExpandPluginEditor}
-                getLanguageForFile={getPluginLanguage}
-                getBinaryMeta={handleGetBinaryMeta}
-                saveBinaryMeta={handleSaveBinaryMeta}
-                binaryContext={{
-                  contextType: 'preset',
-                  contextKey: draftPreset || 'default',
-                }}
+            <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+              <SubfolderPluginNotice
+                count={pluginNoticeDismissed ? 0 : droppedPluginCount}
+                onDismiss={() => setPluginNoticeDismissed(true)}
               />
+              <div className="flex-1 min-h-0">
+                <FileManager
+                  ref={pluginsManagerRef}
+                  adapter={pluginsAdapter}
+                  capabilities={PLUGIN_CAPS}
+                  checkable
+                  checkedFiles={checkedPlugins}
+                  onCheck={togglePluginSelection}
+                  onExpandEditor={handleExpandPluginEditor}
+                  getLanguageForFile={getPluginLanguage}
+                  getBinaryMeta={handleGetBinaryMeta}
+                  saveBinaryMeta={handleSaveBinaryMeta}
+                  binaryContext={{
+                    contextType: 'preset',
+                    contextKey: draftPreset || 'default',
+                  }}
+                />
+              </div>
             </div>
             <div className={activeMainTab === 'factories' ? 'flex-1 min-h-0' : 'hidden'}>
               <FileManager

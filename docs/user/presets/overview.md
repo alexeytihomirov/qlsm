@@ -35,6 +35,15 @@ Use **Load Preset** any time you want to replace the default draft with one of y
 
 Instead of editing `qlx_plugins` manually, presets use checkboxes. Check the plugins you want; uncheck the ones you don't.
 
+Only plugins in the top level of the Plugins tab can be checked. Files inside subfolders
+have no checkbox — they are helper modules that a top-level plugin imports, and minqlx
+cannot load them by name. `__init__.py` has no checkbox either; it marks a package rather
+than being a plugin. Hover the icon next to such a file to see why.
+
+Presets saved before this rule existed may have had subfolder plugins ticked. Those
+entries are dropped when the preset loads, and a notice on the Plugins tab tells you how
+many. Saving the preset again makes the cleanup permanent.
+
 <img src="../../images/plugins.png" />
 
 The same applies to factory files — select the factories that should be included when this preset is deployed.
