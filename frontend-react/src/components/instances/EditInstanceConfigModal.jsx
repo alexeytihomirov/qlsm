@@ -525,6 +525,24 @@ function EditInstanceConfigModal({
         setHookEnabledOrder(presetData.enabled_hooks);
         setHooksLoaded(true);
       }
+      // lan_rate_enabled: null/undefined = the preset pre-dates this feature —
+      // leave the instance's current LAN rate toggle untouched. Clamp to false
+      // when the preset wants it on but the host can't support it — this modal
+      // has no reactive auto-disable effect like AddInstanceForm, so an
+      // unclamped true here would leave the toggle on AND locked (unable to be
+      // switched off through the gated manual-toggle handler). Use
+      // canEnableLanRate (not isLanRateSupported) so an already-enabled
+      // legacy-host instance stays enabled when the preset agrees — matching
+      // the same leniency the manual-toggle gate (canToggleLanRate) applies.
+      if (presetData.lan_rate_enabled != null) {
+        const canEnable = canEnableLanRate({
+          host: { os_type: hostOsType, lan_rate_uses_hook: hostLanRateUsesHook },
+          currentEnabled: originalLanRateEnabled,
+        });
+        const nextLanRate = presetData.lan_rate_enabled && !canEnable ? false : presetData.lan_rate_enabled;
+        setLanRateEnabled(nextLanRate);
+        if (nextLanRate !== originalLanRateEnabled) setRestartAfterSave(true);
+      }
 
       // Refresh the factory tree to show the preset's available factories
       try {
@@ -543,7 +561,7 @@ function EditInstanceConfigModal({
     } catch (err) {
       setPresetError(err.message || `Failed to load preset ${presetId}.`);
     }
-  }, [resetConfigs, resetFactories, showSuccess]);
+  }, [hostLanRateUsesHook, hostOsType, originalLanRateEnabled, resetConfigs, resetFactories, showSuccess]);
 
   const handleSavePreset = useCallback(async ({ name, description }) => {
     setIsSavingPreset(true);
@@ -577,6 +595,8 @@ function EditInstanceConfigModal({
         presetData.enabled_hooks = hookEnabledOrder;
       }
 
+      presetData.lan_rate_enabled = lanRateEnabled;
+
       presetData.binary_meta_source = {
         context_type: 'instance',
         context_key: String(instanceId),
@@ -600,7 +620,7 @@ function EditInstanceConfigModal({
     } finally {
       setIsSavingPreset(false);
     }
-  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, pluginDraftId, serializeConfigs, serializeFactories, showSuccess, showError]);
+  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, lanRateEnabled, pluginDraftId, serializeConfigs, serializeFactories, showSuccess, showError]);
 
   const handleOverwritePreset = useCallback(async (presetId, { description }) => {
     setIsSavingPreset(true);
@@ -625,6 +645,7 @@ function EditInstanceConfigModal({
       if (hooksLoaded) {
         presetData.enabled_hooks = hookEnabledOrder;
       }
+      presetData.lan_rate_enabled = lanRateEnabled;
       presetData.binary_meta_source = { context_type: 'instance', context_key: String(instanceId) };
       const response = await updatePreset(presetId, presetData);
       const updatedPresets = await getPresets();
@@ -638,7 +659,7 @@ function EditInstanceConfigModal({
     } finally {
       setIsSavingPreset(false);
     }
-  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, pluginDraftId, serializeConfigs, serializeFactories, showSuccess, showError]);
+  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, lanRateEnabled, pluginDraftId, serializeConfigs, serializeFactories, showSuccess, showError]);
 
   const handlePresetDeleted = useCallback((deletedPresetId) => {
     setPresets(prevPresets => prevPresets.filter(p => p.id !== deletedPresetId));

@@ -201,6 +201,7 @@ function AddInstanceForm({
   const initialCheckedPluginsRef = useRef(initialPluginSeed.selectable);
   const loadedPresetConfigRef = useRef(null); // Stores config contents when preset is loaded, for modification detection
   const loadedPresetCheckedPluginsRef = useRef(initialPluginSeed.selectable);
+  const loadedPresetLanRateRef = useRef(false);
 
   const readFactoryServerContent = useCallback(async (path) => {
     const data = await getFactoryContent(path, { preset: draftPreset || 'default' });
@@ -494,7 +495,8 @@ function AddInstanceForm({
         factoriesHaveChanges ||
         pluginsHaveChanges ||
         !areSetsEqual(checkedPlugins, loadedPresetCheckedPluginsRef.current) ||
-        hooksChanged;
+        hooksChanged ||
+        lanRateEnabled !== loadedPresetLanRateRef.current;
       setIsPresetModified(modified);
     }
   }, [
@@ -503,6 +505,7 @@ function AddInstanceForm({
     configsHaveChanges,
     factoriesHaveChanges,
     hooksChanged,
+    lanRateEnabled,
     loadedPreset,
     pluginsHaveChanges,
   ]);
@@ -534,6 +537,16 @@ function AddInstanceForm({
     }
     prevPortRef.current = port;
   }, [port, syncConfigFile]);
+
+  const effectiveHostId = selectedHostId || (initialHostId ? String(initialHostId) : '');
+  const selectedHost = (initialData.hosts || []).find((host) => String(host.id) === String(effectiveHostId));
+  const selectedHostOsType = selectedHost?.os_type ?? null;
+  const hasSelectedHost = Boolean(selectedHost);
+  const selectedHostShape = { os_type: selectedHostOsType, lan_rate_uses_hook: selectedHost?.lan_rate_uses_hook ?? false };
+  const lanRateSupported = !hasSelectedHost || isLanRateSupported(selectedHostShape);
+  const lanRateUnavailableReason = hasSelectedHost && !lanRateSupported
+    ? getLanRateUnsupportedMessage(selectedHostShape)
+    : null;
 
   // Handle loading a preset
   const handleLoadPreset = useCallback(async (presetId) => {
@@ -618,13 +631,26 @@ function AddInstanceForm({
       loadedPresetCheckedPluginsRef.current = nextCheckedBaseline;
       initialCheckedPluginsRef.current = nextCheckedBaseline;
 
+      // lan_rate_enabled: null/undefined = the preset pre-dates this feature —
+      // leave whatever the toggle is currently set to. Clamp inline (rather
+      // than relying solely on the reactive lanRateSupported auto-disable
+      // effect below) so the initial/loaded-preset refs never capture an
+      // unclamped value — otherwise the "preset modified" badge lights up
+      // spuriously and Overwrite Preset could silently strip the setting.
+      const nextLanRate = presetData.lan_rate_enabled != null
+        ? (presetData.lan_rate_enabled && !lanRateSupported ? false : presetData.lan_rate_enabled)
+        : lanRateEnabled;
+      setLanRateEnabled(nextLanRate);
+      initialLanRateEnabledRef.current = nextLanRate;
+      loadedPresetLanRateRef.current = nextLanRate;
+
       setIsPresetManagerOpen(false);
     } catch (err) {
       setInternalFormError(err.error?.message || err.message || `Failed to load preset.`);
     } finally {
       setIsLoadingPreset(false);
     }
-  }, [checkedPlugins, resetConfigs, resetFactories, syncConfigState]);
+  }, [checkedPlugins, lanRateEnabled, lanRateSupported, resetConfigs, resetFactories, syncConfigState]);
 
 
   // Handle saving current config as a preset
@@ -663,6 +689,8 @@ function AddInstanceForm({
       presetData.checked_plugins = Array.from(checkedPlugins);
       // Persist the hook enablement/order so a preset saved here round-trips.
       presetData.enabled_hooks = enabledHookOrder;
+      // Persist the 99k LAN rate toggle so it round-trips with the preset.
+      presetData.lan_rate_enabled = lanRateEnabled;
 
       await savePreset(presetData);
       setIsPresetManagerOpen(false);
@@ -673,7 +701,7 @@ function AddInstanceForm({
     } finally {
       setIsSavingPreset(false);
     }
-  }, [checkedPlugins, draftPreset, enabledHookOrder, pluginDraftId, serializeConfigs, serializeFactories]);
+  }, [checkedPlugins, draftPreset, enabledHookOrder, lanRateEnabled, pluginDraftId, serializeConfigs, serializeFactories]);
 
   const handleOverwritePreset = useCallback(async (presetId, { description }) => {
     setIsUpdatingPreset(true);
@@ -693,6 +721,7 @@ function AddInstanceForm({
       if (pluginDraftId) presetData.draft_id = pluginDraftId;
       presetData.checked_plugins = Array.from(checkedPlugins);
       presetData.enabled_hooks = enabledHookOrder;
+      presetData.lan_rate_enabled = lanRateEnabled;
       await updatePreset(presetId, presetData);
       const refreshed = await getPresets();
       setPresets(refreshed || []);
@@ -709,7 +738,7 @@ function AddInstanceForm({
     } finally {
       setIsUpdatingPreset(false);
     }
-  }, [checkedPlugins, enabledHookOrder, loadedPreset, pluginDraftId, serializeConfigs, serializeFactories]);
+  }, [checkedPlugins, enabledHookOrder, lanRateEnabled, loadedPreset, pluginDraftId, serializeConfigs, serializeFactories]);
 
   // Handle preset deletion from PresetManagerModal
   const handlePresetDeleted = useCallback((deletedPresetId) => {
@@ -855,15 +884,6 @@ function AddInstanceForm({
     factoriesAdapter,
     handleConfigContentUpdate,
   ]);
-  const effectiveHostId = selectedHostId || (initialHostId ? String(initialHostId) : '');
-  const selectedHost = (initialData.hosts || []).find((host) => String(host.id) === String(effectiveHostId));
-  const selectedHostOsType = selectedHost?.os_type ?? null;
-  const hasSelectedHost = Boolean(selectedHost);
-  const selectedHostShape = { os_type: selectedHostOsType, lan_rate_uses_hook: selectedHost?.lan_rate_uses_hook ?? false };
-  const lanRateSupported = !hasSelectedHost || isLanRateSupported(selectedHostShape);
-  const lanRateUnavailableReason = hasSelectedHost && !lanRateSupported
-    ? getLanRateUnsupportedMessage(selectedHostShape)
-    : null;
 
   useEffect(() => {
     if (!lanRateSupported && lanRateEnabled) {

@@ -398,6 +398,196 @@ describe('AddInstanceForm draft lifecycle', () => {
     expect(screen.getByTestId('lan-rate-reason')).toHaveTextContent('');
   });
 
+  it('includes lan_rate_enabled when saving a preset', async () => {
+    render(
+      <AddInstanceForm
+        initialData={{
+          hosts: [{ id: 1, name: 'deb-host', os_type: 'debian' }],
+          presets: [],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={1}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+    fireEvent.click(screen.getByRole('button', { name: /toggle 99k/i }));
+    expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('true');
+
+    fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+
+    await waitFor(() => expect(mocks.savePreset).toHaveBeenCalledTimes(1));
+    expect(mocks.savePreset).toHaveBeenCalledWith(
+      expect.objectContaining({ lan_rate_enabled: true })
+    );
+  });
+
+  it('includes lan_rate_enabled: false when saving a preset with the toggle off', async () => {
+    render(
+      <AddInstanceForm
+        initialData={{
+          hosts: [{ id: 1, name: 'deb-host', os_type: 'debian' }],
+          presets: [],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={1}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+    expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('false');
+
+    fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+
+    await waitFor(() => expect(mocks.savePreset).toHaveBeenCalledTimes(1));
+    expect(mocks.savePreset).toHaveBeenCalledWith(
+      expect.objectContaining({ lan_rate_enabled: false })
+    );
+  });
+
+  it('applies lan_rate_enabled from a loaded preset', async () => {
+    mocks.getPresetById.mockResolvedValue({
+      name: 'lan-preset',
+      configs: {},
+      factories: {},
+      lan_rate_enabled: true,
+    });
+
+    render(
+      <AddInstanceForm
+        initialData={{
+          hosts: [],
+          presets: [],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={null}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('false');
+
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('true'));
+  });
+
+  it('does not enable lan rate from a preset on an unsupported host', async () => {
+    mocks.getPresetById.mockResolvedValue({
+      name: 'lan-preset',
+      configs: {},
+      factories: {},
+      lan_rate_enabled: true,
+    });
+
+    render(
+      <AddInstanceForm
+        initialData={{
+          hosts: [{ id: 2, name: 'ubu-host', os_type: 'ubuntu' }],
+          presets: [],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={2}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('2'));
+
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('false'));
+  });
+
+  it('leaves the lan rate toggle untouched when the loaded preset has no recorded value', async () => {
+    mocks.getPresetById.mockResolvedValue({
+      name: 'legacy-preset',
+      configs: {},
+      factories: {},
+      lan_rate_enabled: null,
+    });
+
+    render(
+      <AddInstanceForm
+        initialData={{
+          hosts: [{ id: 1, name: 'deb-host', os_type: 'debian' }],
+          presets: [],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={1}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+    fireEvent.click(screen.getByRole('button', { name: /toggle 99k/i }));
+    expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('true');
+
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+    expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('true');
+  });
+
   it('does not preselect default preset factories when adding an instance', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     mocks.getPresetById.mockResolvedValue({
