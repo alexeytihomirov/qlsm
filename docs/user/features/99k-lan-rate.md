@@ -51,9 +51,14 @@ When enabled, QLSM:
 
 The hook binary lives on each instance host at `/home/ql/qlds-<port>/system-hooks/force_rate.so`, synced from QLSM's `ql-assets/data/system-hooks/`. You can see it listed as a read-only system hook in the instance's **Hooks** tab — see [LD_PRELOAD Hooks](hooks.md).
 
+## Presets
+
+Saving an instance's config as a [preset](../presets/overview.md) also records whether 99k LAN Rate was enabled at the time. Loading that preset applies the same toggle state — subject to the target host supporting it; if it doesn't, the preset's saved value is ignored and the toggle stays as it was. Presets saved before this feature existed don't have a recorded LAN rate preference, so loading one leaves the current toggle untouched.
+
 ## Related Pages
 
 - [Deploy A New Instance](../getting-started/deploy-new-instance.md)
 - [Instance Actions Menu](../operations/instance-actions-menu.md)
 - [Add A Host (Cloud Or Standalone)](../getting-started/add-host.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)
+- [Presets And Default Config](../presets/overview.md)
