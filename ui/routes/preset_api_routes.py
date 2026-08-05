@@ -643,6 +643,23 @@ def _write_preset_factories(preset_path, factories_data):
             current_app.logger.error(f"Error removing preset factory {filepath}: {e}")
 
 
+def _enableable_plugin_entries(checked_plugins):
+    """Keep only entries the Plugins tab can actually enable.
+
+    minqlx loads every qlx_plugins entry as a top-level module, so subfolder
+    files (helper modules imported by a root plugin) and __init__.py can never
+    be enabled. Mirrors isEnableablePluginPath in
+    frontend-react/src/components/fileManager/pluginSelection.js.
+    """
+    return [
+        entry for entry in checked_plugins
+        if isinstance(entry, str)
+        and entry.endswith('.py')
+        and '/' not in entry
+        and entry != '__init__.py'
+    ]
+
+
 def _read_preset_checked_plugins(preset_path):
     """Read checked_plugins.json from a preset folder.
     Returns a list of plugin paths, or None if the file does not exist.
@@ -659,12 +676,17 @@ def _read_preset_checked_plugins(preset_path):
 
 
 def _write_preset_checked_plugins(preset_path, checked_plugins):
-    """Write checked_plugins.json to a preset folder."""
+    """Write checked_plugins.json to a preset folder.
+
+    Non-enableable entries are stripped rather than rejected so an older client
+    saving a preset doesn't hard-fail.
+    """
     os.makedirs(preset_path, exist_ok=True)
     filepath = os.path.join(preset_path, 'checked_plugins.json')
+    enableable = _enableable_plugin_entries(checked_plugins or [])
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(checked_plugins, f)
+            json.dump(enableable, f)
         current_app.logger.info(f"Wrote checked_plugins.json: {filepath}")
     except Exception as e:
         current_app.logger.error(f"Error writing checked_plugins.json to {filepath}: {e}")

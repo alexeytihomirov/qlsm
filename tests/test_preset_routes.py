@@ -1414,3 +1414,42 @@ def test_delete_default_preset_prevented(client, app, tmp_path, monkeypatch):
     response = client.delete(f'/api/presets/{preset_id}', headers=headers)
     assert response.status_code == 403
     assert 'Cannot delete a built-in preset' in response.get_json()['error']['message']
+
+
+def test_create_preset_strips_non_enableable_checked_plugins(client, app):
+    """Subfolder plugins and __init__.py never persist into checked_plugins.json."""
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/presets/', headers=headers, json={
+        'name': 'nested',
+        'description': '',
+        'checked_plugins': [
+            'balance.py',
+            'discord_extensions/admin.py',
+            '__init__.py',
+            'extras/textart.py',
+            'essentials.py',
+        ],
+    })
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data.get('checked_plugins') == ['balance.py', 'essentials.py']
+
+
+def test_get_preset_does_not_filter_stale_checked_plugins(client, app, tmp_path, monkeypatch):
+    """Reads stay unfiltered so the UI can count and report dropped entries."""
+    monkeypatch.chdir(tmp_path)
+    with app.app_context():
+        preset_path = os.path.join('configs', 'presets', 'stale')
+        os.makedirs(preset_path, exist_ok=True)
+        import json as _json
+        with open(os.path.join(preset_path, 'checked_plugins.json'), 'w') as f:
+            _json.dump(['balance.py', 'extras/textart.py'], f)
+        preset = create_preset(name='stale', description='', path=preset_path)
+        preset_id = preset.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.get(f'/api/presets/{preset_id}', headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()['data'].get('checked_plugins') == [
+        'balance.py', 'extras/textart.py',
+    ]
