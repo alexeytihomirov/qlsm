@@ -43,5 +43,5 @@ def resolve_redis_db(instance):
     builder and the status poller, which is how they could drift apart.
     """
     if instance.redis_db is not None:
-        return instance.redis_db
-    return instance.port - REDIS_DB_PORT_OFFSET
+        return int(instance.redis_db)
+    return int(instance.port) - REDIS_DB_PORT_OFFSET

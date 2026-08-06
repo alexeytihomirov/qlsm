@@ -246,6 +246,7 @@ def _make_instance_for_args(**kwargs):
     inst.zmq_stats_password = kwargs.get('zmq_stats_password', 'statspass')
     inst.lan_rate_enabled = kwargs.get('lan_rate_enabled', False)
     inst.qlx_plugins = kwargs.get('qlx_plugins', None)
+    inst.redis_db = kwargs.get('redis_db', None)
     inst.host = kwargs.get('host', SimpleNamespace(provider='standalone'))
     return inst
 
