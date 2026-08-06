@@ -40,6 +40,12 @@ Optional toggle:
 Changing this later from the actions menu triggers reconfigure/restart.
 Reference: [Instance Actions Menu](../operations/instance-actions-menu.md)
 
+Auto-selected field:
+
+- **Redis DB**
+
+`Redis DB` is chosen automatically to match the port and rarely needs changing. It stays disabled until a host is selected. An info icon next to a DB number means that DB is already used by another instance on the same host — picking it anyway is allowed, if you intend the two instances to share plugin state.
+
 ## Main Tabs In Deploy Form
 
 Config editing details live here: [Edit Configs, Plugins, And Factories](../operations/edit-configs.md)

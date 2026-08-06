@@ -301,6 +301,7 @@ Example success response:
   "port": 27960,
   "hostname": "My Duel Server",
   "lan_rate_enabled": false,
+  "redis_db": 3,
   "configs": {
     "server.cfg": "...",
     "mappool.txt": "...",
@@ -326,6 +327,8 @@ Example success response:
 `checked_plugins` is a list of plugin names used to build the instance `qlx_plugins` value. `draft_id` is optional and commits a plugin draft workspace into the instance — its sibling `user-hooks/` directory is copied to the instance's `user-hooks/` directory alongside `scripts/`. The legacy `scripts` payload is no longer accepted on create. `factories` is optional; when omitted, QLSM copies default factories for legacy compatibility. When present, QLSM deploys exactly the provided flat `.factories` map.
 
 `enabled_hooks` is an optional list of `.so` filenames (typically a preset's `enabled_hooks`) to enable in LD_PRELOAD order. QLSM filters it to hook files that actually exist in the instance's `user-hooks/` directory after the draft copy step and fully replaces `ld_preload_hooks` with the filtered list — filenames that don't correspond to a copied hook file are silently dropped, never surfaced as an error.
+
+`redis_db` is an optional integer, range 1-8 (`MAX_INSTANCES_PER_HOST`). Omitted means the instance's Redis DB is derived from its port at read time (`resolve_redis_db()`), matching every instance created before this field existed. Out-of-range or non-integer values are rejected with 400. Duplicates on the same host are allowed — there is no uniqueness check, since sharing a DB across instances is a deliberate, supported choice. Selection happens only at creation; there is no path to change it afterward.
 
 ### Update LAN Rate Request
 ```json
@@ -365,6 +368,7 @@ Example success response:
     "lan_rate_enabled": false,
     "qlx_plugins": "plugin1,plugin2",
     "ld_preload_hooks": "highfps_hook.so,timer_hook.so",
+    "redis_db": 1,
     "zmq_rcon_port": 27961,
     "zmq_rcon_password": "...",
     "zmq_stats_port": 27962,

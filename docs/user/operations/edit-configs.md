@@ -55,7 +55,7 @@ These cvars are ignored by QLSM regardless of whether they are present in `serve
 | `qlx_redisAddress` | Forced by QLSM. | Ignored. TCP hosts: `127.0.0.1:6379`. Socket-enabled hosts: `/var/run/redis/redis.sock`. |
 | `qlx_redisUnixSocket` | Forced by QLSM. | Ignored. Set to `1` on socket-enabled hosts; omitted on TCP hosts. |
 | `qlx_redisPassword` | Forced by QLSM. | Ignored. QLSM injects the backend Redis password (self-host only). |
-| `qlx_redisDatabase` | Derived from the instance port. | Ignored. QLSM injects `port - 27959`. |
+| `qlx_redisDatabase` | Chosen when the instance is created ([Deploy A New Instance](../getting-started/deploy-new-instance.md)), otherwise derived from the instance port. | Ignored. QLSM injects the chosen DB, or `port - 27959` if none was chosen. |
 | `fs_homepath` | Derived from the instance port. | Ignored. QLSM injects `/home/ql/qlds-<port>`. |
 | `qlx_pluginsPath` | Derived from `fs_homepath`. | Ignored. QLSM injects the instance minqlx plugin path. |
 | `zmq_rcon_enable` | Forced by QLSM. | Ignored. QLSM always injects `1`. |

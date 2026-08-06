@@ -176,7 +176,8 @@ For `provider=self`, `Host.ip_address` remains the client-facing server address 
 ### Self-Host Redis Contract
 
 For `provider=self`, game instances reuse the QLSM Docker Redis on `127.0.0.1:6379`.
-QLSM reserves Redis `DB 0`; minqlx instances use `DB 1..8` derived from `port - REDIS_DB_PORT_OFFSET` (Redis ships 16 databases by default, so a ceiling of 15 is available). `MAX_INSTANCES_PER_HOST`, `BASE_GAME_PORT` and the derived `REDIS_DB_PORT_OFFSET` in `ui/constants.py` are the single source of truth for the per-host instance limit and the derived game/ZMQ port pools.
+QLSM reserves Redis `DB 0`; minqlx instances use `DB 1..8` (Redis ships 16 databases by default, so a ceiling of 15 is available). `MAX_INSTANCES_PER_HOST`, `BASE_GAME_PORT` and the derived `REDIS_DB_PORT_OFFSET` in `ui/constants.py` are the single source of truth for the per-host instance limit and the derived game/ZMQ port pools.
+`DB 1..8` is selectable at instance creation via the optional `redis_db` field; it defaults to the port-derived value (`port - REDIS_DB_PORT_OFFSET`) and there is no edit path afterward. `QLInstance.redis_db` is nullable — `NULL` means "derive from the port," which is how every pre-existing instance behaves. `ui.constants.resolve_redis_db(instance)` is the single function that resolves either case; both `ui/task_logic/ansible_instance_mgmt.py` and `ui/task_logic/server_status_poll.py` call it rather than re-deriving the formula.
 Self-host minqlx services receive `qlx_redisAddress`, `qlx_redisPassword`, and `qlx_redisDatabase` explicitly at deploy time.
 
 **QLInstance Model:** Represents a Quake Live server instance running on a specific `Host`.
@@ -191,6 +192,7 @@ class QLInstance(db.Model):
     qlx_plugins = db.Column(db.Text, nullable=True)  # comma-separated plugin list
     ld_preload_hooks = db.Column(db.Text, nullable=True)  # comma-separated .so list
     cpu_affinity = db.Column(db.Integer, nullable=True)
+    redis_db = db.Column(db.Integer, nullable=True)  # Chosen Redis logical DB; NULL = derive from port
     zmq_rcon_port = db.Column(db.Integer, nullable=True)
     zmq_rcon_password = db.Column(db.String(255), nullable=True)
     zmq_stats_port = db.Column(db.Integer, nullable=True)
