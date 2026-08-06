@@ -32,3 +32,16 @@ ZMQ_STATS_PORTS = [ZMQ_STATS_BASE_PORT + offset for offset in range(MAX_INSTANCE
 
 # Every TCP port the firewall must accept for instance management.
 RCON_TCP_PORTS = ZMQ_RCON_PORTS + ZMQ_STATS_PORTS
+
+
+def resolve_redis_db(instance):
+    """The Redis logical DB an instance stores its minqlx state in.
+
+    A NULL ``redis_db`` means the instance predates explicit DB selection, so it
+    keeps the historical port-derived value. Every caller must go through this
+    function -- the derivation used to be duplicated across the Ansible arg
+    builder and the status poller, which is how they could drift apart.
+    """
+    if instance.redis_db is not None:
+        return instance.redis_db
+    return instance.port - REDIS_DB_PORT_OFFSET

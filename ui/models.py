@@ -104,7 +104,15 @@ class Host(db.Model):
             'last_updated': self.last_updated.isoformat() if self.last_updated else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             # 'instance_count': len(self.instances), # Replaced by full instance list below
-            'instances': [{'id': instance.id, 'name': instance.name, 'port': instance.port} for instance in self.instances]
+            'instances': [
+                {
+                    'id': instance.id,
+                    'name': instance.name,
+                    'port': instance.port,
+                    'redis_db': instance.redis_db,
+                }
+                for instance in self.instances
+            ]
         }
 
 
@@ -120,6 +128,7 @@ class QLInstance(db.Model):
     qlx_plugins = db.Column(db.String(1000), nullable=True) # Selected plugins as comma-separated string
     ld_preload_hooks = db.Column(db.Text, nullable=True) # Comma-separated .so filenames in preload order
     cpu_affinity = db.Column(db.Integer, nullable=True) # Optional Linux CPU index assigned to this service
+    redis_db = db.Column(db.Integer, nullable=True)  # Chosen Redis logical DB; NULL = derive from port
     status = db.Column(db.Enum(InstanceStatus), default=InstanceStatus.IDLE, nullable=False) # Status of the QL instance itself
     logs = db.Column(db.Text, nullable=True) # Stores logs from background tasks (e.g., Ansible)
     
@@ -157,6 +166,7 @@ class QLInstance(db.Model):
             'qlx_plugins': self.qlx_plugins,
             'ld_preload_hooks': self.ld_preload_hooks,
             'cpu_affinity': self.cpu_affinity,
+            'redis_db': self.redis_db,
             'status': self.status.value if self.status else None,
             'logs': self.logs, # Include logs
             'zmq_rcon_port': self.zmq_rcon_port,
