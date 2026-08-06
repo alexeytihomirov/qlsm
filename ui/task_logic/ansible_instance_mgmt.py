@@ -11,7 +11,7 @@ from rq import get_current_job
 
 # Import database and models - requires app context
 from ui import db
-from ui.constants import REDIS_DB_PORT_OFFSET
+from ui.constants import resolve_redis_db
 from ui.models import QLInstance, InstanceStatus, Host # Need Host for cleanup path
 from .common import append_log # Import from the common module
 from .ansible_runner import _run_ansible_playbook
@@ -118,7 +118,7 @@ def _build_qlds_args_string(instance):
     else:
         parts += ['+set sv_lanForceRate 0']
 
-    redis_db_index = instance.port - REDIS_DB_PORT_OFFSET
+    redis_db_index = resolve_redis_db(instance)
     parts += [
         '+set net_ip ""',
         '+set net_strict 1',
