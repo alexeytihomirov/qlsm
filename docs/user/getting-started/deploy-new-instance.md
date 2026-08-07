@@ -44,7 +44,7 @@ Auto-selected field:
 
 - **Redis DB**
 
-`Redis DB` is chosen automatically to match the port and rarely needs changing. It stays disabled until a host is selected. An info icon next to a DB number means that DB is already used by another instance on the same host — picking it anyway is allowed, if you intend the two instances to share plugin state.
+`Redis DB` defaults to the lowest free DB for the selected host and is independent of the chosen port — changing the port does not change it. It stays disabled until a host is selected. An info icon next to a DB number means that DB is already used by another instance on the same host — picking it anyway is allowed, if you intend the two instances to share plugin state.
 
 ## Main Tabs In Deploy Form
 
