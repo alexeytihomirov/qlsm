@@ -9,12 +9,21 @@
 
     var pageCount = Math.ceil(rows.length / ROWS_PER_PAGE);
     var wrapper = table.parentElement;
-    var nav = wrapper.querySelector(".releases-pagination");
-    if (nav) nav.remove();
 
-    nav = document.createElement("div");
-    nav.className = "releases-pagination";
-    wrapper.appendChild(nav);
+    var oldNavs = wrapper.querySelectorAll(".releases-pagination");
+    oldNavs.forEach(function (n) {
+      n.remove();
+    });
+
+    var topNav = document.createElement("div");
+    topNav.className = "releases-pagination releases-pagination--top";
+    wrapper.insertBefore(topNav, table);
+
+    var bottomNav = document.createElement("div");
+    bottomNav.className = "releases-pagination releases-pagination--bottom";
+    wrapper.appendChild(bottomNav);
+
+    var navs = [topNav, bottomNav];
 
     function showPage(page) {
       var start = (page - 1) * ROWS_PER_PAGE;
@@ -43,7 +52,7 @@
       return btn;
     }
 
-    function renderControls(current) {
+    function fillNav(nav, current) {
       while (nav.firstChild) nav.removeChild(nav.firstChild);
       nav.appendChild(
         button("‹ Prev", current - 1, {
@@ -60,6 +69,12 @@
           ariaLabel: "Next page",
         })
       );
+    }
+
+    function renderControls(current) {
+      navs.forEach(function (nav) {
+        fillNav(nav, current);
+      });
     }
 
     showPage(1);

@@ -273,6 +273,13 @@
   flex-wrap: wrap;
   gap: 0.35rem;
   justify-content: center;
+}
+
+.releases-pagination--top {
+  margin-bottom: 1rem;
+}
+
+.releases-pagination--bottom {
   margin-top: 1rem;
 }
 
