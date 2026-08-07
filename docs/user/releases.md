@@ -4,6 +4,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.22.1` | 2026-08-07 | [#167](https://github.com/dngrtech/qlsm/pull/167) | Bug fixes and improvements. |
 | `v1.22.0` | 2026-08-05 | [#165](https://github.com/dngrtech/qlsm/pull/165) | Presets now capture and restore the 99k LAN Rate toggle state. |
 | `v1.21.1` | 2026-08-05 | — | Bug fixes and improvements. |
 | `v1.21.0` | 2026-08-04 | [#164](https://github.com/dngrtech/qlsm/pull/164) | Restrict plugin selection to top-level plugins; files in subfolders and `__init__.py` can no longer be enabled. |
