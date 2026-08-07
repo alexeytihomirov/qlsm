@@ -11,7 +11,7 @@ from ui.task_logic import ansible_instance_mgmt
 
 @pytest.fixture(scope='module')
 def app():
-    _app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'})
+    _app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:', 'RCON_ENABLED': False})
     with _app.app_context():
         db.create_all()
         yield _app

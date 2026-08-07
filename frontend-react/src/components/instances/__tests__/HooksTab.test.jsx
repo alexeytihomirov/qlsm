@@ -185,7 +185,8 @@ describe('HooksTab', () => {
 
     const row = screen.getByTestId('hook-row-a.so');
     fireEvent.click(within(row).getByRole('button', { name: /actions for a.so/i }));
-    fireEvent.click(within(row).getByRole('menuitem', { name: /delete/i, hidden: true }));
+    // The actions menu portals its items to document.body, so it's not a descendant of `row`.
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete/i, hidden: true }));
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/delete hook\?/i)).toBeInTheDocument();
@@ -197,7 +198,8 @@ describe('HooksTab', () => {
 
     const row = screen.getByTestId('hook-row-a.so');
     fireEvent.click(within(row).getByRole('button', { name: /actions for a.so/i }));
-    fireEvent.click(within(row).getByRole('menuitem', { name: /delete/i, hidden: true }));
+    // The actions menu portals its items to document.body, so it's not a descendant of `row`.
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete/i, hidden: true }));
 
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /delete/i }));
@@ -211,7 +213,8 @@ describe('HooksTab', () => {
 
     const row = screen.getByTestId('hook-row-a.so');
     fireEvent.click(within(row).getByRole('button', { name: /actions for a.so/i }));
-    fireEvent.click(within(row).getByRole('menuitem', { name: /delete/i, hidden: true }));
+    // The actions menu portals its items to document.body, so it's not a descendant of `row`.
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete/i, hidden: true }));
 
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));

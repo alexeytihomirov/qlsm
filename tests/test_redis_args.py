@@ -7,7 +7,7 @@ from ui.task_logic.ansible_instance_mgmt import REDIS_UNIX_SOCKET_PATH
 
 @pytest.fixture(scope='module')
 def test_app():
-    app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'})
+    app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:', 'RCON_ENABLED': False})
     with app.app_context():
         yield app
 

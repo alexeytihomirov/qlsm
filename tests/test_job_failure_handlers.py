@@ -16,6 +16,7 @@ def test_host_failure_handler_updates_provisioning_to_error():
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
@@ -43,6 +44,7 @@ def test_host_failure_handler_updates_rebooting_to_error():
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
@@ -70,6 +72,7 @@ def test_host_failure_handler_updates_setup_pending_to_error():
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
@@ -98,6 +101,7 @@ def test_instance_failure_handler_releases_lock(mock_release):
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
@@ -126,6 +130,7 @@ def test_host_failure_handler_releases_lock(mock_release):
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
@@ -157,6 +162,7 @@ def test_host_failure_handler_releases_instance_locks_before_host_lock(
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()

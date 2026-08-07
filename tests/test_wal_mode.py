@@ -8,6 +8,7 @@ def test_sqlite_wal_mode_enabled(tmp_path):
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
@@ -20,6 +21,7 @@ def test_sqlite_busy_timeout_set(tmp_path):
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
