@@ -34,6 +34,9 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - javascripts/releases-pagination.js
+
 plugins:
   - search
 

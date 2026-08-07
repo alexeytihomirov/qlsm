@@ -263,3 +263,45 @@
 .md-typeset a:hover {
   color: var(--ql-accent-dim);
 }
+
+/* ─────────────────────────────────────────────
+   Release notes pagination
+   ───────────────────────────────────────────── */
+
+.releases-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.releases-pagination button {
+  font-family: 'Share Tech Mono', Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--ql-text-sec);
+  background: var(--ql-surface-el);
+  border: 1px solid var(--ql-border);
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.releases-pagination button:hover:not(:disabled) {
+  color: var(--ql-text);
+  border-color: var(--ql-border-strong);
+}
+
+.releases-pagination button.is-active {
+  color: var(--ql-text);
+  background: color-mix(in srgb, var(--ql-accent) 15%, transparent);
+  border-color: var(--ql-accent);
+  font-weight: 600;
+}
+
+.releases-pagination button:disabled {
+  color: var(--ql-text-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}

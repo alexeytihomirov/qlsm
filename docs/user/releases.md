@@ -2,6 +2,8 @@
 
 QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed as an individual release entry.
 
+<div id="releases-table" markdown="1">
+
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
 | `v1.24.0` | 2026-08-06 | [#166](https://github.com/dngrtech/qlsm/pull/166) | Choose the Redis database for a new instance in the Add Instance modal. |
@@ -164,3 +166,5 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 | `v1.1.1` | 2026-04-07 | [#2](https://github.com/dngrtech/qlsm/pull/2) | Bug fixes and performance improvements. |
 | `v1.1.0` | 2026-04-07 | [#1](https://github.com/dngrtech/qlsm/pull/1) | Bug fixes and performance improvements. |
 | `v1.0.0` | Before 2026-04-07 | — | Initial QLSM baseline before tracked pull request history. |
+
+</div>
