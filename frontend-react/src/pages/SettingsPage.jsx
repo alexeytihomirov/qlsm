@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Copy, KeyRound, Loader2, AlertCircle, Trash2 } from 'lucide-react';
-import { getApiKey, regenerateApiKey, revokeApiKey } from '../services/api';
+import { getApiKey, regenerateApiKey, revokeApiKey, getVultrKeySetting, setVultrKeySetting } from '../services/api';
 import { useNotification } from '../components/NotificationProvider';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatDateTime } from '../utils/uiUtils';
@@ -12,6 +12,10 @@ function SettingsPage() {
   const [error, setError] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const [showRevokeModal, setShowRevokeModal] = useState(false);
+
+  const [vultrKey, setVultrKey] = useState('');
+  const [vultrKeyInput, setVultrKeyInput] = useState('');
+  const [savingVultrKey, setSavingVultrKey] = useState(false);
 
   const { showSuccess, showError } = useNotification();
 
@@ -29,6 +33,31 @@ function SettingsPage() {
   }, []);
 
   useEffect(() => { fetchApiKey(); }, [fetchApiKey]);
+
+  const fetchVultrKey = useCallback(async () => {
+    try {
+      const data = await getVultrKeySetting();
+      setVultrKey(data.key || '');
+      setVultrKeyInput(data.key || '');
+    } catch {
+      // Non-fatal — the rest of the page still works without this field.
+    }
+  }, []);
+
+  useEffect(() => { fetchVultrKey(); }, [fetchVultrKey]);
+
+  const handleSaveVultrKey = async () => {
+    setSavingVultrKey(true);
+    try {
+      const data = await setVultrKeySetting(vultrKeyInput);
+      setVultrKey(data.key || '');
+      showSuccess('Vultr API key updated.');
+    } catch (err) {
+      showError(err.error?.message || 'Failed to update Vultr API key.');
+    } finally {
+      setSavingVultrKey(false);
+    }
+  };
 
   const handleRegenerate = async () => {
     setRegenerating(true);
@@ -157,6 +186,37 @@ function SettingsPage() {
           </table>
         </div>
       )}
+
+      {/* Vultr API key */}
+      <div className="users-page-header" style={{ marginTop: '2rem' }}>
+        <div className="users-page-title-row">
+          <div className="users-page-title-wrapper">
+            <h2 className="users-page-title" style={{ fontSize: '20px' }}>Vultr API Key</h2>
+          </div>
+        </div>
+      </div>
+      <div className="users-table-container">
+        <div style={{ display: 'flex', gap: '0.75rem', padding: '16px 20px', alignItems: 'center' }}>
+          <label htmlFor="vultr-api-key" className="sr-only">Vultr API Key</label>
+          <input
+            id="vultr-api-key"
+            type="text"
+            value={vultrKeyInput}
+            onChange={(e) => setVultrKeyInput(e.target.value)}
+            placeholder="Not configured"
+            className="input-base"
+            style={{ flex: 1, fontFamily: "'Share Tech Mono', monospace" }}
+          />
+          <button
+            onClick={handleSaveVultrKey}
+            disabled={savingVultrKey || vultrKeyInput === vultrKey}
+            className="users-add-btn"
+          >
+            {savingVultrKey ? <Loader2 size={16} className="animate-spin" /> : null}
+            <span>Save Vultr Key</span>
+          </button>
+        </div>
+      </div>
 
       <ConfirmationModal
         isOpen={showRevokeModal}
