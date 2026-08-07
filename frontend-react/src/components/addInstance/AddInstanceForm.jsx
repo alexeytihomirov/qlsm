@@ -544,13 +544,15 @@ function AddInstanceForm({
   }, [port, syncConfigFile]);
 
   // The Redis DB tracks the port -- matching how it was always derived
-  // implicitly -- until the operator picks one explicitly.
+  // implicitly -- until the operator picks one explicitly. Switching hosts
+  // resumes that tracking, so re-derive on the host too: the port either
+  // survives the switch unchanged, or is cleared because the new host does
+  // not offer it. Without a port there is nothing to derive from.
   useEffect(() => {
     if (redisDbTouched.current) return;
     const portNum = parseInt(port, 10);
-    if (Number.isNaN(portNum)) return;
-    setRedisDb(portNum - REDIS_DB_PORT_OFFSET);
-  }, [port]);
+    setRedisDb(Number.isNaN(portNum) ? null : portNum - REDIS_DB_PORT_OFFSET);
+  }, [port, selectedHostId]);
 
   const effectiveHostId = selectedHostId || (initialHostId ? String(initialHostId) : '');
   const selectedHost = (initialData.hosts || []).find((host) => String(host.id) === String(effectiveHostId));
