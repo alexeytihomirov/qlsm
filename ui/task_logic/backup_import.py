@@ -181,8 +181,12 @@ def restore_backup_archive(blob, password):
 
     for root, swapped_children in swapped:
         for _name, backup_path in swapped_children:
-            if backup_path and os.path.isdir(backup_path):
+            if not backup_path:
+                continue
+            if os.path.isdir(backup_path):
                 shutil.rmtree(backup_path, ignore_errors=True)
+            elif os.path.isfile(backup_path):
+                os.remove(backup_path)
 
     return {
         'qlsm_version': manifest.get('qlsm_version'),

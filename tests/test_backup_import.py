@@ -63,6 +63,25 @@ class TestRestoreBackupArchive:
         # The app-shipped builtin preset folder must be untouched by the swap.
         assert (app_root / 'configs' / 'presets' / '_builtin' / 'default' / 'server.cfg').exists()
 
+    def test_swapped_out_file_child_is_cleaned_up_after_success(self, app, app_root):
+        """terraform/ssh-keys has flat *files* as direct children (unlike
+        configs/presets, whose direct children are subdirectories). A
+        successful restore must reclaim the swapped-out old file, not
+        just a swapped-out old directory."""
+        blob = _make_backup_with_host(app, app_root)
+        # Not part of the backup being restored, so the swap moves it
+        # aside as a *file* rather than restaging it from the archive.
+        (app_root / 'terraform' / 'ssh-keys' / 'second_key').write_text('SECOND KEY')
+
+        with app.app_context():
+            restore_backup_archive(blob, None)
+
+        leftovers = [
+            name for name in os.listdir(app_root / 'terraform')
+            if name.startswith('.qlsm-restore-old-')
+        ]
+        assert leftovers == []
+
     def test_wrong_password_raises_and_touches_nothing(self, app, app_root):
         blob = _make_backup_with_host(app, app_root, password='correct-pw')
         with app.app_context():
