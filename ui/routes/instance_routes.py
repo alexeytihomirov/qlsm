@@ -235,6 +235,21 @@ def _validate_qlx_plugins(value):
         return None, "qlx_plugins contains invalid characters"
     return value, None
 
+def _validate_redis_db(raw):
+    """Validate an optional Redis DB selection.
+
+    Returns (value, error). A missing value is legal and means "derive from the
+    port", which is how every instance created before this field existed behaves.
+    """
+    if raw is None:
+        return None, None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None, "Redis DB must be an integer."
+    if raw < 1 or raw > MAX_INSTANCES_PER_HOST:
+        return None, f"Redis DB must be between 1 and {MAX_INSTANCES_PER_HOST}."
+    return raw, None
+
+
 @instance_api_bp.route('/ping', methods=['GET'])
 def ping_instances_api():
     return jsonify({"message": "pong from instance_api"}), 200
@@ -288,6 +303,10 @@ def add_instance_api():
         err, code = _validate_enabled_hooks_payload(enabled_hooks_data)
         if err:
             return jsonify({"error": {"message": err}}), code
+
+    redis_db, redis_db_err = _validate_redis_db(data.get('redis_db'))
+    if redis_db_err:
+        return jsonify({"error": {"message": redis_db_err}}), 400
 
     # Basic validation
     if not name or not host_id or not port or not hostname:
@@ -353,8 +372,9 @@ def add_instance_api():
 
         # --- Try creating the instance ---
         instance = create_instance(
-            name=name, host_id=host_id_int, port=port_int, hostname=hostname, 
-            lan_rate_enabled=bool(lan_rate_enabled), qlx_plugins=qlx_plugins
+            name=name, host_id=host_id_int, port=port_int, hostname=hostname,
+            lan_rate_enabled=bool(lan_rate_enabled), qlx_plugins=qlx_plugins,
+            redis_db=redis_db
         )
 
         # --- Save submitted config content to files ---

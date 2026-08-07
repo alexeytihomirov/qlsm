@@ -40,6 +40,12 @@ Optional toggle:
 Changing this later from the actions menu triggers reconfigure/restart.
 Reference: [Instance Actions Menu](../operations/instance-actions-menu.md)
 
+Dropdown field:
+
+- **Redis DB**
+
+`Redis DB` is a dropdown listing every DB from 1 to 8 for the selected host. It stays disabled until you pick a host, then defaults to the lowest free DB and does not change if you change the port afterward. An info icon next to a DB number means another instance on the host already uses it. Picking it anyway is fine if you want the two instances to share plugin state.
+
 ## Main Tabs In Deploy Form
 
 Config editing details live here: [Edit Configs, Plugins, And Factories](../operations/edit-configs.md)

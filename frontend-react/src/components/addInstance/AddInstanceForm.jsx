@@ -5,6 +5,7 @@ import { python } from '@codemirror/lang-python';
 import { getAvailablePortsForHost, getFactoryContent, getFactoryTree, getPresetById, getPresets, savePreset, updatePreset } from '../../services/api';
 import { getBinaryMeta, saveBinaryMeta, uploadDraftHook, deleteDraftHook } from '../../services/draftApi';
 import InstanceBasicInfoForm from './InstanceBasicInfoForm';
+import { buildRedisDbOptions, nextFreeRedisDb } from './redisDbOptions';
 import HooksTab from '../instances/HooksTab';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
 import FullScreenConfigEditorModal from '../config/FullScreenConfigEditorModal';
@@ -130,6 +131,7 @@ function AddInstanceForm({
   const [name, setName] = useState('');
   const [selectedHostId, setSelectedHostId] = useState('');
   const [port, setPort] = useState('');
+  const [redisDb, setRedisDb] = useState(1);
   const [hostname, setHostname] = useState('');
   const [lanRateEnabled, setLanRateEnabled] = useState(false);
   const [configContents, setConfigContents] = useState(() => normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap()));
@@ -315,6 +317,11 @@ function AddInstanceForm({
         newAvailablePorts = portsData.available_ports || [];
         setAvailablePorts(newAvailablePorts);
 
+        if (isInitialLoad) {
+          const hostRecord = (initialData.hosts || []).find((host) => String(host.id) === String(hostId));
+          setRedisDb(nextFreeRedisDb(hostRecord?.instances));
+        }
+
         if (isInitialLoad && newAvailablePorts.length > 0) {
           const sortedPorts = [...newAvailablePorts].sort((a, b) => a - b);
           const lowestPort = String(sortedPorts[0]);
@@ -354,7 +361,7 @@ function AddInstanceForm({
         syncConfigFile('server.cfg', currentServerCfg.replace(NET_PORT_REGEX, `// $1${currentPortVal}$2 (Port removed)`));
       }
     }
-  }, [syncConfigFile, syncConfigState]);
+  }, [initialData.hosts, syncConfigFile, syncConfigState]);
 
   useEffect(() => {
     const currentDefaultConfigs = normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap());
@@ -547,6 +554,10 @@ function AddInstanceForm({
   const lanRateUnavailableReason = hasSelectedHost && !lanRateSupported
     ? getLanRateUnsupportedMessage(selectedHostShape)
     : null;
+  const redisDbOptions = useMemo(
+    () => buildRedisDbOptions({ instances: selectedHost?.instances }),
+    [selectedHost]
+  );
 
   // Handle loading a preset
   const handleLoadPreset = useCallback(async (presetId) => {
@@ -905,6 +916,7 @@ function AddInstanceForm({
       name,
       host_id: parseInt(selectedHostId, 10),
       port: parseInt(port, 10),
+      redis_db: redisDb,
       hostname,
       lan_rate_enabled: lanRateEnabled,
       ...(() => { const { files, folders } = serializeConfigs(); return { configs: files, config_folders: folders }; })(),
@@ -956,7 +968,7 @@ function AddInstanceForm({
   return (
     <form onSubmit={localHandleSubmit} className="flex flex-col flex-grow min-h-0 pt-4">
       <div className="flex-shrink-0 mb-6">
-        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} lanRateEnabled={lanRateEnabled} onLanRateChange={setLanRateEnabled} lanRateDisabled={!lanRateSupported} lanRateUnavailableReason={lanRateUnavailableReason} />
+        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} lanRateEnabled={lanRateEnabled} onLanRateChange={setLanRateEnabled} lanRateDisabled={!lanRateSupported} lanRateUnavailableReason={lanRateUnavailableReason} />
       </div>
       <div className="flex flex-col flex-grow min-h-0 mb-2">
         {/* Show loaded preset indicator */}

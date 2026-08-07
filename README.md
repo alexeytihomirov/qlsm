@@ -8,6 +8,7 @@ Features:
   * Standalone remote server
   * VULTR cloud provisioning via Terraform
 - Automatic CPU affinity assignment for QLDS instances on multi-vCPU hosts
+- [Redis DB selection](https://dngrtech.github.io/qlsm/getting-started/deploy-new-instance/) when deploying an instance: give each QLDS instance its own DB, or share one DB across instances that need to share plugin state
 - Optional [99k LAN rate mode](https://dngrtech.github.io/qlsm/features/99k-lan-rate/).
 - [LD_PRELOAD hooks](https://dngrtech.github.io/qlsm/features/hooks/) manager: upload, enable/disable, reorder, and delete custom native `.so` libraries loaded into each QLDS process at launch. System hooks (like `force_rate.so` for 99k LAN rate) are managed automatically.
 - Optional [QLFilter ](https://dngrtech.github.io/qlsm/features/qlfilter/) deployment (anti-DDOS protection)

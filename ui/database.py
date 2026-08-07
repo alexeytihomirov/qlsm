@@ -46,7 +46,8 @@ def get_instance_by_name(name):
     return QLInstance.query.options(db.joinedload(QLInstance.host)).filter_by(name=name).first()
 
 # Update create_instance to accept host_id, hostname, and lan_rate_enabled
-def create_instance(name, host_id, port, hostname, lan_rate_enabled=False, config=None, qlx_plugins=None):
+def create_instance(name, host_id, port, hostname, lan_rate_enabled=False, config=None,
+                    qlx_plugins=None, redis_db=None):
     """Create a new QL instance."""
     # Ensure host_id is an integer
     host_id_int = int(host_id)
@@ -57,7 +58,8 @@ def create_instance(name, host_id, port, hostname, lan_rate_enabled=False, confi
         hostname=hostname,
         lan_rate_enabled=lan_rate_enabled,
         config=config,
-        qlx_plugins=qlx_plugins
+        qlx_plugins=qlx_plugins,
+        redis_db=redis_db
     )
     db.session.add(instance)
     db.session.commit()

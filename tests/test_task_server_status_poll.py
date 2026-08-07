@@ -18,11 +18,12 @@ def _make_host(id=1, ip='10.0.0.1', ssh_user='ql', ssh_key='/key.pem', ssh_port=
     return h
 
 
-def _make_instance(id=1, port=27960, host_id=1):
+def _make_instance(id=1, port=27960, host_id=1, redis_db=None):
     i = MagicMock()
     i.id = id
     i.port = port
     i.host_id = host_id
+    i.redis_db = redis_db
     return i
 
 

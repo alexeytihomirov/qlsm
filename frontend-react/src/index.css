@@ -1654,7 +1654,7 @@ body {
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 12px;
+  margin-bottom: 5px;
 }
 
 .drawer-field {

@@ -235,4 +235,68 @@ describe('InstanceDetailsModal lan rate guard', () => {
     expect(await screen.findByText('CPU Affinity')).toBeInTheDocument();
     expect(screen.getByText('Automatic')).toBeInTheDocument();
   });
+
+  it('shows the stored Redis DB Instance value', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      id: 8,
+      name: 'inst-8',
+      host_id: 10,
+      host_name: 'redis-host',
+      host_os_type: 'debian',
+      host_ip_address: '203.0.113.14',
+      port: 27960,
+      hostname: 'Redis Server',
+      lan_rate_enabled: false,
+      status: 'RUNNING',
+      redis_db: 3,
+    });
+
+    render(
+      <InstanceDetailsModal
+        isOpen={true}
+        instanceId={8}
+        onClose={vi.fn()}
+        onInstanceDeleted={vi.fn()}
+        onInstanceUpdated={vi.fn()}
+        onOpenEditConfig={vi.fn()}
+        onOpenHostDrawer={vi.fn()}
+        serverStatus={null}
+      />
+    );
+
+    expect(await screen.findByText('Redis DB')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('falls back to the port-derived Redis DB Instance value when unset', async () => {
+    mocks.getInstanceById.mockResolvedValue({
+      id: 9,
+      name: 'inst-9',
+      host_id: 10,
+      host_name: 'redis-host-2',
+      host_os_type: 'debian',
+      host_ip_address: '203.0.113.15',
+      port: 27961,
+      hostname: 'Redis Server 2',
+      lan_rate_enabled: false,
+      status: 'RUNNING',
+      redis_db: null,
+    });
+
+    render(
+      <InstanceDetailsModal
+        isOpen={true}
+        instanceId={9}
+        onClose={vi.fn()}
+        onInstanceDeleted={vi.fn()}
+        onInstanceUpdated={vi.fn()}
+        onOpenEditConfig={vi.fn()}
+        onOpenHostDrawer={vi.fn()}
+        serverStatus={null}
+      />
+    );
+
+    expect(await screen.findByText('Redis DB')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+  });
 });

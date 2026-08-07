@@ -5,7 +5,7 @@ import subprocess
 
 from flask import current_app
 
-from ui.constants import BASE_GAME_PORT, REDIS_DB_PORT_OFFSET
+from ui.constants import BASE_GAME_PORT, resolve_redis_db
 from ui.models import Host, HostStatus, InstanceStatus
 from ui import db
 from ui.task_logic.common import append_log
@@ -25,7 +25,7 @@ def _ssh_target_for_host(host):
 
 def _build_ssh_command(host, instances, redis_password=None):
     """Build SSH command that reads all instance Redis DBs in one round-trip."""
-    ports_dbs = [(int(inst.port), int(inst.port) - REDIS_DB_PORT_OFFSET) for inst in instances]
+    ports_dbs = [(int(inst.port), resolve_redis_db(inst)) for inst in instances]
     for port, db in ports_dbs:
         if db < 1:
             raise ValueError(f"Invalid port {port}: Redis DB index must be >= 1 (port must be >= {BASE_GAME_PORT})")
