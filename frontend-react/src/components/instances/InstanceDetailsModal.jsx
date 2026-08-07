@@ -15,6 +15,7 @@ import {
   canEnableLanRate,
   getLanRateUnsupportedMessage,
 } from '../../utils/lanRateCompatibility';
+import { effectiveRedisDb } from '../addInstance/redisDbOptions';
 
 const POLLING_INTERVAL = 3000;
 const POLLABLE_STATUSES = ['PENDING', 'DEPLOYING', 'CONFIGURING', 'STARTING', 'STOPPING', 'RESTARTING', 'DELETING'];
@@ -264,7 +265,7 @@ function InstanceDetailsModal({ instanceId, isOpen, onClose, onInstanceDeleted, 
                 </div>
 
                 {/* Body */}
-                <div className="drawer-body">
+                <div className="drawer-body scrollbar-thin">
                   {loading && (
                     <div className="flex justify-center items-center h-40">
                       <LoaderCircle size={28} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />
@@ -326,6 +327,7 @@ function InstanceDetailsModal({ instanceId, isOpen, onClose, onInstanceDeleted, 
                           </span>
                         </Field>
                         <Field label="Port"><span className="font-mono">{instance.port}</span></Field>
+                        <Field label="Redis DB Instance"><span className="font-mono">{effectiveRedisDb(instance)}</span></Field>
                         <Field label="CPU Affinity"><span className="font-mono">{cpuAffinityLabel}</span></Field>
                         <Field label="Hostname">{instance.hostname || 'N/A'}</Field>
                         <Field label="Status"><StatusIndicator status={instance.status} /></Field>
@@ -423,7 +425,7 @@ function InstanceDetailsModal({ instanceId, isOpen, onClose, onInstanceDeleted, 
                       <div>
                         <div className="drawer-section-label">Live Status</div>
                         {serverStatus ? (
-                          <div className="space-y-2">
+                          <>
                             <dl className="drawer-field">
                               <dt>Map</dt>
                               <dd className="font-mono">{serverStatus.map || '—'}</dd>
@@ -466,7 +468,7 @@ function InstanceDetailsModal({ instanceId, isOpen, onClose, onInstanceDeleted, 
                                 </button>
                               </dd>
                             </dl>
-                          </div>
+                          </>
                         ) : (
                           <p className="text-sm text-theme-muted italic">
                             No live data — server may be offline or starting up.

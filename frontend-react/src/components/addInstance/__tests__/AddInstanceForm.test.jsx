@@ -184,6 +184,8 @@ vi.mock('../InstanceBasicInfoForm', () => ({
       <button type="button" onClick={() => onHostChange('1')}>Select Host 1</button>
       <button type="button" onClick={() => onHostChange('2')}>Select Host 2</button>
       <button type="button" onClick={() => onPortChange('27963')}>Set Port 27963</button>
+      <button type="button" onClick={() => onPortChange('27965')}>Set Port 27965</button>
+      <button type="button" onClick={() => onRedisDbChange(1)}>Pick Redis DB 1</button>
       <button type="button" onClick={() => onRedisDbChange(7)}>Pick Redis DB 7</button>
       <button type="button" onClick={() => onLanRateChange(!lanRateEnabled)}>Toggle 99k</button>
     </div>
@@ -1050,7 +1052,7 @@ describe('AddInstanceForm draft lifecycle', () => {
     });
   });
 
-  describe('Redis DB across a host switch', () => {
+  describe('Redis DB is independent of port and host', () => {
     const renderWithTwoHosts = () => render(
       <AddInstanceForm
         initialData={{
@@ -1076,9 +1078,43 @@ describe('AddInstanceForm draft lifecycle', () => {
       />
     );
 
-    it('clears the derived Redis DB when the new host does not offer the current port', async () => {
-      // Host 2 has no 27963 free, so the port is dropped on the switch. The
-      // Redis DB must not keep showing host 1's value with no port behind it.
+    it('defaults to Redis DB 1 and leaves it untouched when the port changes', async () => {
+      mocks.getAvailablePortsForHost.mockResolvedValue({ available_ports: [27963, 27965] });
+
+      renderWithTwoHosts();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Select Host 1' }));
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      expect(screen.getByTestId('redis-db')).toHaveTextContent('1');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Set Port 27963' }));
+      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('27963'));
+      expect(screen.getByTestId('redis-db')).toHaveTextContent('1');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Set Port 27965' }));
+      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('27965'));
+      expect(screen.getByTestId('redis-db')).toHaveTextContent('1');
+    });
+
+    it('keeps an explicitly picked Redis DB fixed across port changes', async () => {
+      mocks.getAvailablePortsForHost.mockResolvedValue({ available_ports: [27963, 27965] });
+
+      renderWithTwoHosts();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Select Host 1' }));
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: 'Set Port 27963' }));
+      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('27963'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pick Redis DB 7' }));
+      await waitFor(() => expect(screen.getByTestId('redis-db')).toHaveTextContent('7'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Set Port 27965' }));
+      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('27965'));
+      expect(screen.getByTestId('redis-db')).toHaveTextContent('7');
+    });
+
+    it('keeps an explicitly picked Redis DB fixed across a host switch, even when the port is dropped', async () => {
       mocks.getAvailablePortsForHost.mockImplementation((hostId) => Promise.resolve({
         available_ports: String(hostId) === '1' ? [27963] : [27962],
       }));
@@ -1088,34 +1124,85 @@ describe('AddInstanceForm draft lifecycle', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Select Host 1' }));
       await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
       fireEvent.click(screen.getByRole('button', { name: 'Set Port 27963' }));
-      await waitFor(() => expect(screen.getByTestId('redis-db')).toHaveTextContent('4'));
-
-      fireEvent.click(screen.getByRole('button', { name: 'Select Host 2' }));
-
-      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('none'));
-      expect(screen.getByTestId('redis-db')).toHaveTextContent('none');
-    });
-
-    it('re-derives an explicitly picked Redis DB when the port survives the host switch', async () => {
-      // Switching hosts resumes port tracking, so an explicit pick made for
-      // the old host must not carry over to the new one.
-      mocks.getAvailablePortsForHost.mockResolvedValue({ available_ports: [27963] });
-
-      renderWithTwoHosts();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Select Host 1' }));
-      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
-      fireEvent.click(screen.getByRole('button', { name: 'Set Port 27963' }));
-      await waitFor(() => expect(screen.getByTestId('redis-db')).toHaveTextContent('4'));
+      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('27963'));
 
       fireEvent.click(screen.getByRole('button', { name: 'Pick Redis DB 7' }));
       await waitFor(() => expect(screen.getByTestId('redis-db')).toHaveTextContent('7'));
 
       fireEvent.click(screen.getByRole('button', { name: 'Select Host 2' }));
 
-      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('2'));
-      expect(screen.getByTestId('port')).toHaveTextContent('27963');
-      expect(screen.getByTestId('redis-db')).toHaveTextContent('4');
+      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('none'));
+      expect(screen.getByTestId('redis-db')).toHaveTextContent('7');
+    });
+  });
+
+  describe('Redis DB default on initial host load', () => {
+    it('defaults to the next free Redis DB for the preselected host', async () => {
+      mocks.getAvailablePortsForHost.mockResolvedValue({ available_ports: [27963] });
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [
+              {
+                id: 1,
+                name: 'host-one',
+                os_type: 'debian',
+                instances: [
+                  { name: 'Duel #1', port: 27960, redis_db: null },
+                  { name: 'FFA', port: 27961, redis_db: null },
+                ],
+              },
+            ],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={1}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      expect(screen.getByTestId('redis-db')).toHaveTextContent('3');
+    });
+
+    it('falls back to DB 1 as the default when the host has no instances', async () => {
+      mocks.getAvailablePortsForHost.mockResolvedValue({ available_ports: [27960] });
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [{ id: 1, name: 'host-one', os_type: 'debian', instances: [] }],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={1}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      expect(screen.getByTestId('redis-db')).toHaveTextContent('1');
     });
   });
 });

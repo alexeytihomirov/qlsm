@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRedisDbOptions, effectiveRedisDb } from '../redisDbOptions';
+import { buildRedisDbOptions, effectiveRedisDb, nextFreeRedisDb } from '../redisDbOptions';
 
 const inst = (name, port, redis_db = null) => ({ name, port, redis_db });
 
@@ -18,67 +18,68 @@ describe('effectiveRedisDb', () => {
 });
 
 describe('buildRedisDbOptions', () => {
-  it('offers only DB 1 on an empty host', () => {
-    const options = buildRedisDbOptions({ instances: [], selectedDb: 1 });
-    expect(options).toEqual([{ db: 1, inUse: false, instanceName: null }]);
+  it('always lists every DB from 1 to the max on an empty host', () => {
+    const options = buildRedisDbOptions({ instances: [] });
+    expect(options).toEqual([
+      { db: 1, inUse: false, instanceName: null },
+      { db: 2, inUse: false, instanceName: null },
+      { db: 3, inUse: false, instanceName: null },
+      { db: 4, inUse: false, instanceName: null },
+      { db: 5, inUse: false, instanceName: null },
+      { db: 6, inUse: false, instanceName: null },
+      { db: 7, inUse: false, instanceName: null },
+      { db: 8, inUse: false, instanceName: null },
+    ]);
   });
 
-  it('offers the occupied DB plus one when the host has a single instance', () => {
-    const options = buildRedisDbOptions({
-      instances: [inst('Duel #1', 27960)],
-      selectedDb: 2,
-    });
-    expect(options).toEqual([
-      { db: 1, inUse: true, instanceName: 'Duel #1' },
-      { db: 2, inUse: false, instanceName: null },
-    ]);
+  it('marks the occupied DB when the host has a single instance', () => {
+    const options = buildRedisDbOptions({ instances: [inst('Duel #1', 27960)] });
+    expect(options).toHaveLength(8);
+    expect(options[0]).toEqual({ db: 1, inUse: true, instanceName: 'Duel #1' });
+    expect(options[1]).toEqual({ db: 2, inUse: false, instanceName: null });
   });
 
   it('marks every occupied DB when the host has two contiguous instances', () => {
     const options = buildRedisDbOptions({
       instances: [inst('Duel #1', 27960), inst('FFA', 27961)],
-      selectedDb: 3,
     });
     expect(options.map((o) => [o.db, o.inUse])).toEqual([
       [1, true],
       [2, true],
       [3, false],
+      [4, false],
+      [5, false],
+      [6, false],
+      [7, false],
+      [8, false],
     ]);
   });
 
-  it('keeps a gap selectable when occupancy is not contiguous', () => {
+  it('marks a non-contiguous occupied DB correctly', () => {
     const options = buildRedisDbOptions({
       instances: [inst('Duel #1', 27960), inst('FFA', 27961, 3)],
-      selectedDb: 3,
     });
     expect(options.map((o) => [o.db, o.inUse])).toEqual([
       [1, true],
       [2, false],
       [3, true],
+      [4, false],
+      [5, false],
+      [6, false],
+      [7, false],
+      [8, false],
     ]);
   });
 
-  it('extends the range so the selected DB is always present', () => {
-    const options = buildRedisDbOptions({
-      instances: [inst('Duel #1', 27960)],
-      selectedDb: 6,
-    });
-    expect(options.map((o) => o.db)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(options.find((o) => o.db === 6).inUse).toBe(false);
-  });
-
-  it('keeps an occupied DB visible even when it sits above the baseline', () => {
-    const options = buildRedisDbOptions({
-      instances: [inst('Duel #1', 27960, 7)],
-      selectedDb: 1,
-    });
-    expect(options.map((o) => o.db)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  it('keeps a high occupied DB visible', () => {
+    const options = buildRedisDbOptions({ instances: [inst('Duel #1', 27960, 7)] });
+    expect(options.map((o) => o.db)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(options.find((o) => o.db === 7).instanceName).toBe('Duel #1');
   });
 
   it('never exceeds the maximum', () => {
     const instances = Array.from({ length: 8 }, (_, i) => inst(`i${i}`, 27960 + i));
-    const options = buildRedisDbOptions({ instances, selectedDb: 8 });
+    const options = buildRedisDbOptions({ instances });
     expect(options).toHaveLength(8);
     expect(options[7].db).toBe(8);
   });
@@ -86,14 +87,45 @@ describe('buildRedisDbOptions', () => {
   it('names the first occupant when two instances share a DB', () => {
     const options = buildRedisDbOptions({
       instances: [inst('Duel #1', 27960), inst('Duel #2', 27961, 1)],
-      selectedDb: 2,
     });
     expect(options[0]).toEqual({ db: 1, inUse: true, instanceName: 'Duel #1' });
   });
 
   it('tolerates a missing instances list', () => {
-    expect(buildRedisDbOptions({ instances: undefined, selectedDb: 1 })).toEqual([
-      { db: 1, inUse: false, instanceName: null },
-    ]);
+    const options = buildRedisDbOptions({ instances: undefined });
+    expect(options).toHaveLength(8);
+    expect(options[0]).toEqual({ db: 1, inUse: false, instanceName: null });
+  });
+
+  it('respects a smaller maxInstances override', () => {
+    const options = buildRedisDbOptions({ instances: [], maxInstances: 3 });
+    expect(options.map((o) => o.db)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('nextFreeRedisDb', () => {
+  it('returns 1 on an empty host', () => {
+    expect(nextFreeRedisDb([])).toBe(1);
+  });
+
+  it('returns 1 when instances exist but leave DB 1 free', () => {
+    expect(nextFreeRedisDb([inst('Duel #1', 27960, 3)])).toBe(1);
+  });
+
+  it('skips contiguous occupied DBs', () => {
+    expect(nextFreeRedisDb([inst('Duel #1', 27960), inst('FFA', 27961)])).toBe(3);
+  });
+
+  it('fills a gap before extending past it', () => {
+    expect(nextFreeRedisDb([inst('Duel #1', 27960), inst('FFA', 27961, 3)])).toBe(2);
+  });
+
+  it('falls back to 1 when every DB up to the max is occupied', () => {
+    const instances = Array.from({ length: 8 }, (_, i) => inst(`i${i}`, 27960 + i));
+    expect(nextFreeRedisDb(instances)).toBe(1);
+  });
+
+  it('tolerates a missing instances list', () => {
+    expect(nextFreeRedisDb(undefined)).toBe(1);
   });
 });

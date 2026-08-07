@@ -20,13 +20,11 @@ export function effectiveRedisDb(instance) {
 /**
  * Build the dropdown's options.
  *
- * The list stays as short as the host plausibly needs rather than always
- * showing all 8. Three terms set the upper bound:
- *   - instances.length + 1 : one slot per existing instance, plus the new one
- *   - highest occupied DB  : keeps an occupied DB visible above the baseline
- *   - selectedDb           : guarantees the current value is in its own list
+ * Always lists every DB from 1 to maxInstances, so the choice of port never
+ * changes which values are offered -- picking Redis DB and picking a port
+ * are independent decisions.
  */
-export function buildRedisDbOptions({ instances, selectedDb, maxInstances = MAX_REDIS_DB }) {
+export function buildRedisDbOptions({ instances, maxInstances = MAX_REDIS_DB }) {
   const list = instances || [];
 
   const occupants = new Map();
@@ -37,13 +35,7 @@ export function buildRedisDbOptions({ instances, selectedDb, maxInstances = MAX_
     }
   }
 
-  const highestOccupied = occupants.size ? Math.max(...occupants.keys()) : 0;
-  const upper = Math.min(
-    maxInstances,
-    Math.max(list.length + 1, highestOccupied, selectedDb || 1)
-  );
-
-  return Array.from({ length: upper }, (_, index) => {
+  return Array.from({ length: maxInstances }, (_, index) => {
     const db = index + 1;
     return {
       db,
@@ -51,4 +43,16 @@ export function buildRedisDbOptions({ instances, selectedDb, maxInstances = MAX_
       instanceName: occupants.get(db) ?? null,
     };
   });
+}
+
+/**
+ * The lowest unoccupied DB for a host, used as the initial default when the
+ * Add Instance form first opens against that host. Once shown, the value is
+ * just a normal independent selection -- nothing re-derives it afterward, so
+ * picking an already-used DB on purpose (e.g. to share state) sticks.
+ */
+export function nextFreeRedisDb(instances, maxInstances = MAX_REDIS_DB) {
+  const options = buildRedisDbOptions({ instances, maxInstances });
+  const free = options.find((option) => !option.inUse);
+  return free ? free.db : 1;
 }

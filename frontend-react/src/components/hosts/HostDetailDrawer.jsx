@@ -208,7 +208,7 @@ export default function HostDetailDrawer({
                 </div>
 
                 {/* Body */}
-                <div className="drawer-body">
+                <div className="drawer-body scrollbar-thin">
                   {loading && !internalHost && (
                     <div className="flex justify-center items-center h-40">
                       <LoaderCircle size={28} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />

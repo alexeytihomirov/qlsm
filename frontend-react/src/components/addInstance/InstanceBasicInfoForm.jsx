@@ -139,14 +139,14 @@ function InstanceBasicInfoForm({
 
         {/* Redis DB */}
         <div>
-          <Listbox value={redisDb} onChange={onRedisDbChange} disabled={!selectedHostId}>
+          <Listbox value={redisDb} onChange={onRedisDbChange} disabled={!selectedHostId || loadingPorts}>
             {({ open }) => (
               <div>
                 <Listbox.Label className="label-tech mb-1.5 block">Redis DB</Listbox.Label>
                 <div className="relative">
-                  <Listbox.Button className={`${listboxBtnNarrowClass} ${!selectedHostId ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                  <Listbox.Button className={`${listboxBtnNarrowClass} ${!selectedHostId || loadingPorts ? 'opacity-50 cursor-not-allowed' : ''}`}>
                     <span className="flex items-center gap-1">
-                      <span className="block truncate">{redisDb ?? ''}</span>
+                      <span className="block truncate">{loadingPorts ? '' : redisDb ?? ''}</span>
                       {selectedOccupant && (
                         <InfoTooltip text={`Used by ${selectedOccupant}`} variant="warning" size={13} />
                       )}

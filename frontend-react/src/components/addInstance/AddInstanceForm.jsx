@@ -5,7 +5,7 @@ import { python } from '@codemirror/lang-python';
 import { getAvailablePortsForHost, getFactoryContent, getFactoryTree, getPresetById, getPresets, savePreset, updatePreset } from '../../services/api';
 import { getBinaryMeta, saveBinaryMeta, uploadDraftHook, deleteDraftHook } from '../../services/draftApi';
 import InstanceBasicInfoForm from './InstanceBasicInfoForm';
-import { buildRedisDbOptions, REDIS_DB_PORT_OFFSET } from './redisDbOptions';
+import { buildRedisDbOptions, nextFreeRedisDb } from './redisDbOptions';
 import HooksTab from '../instances/HooksTab';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
 import FullScreenConfigEditorModal from '../config/FullScreenConfigEditorModal';
@@ -132,7 +132,6 @@ function AddInstanceForm({
   const [selectedHostId, setSelectedHostId] = useState('');
   const [port, setPort] = useState('');
   const [redisDb, setRedisDb] = useState(1);
-  const redisDbTouched = useRef(false);
   const [hostname, setHostname] = useState('');
   const [lanRateEnabled, setLanRateEnabled] = useState(false);
   const [configContents, setConfigContents] = useState(() => normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap()));
@@ -306,8 +305,6 @@ function AddInstanceForm({
 
   const handleHostChange = useCallback(async (hostId, isInitialLoad = false) => {
     setSelectedHostId(hostId);
-    // Resume tracking the port-derived Redis DB for the new host's context.
-    redisDbTouched.current = false;
     let newAvailablePorts = [];
     if (hostId) {
       try {
@@ -319,6 +316,11 @@ function AddInstanceForm({
         const portsData = await getAvailablePortsForHost(hostId, controller.signal);
         newAvailablePorts = portsData.available_ports || [];
         setAvailablePorts(newAvailablePorts);
+
+        if (isInitialLoad) {
+          const hostRecord = (initialData.hosts || []).find((host) => String(host.id) === String(hostId));
+          setRedisDb(nextFreeRedisDb(hostRecord?.instances));
+        }
 
         if (isInitialLoad && newAvailablePorts.length > 0) {
           const sortedPorts = [...newAvailablePorts].sort((a, b) => a - b);
@@ -359,7 +361,7 @@ function AddInstanceForm({
         syncConfigFile('server.cfg', currentServerCfg.replace(NET_PORT_REGEX, `// $1${currentPortVal}$2 (Port removed)`));
       }
     }
-  }, [syncConfigFile, syncConfigState]);
+  }, [initialData.hosts, syncConfigFile, syncConfigState]);
 
   useEffect(() => {
     const currentDefaultConfigs = normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap());
@@ -543,17 +545,6 @@ function AddInstanceForm({
     prevPortRef.current = port;
   }, [port, syncConfigFile]);
 
-  // The Redis DB tracks the port -- matching how it was always derived
-  // implicitly -- until the operator picks one explicitly. Switching hosts
-  // resumes that tracking, so re-derive on the host too: the port either
-  // survives the switch unchanged, or is cleared because the new host does
-  // not offer it. Without a port there is nothing to derive from.
-  useEffect(() => {
-    if (redisDbTouched.current) return;
-    const portNum = parseInt(port, 10);
-    setRedisDb(Number.isNaN(portNum) ? null : portNum - REDIS_DB_PORT_OFFSET);
-  }, [port, selectedHostId]);
-
   const effectiveHostId = selectedHostId || (initialHostId ? String(initialHostId) : '');
   const selectedHost = (initialData.hosts || []).find((host) => String(host.id) === String(effectiveHostId));
   const selectedHostOsType = selectedHost?.os_type ?? null;
@@ -564,8 +555,8 @@ function AddInstanceForm({
     ? getLanRateUnsupportedMessage(selectedHostShape)
     : null;
   const redisDbOptions = useMemo(
-    () => buildRedisDbOptions({ instances: selectedHost?.instances, selectedDb: redisDb }),
-    [selectedHost, redisDb]
+    () => buildRedisDbOptions({ instances: selectedHost?.instances }),
+    [selectedHost]
   );
 
   // Handle loading a preset
@@ -942,11 +933,6 @@ function AddInstanceForm({
     await onSubmit(submitData, { consumeDraft: pluginConsume });
   };
 
-  const handleRedisDbChange = useCallback((value) => {
-    redisDbTouched.current = true;
-    setRedisDb(value);
-  }, []);
-
   // Discard draft workspace on cancel/close
   const handleCancel = useCallback(() => {
     pluginDiscard();
@@ -982,7 +968,7 @@ function AddInstanceForm({
   return (
     <form onSubmit={localHandleSubmit} className="flex flex-col flex-grow min-h-0 pt-4">
       <div className="flex-shrink-0 mb-6">
-        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={handleRedisDbChange} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} lanRateEnabled={lanRateEnabled} onLanRateChange={setLanRateEnabled} lanRateDisabled={!lanRateSupported} lanRateUnavailableReason={lanRateUnavailableReason} />
+        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} lanRateEnabled={lanRateEnabled} onLanRateChange={setLanRateEnabled} lanRateDisabled={!lanRateSupported} lanRateUnavailableReason={lanRateUnavailableReason} />
       </div>
       <div className="flex flex-col flex-grow min-h-0 mb-2">
         {/* Show loaded preset indicator */}
