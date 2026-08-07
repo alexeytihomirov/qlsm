@@ -15,6 +15,8 @@ def app(tmp_path):
         'JWT_SECRET_KEY': 'test-jwt-secret-key',  # Required for JWT token generation in tests
         'JWT_COOKIE_CSRF_PROTECT': False,  # Disable CSRF cookie protection in tests
         'JWT_TOKEN_LOCATION': ['headers', 'cookies'],  # Accept tokens from both locations
+        'JWT_EXPIRATION_HOURS': 24,  # Matches ui.config.Config default
+        'JWT_REMEMBER_ME_DAYS': 90,  # Matches ui.config.Config default
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'WTF_CSRF_ENABLED': False,  # Disable CSRF protection in tests

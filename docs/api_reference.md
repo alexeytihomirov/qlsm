@@ -8,7 +8,7 @@ All endpoints except `/api/auth/login` require authentication via JWT cookie.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/auth/login` | POST | Login with username/password, sets JWT cookie |
+| `/auth/login` | POST | Login with username/password, sets JWT cookie; optional `rememberMe` extends the cookie/token lifetime |
 | `/auth/logout` | POST | Logout, clears JWT cookie |
 | `/auth/status` | GET | Check authentication status |
 | `/auth/change-password` | POST | Change the authenticated user's password and clear forced rotation |

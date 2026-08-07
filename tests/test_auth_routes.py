@@ -19,6 +19,34 @@ def test_login_success(client, app):
     assert 'access_token_cookie' in response.headers.get('Set-Cookie', '')
 
 
+def test_login_default_sets_persistent_cookie_matching_expiration_hours(client, app):
+    """Without rememberMe, the cookie must persist for JWT_EXPIRATION_HOURS instead of
+    dying when the browser closes — this is the fix for the constant-logout bug."""
+    make_user(app, 'loginuser', 'securepass1')
+    response = client.post('/api/auth/login', json={
+        'username': 'loginuser',
+        'password': 'securepass1'
+    })
+    assert response.status_code == 200
+    set_cookie_header = response.headers.get('Set-Cookie', '')
+    expected_max_age = app.config['JWT_EXPIRATION_HOURS'] * 3600
+    assert f'Max-Age={expected_max_age}' in set_cookie_header
+
+
+def test_login_remember_me_sets_long_lived_cookie(client, app):
+    """rememberMe=True extends the cookie/token to JWT_REMEMBER_ME_DAYS."""
+    make_user(app, 'loginuser', 'securepass1')
+    response = client.post('/api/auth/login', json={
+        'username': 'loginuser',
+        'password': 'securepass1',
+        'rememberMe': True
+    })
+    assert response.status_code == 200
+    set_cookie_header = response.headers.get('Set-Cookie', '')
+    expected_max_age = app.config['JWT_REMEMBER_ME_DAYS'] * 86400
+    assert f'Max-Age={expected_max_age}' in set_cookie_header
+
+
 def test_login_allows_existing_short_password(client, app):
     """Existing stored passwords should not be rejected by login policy."""
     make_user(app, 'bootstrap', 'admin')

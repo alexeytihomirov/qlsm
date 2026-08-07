@@ -87,6 +87,7 @@ def login_api():
 
     username = data.get('username')
     password = data.get('password')
+    remember_me = bool(data.get('rememberMe'))
 
     if not username or not password:
         return jsonify({"error": {"message": "Username and password are required."}}), 400
@@ -115,7 +116,10 @@ def login_api():
             user.last_login_at = datetime.datetime.now(datetime.timezone.utc)
             db.session.commit()
 
-            expires_delta = datetime.timedelta(hours=current_app.config.get('JWT_EXPIRATION_HOURS', 24))
+            if remember_me:
+                expires_delta = datetime.timedelta(days=current_app.config.get('JWT_REMEMBER_ME_DAYS', 90))
+            else:
+                expires_delta = datetime.timedelta(hours=current_app.config.get('JWT_EXPIRATION_HOURS', 24))
             access_token = create_access_token(identity=user.username, expires_delta=expires_delta)
 
             current_app.logger.info(f"User '{username}' logged in successfully.")
@@ -126,7 +130,7 @@ def login_api():
                     "user": _user_payload(user)
                 }
             })
-            set_access_cookies(response, access_token)
+            set_access_cookies(response, access_token, max_age=int(expires_delta.total_seconds()))
             return response, 200
         except Exception as e:
             current_app.logger.error(f"Error during login for user {username}: {e}", exc_info=True)
