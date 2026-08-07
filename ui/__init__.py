@@ -241,6 +241,9 @@ def create_app(test_config=None):
     from ui.routes.settings_routes import settings_api_bp
     api_bp.register_blueprint(settings_api_bp, url_prefix='/settings')
 
+    from ui.routes.backup_routes import backup_api_bp
+    api_bp.register_blueprint(backup_api_bp, url_prefix='/settings/backup')
+
     from ui.routes.server_status_routes import server_status_bp
     api_bp.register_blueprint(server_status_bp, url_prefix='/server-status')
 
