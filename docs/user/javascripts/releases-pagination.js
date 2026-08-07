@@ -32,7 +32,6 @@
         row.style.display = i >= start && i < end ? "" : "none";
       });
       renderControls(page);
-      table.scrollIntoView({ block: "nearest" });
     }
 
     function button(label, page, opts) {
