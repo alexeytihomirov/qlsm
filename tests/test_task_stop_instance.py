@@ -28,7 +28,7 @@ def _mock_instance():
 @patch(f"{MOD}.db.session")
 @patch(f"{MOD}.get_current_job", return_value=None)
 def test_stop_instance_logic_without_rq_job(mock_job, mock_session, mock_log, mock_run):
-    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
+    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:", "RCON_ENABLED": False})
     with app.app_context():
         inst = _mock_instance()
         mock_session.get.return_value = inst

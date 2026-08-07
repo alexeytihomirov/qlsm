@@ -13,6 +13,7 @@ def status_app():
         'JWT_SECRET_KEY': 'test-secret',
         'JWT_TOKEN_LOCATION': ['headers'],
         'JWT_COOKIE_CSRF_PROTECT': False,
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()

@@ -15,7 +15,8 @@ def test_app():
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
-        'SERVER_NAME': 'localhost.test'
+        'SERVER_NAME': 'localhost.test',
+        'RCON_ENABLED': False,
     })
     with app.app_context():
         db.create_all()
