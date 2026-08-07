@@ -5,6 +5,7 @@ from ui.models import Host, HostStatus, InstanceStatus # Added InstanceStatus
 from ui.database import (
     get_hosts, get_host, get_host_by_name, create_host, update_host, delete_host # delete_host might be used by delete_host_route
 )
+from ui.vultr_settings import is_vultr_configured
 import re
 import os
 import datetime
@@ -92,9 +93,6 @@ VALID_TIMEZONES = {
     'Pacific/Auckland', 'Pacific/Honolulu', 'UTC',
 }
 
-
-def is_vultr_configured():
-    return bool(os.environ.get('VULTR_API_KEY', '').strip())
 
 # Import task functions
 from ui.tasks import provision_host, destroy_host, \

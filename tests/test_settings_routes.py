@@ -82,3 +82,34 @@ def test_revoke_no_key(client, app):
     headers = auth_headers(app, 'admin')
     resp = client.delete('/api/settings/api-key', headers=headers)
     assert resp.status_code == 404
+
+
+# --- GET/PUT /api/settings/vultr-key ---
+
+class TestVultrKeySettings:
+    def test_get_returns_null_when_unset(self, app, client):
+        make_user(app, 'admin', 'pw')
+        headers = auth_headers(app, 'admin')
+        resp = client.get('/api/settings/vultr-key', headers=headers)
+        assert resp.status_code == 200
+        assert resp.get_json()['data']['key'] is None
+
+    def test_put_then_get(self, app, client):
+        make_user(app, 'admin', 'pw')
+        headers = auth_headers(app, 'admin')
+        resp = client.put('/api/settings/vultr-key', headers=headers, json={'key': 'my-vultr-key'})
+        assert resp.status_code == 200
+        assert resp.get_json()['data']['key'] == 'my-vultr-key'
+
+        resp = client.get('/api/settings/vultr-key', headers=headers)
+        assert resp.get_json()['data']['key'] == 'my-vultr-key'
+
+    def test_put_rejects_non_string(self, app, client):
+        make_user(app, 'admin', 'pw')
+        headers = auth_headers(app, 'admin')
+        resp = client.put('/api/settings/vultr-key', headers=headers, json={'key': 123})
+        assert resp.status_code == 400
+
+    def test_requires_auth(self, client):
+        resp = client.get('/api/settings/vultr-key')
+        assert resp.status_code == 401
