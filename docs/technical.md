@@ -93,7 +93,7 @@ The Flask application follows the application factory pattern, which provides se
     *   The `SECRET_KEY` from `ui/config.py` is used for signing JWTs.
     *   Protected API endpoints are decorated with `@jwt_required()` from `Flask-JWT-Extended`.
     *   Key authentication routes in `ui/routes/auth_api_routes.py`:
-        *   `/api/auth/login`: Validates credentials, creates a JWT, and sets it as an `HttpOnly` cookie via `set_access_cookies`.
+        *   `/api/auth/login`: Validates credentials, creates a JWT, and sets it as an `HttpOnly` cookie via `set_access_cookies`. Accepts an optional `rememberMe` flag that extends the lifetime from `JWT_EXPIRATION_HOURS` (default) to `JWT_REMEMBER_ME_DAYS` (default 90 days). Either way the cookie now persists via an explicit `max_age` rather than dying when the browser closes.
         *   `/api/auth/status`: A protected route that allows the frontend to check if the current session (via cookie) is valid and retrieve user information.
         *   `/api/auth/logout`: A protected route that clears the JWT cookie via `unset_jwt_cookies`.
 -   **Routes (`ui/routes/` package):** Defines application endpoints using Flask Blueprints:

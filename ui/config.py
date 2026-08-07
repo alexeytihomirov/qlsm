@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -34,6 +35,7 @@ class Config:
 
     # JWT Settings
     JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 24)) # Default to 24 hours
+    JWT_REMEMBER_ME_DAYS = int(os.environ.get('JWT_REMEMBER_ME_DAYS', 90)) # "Keep me signed in" duration
 
     # CORS Settings
     # Comma-separated list of allowed origins, e.g. "https://app.example.com,https://admin.example.com"
@@ -52,8 +54,10 @@ class Config:
     JWT_COOKIE_HTTPONLY = True # Ensure HttpOnly is True
     JWT_COOKIE_CSRF_PROTECT = True
     # JWT_SECRET_KEY will default to app.config['SECRET_KEY']
-    # JWT_ACCESS_TOKEN_EXPIRES can be set here if needed, e.g., using JWT_EXPIRATION_HOURS
-    # For example: from datetime import timedelta; JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=JWT_EXPIRATION_HOURS)
+    # Safety net for any future create_access_token()/set_access_cookies() call that
+    # omits an explicit duration — today's only caller (login) always passes one.
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=JWT_EXPIRATION_HOURS)
+    JWT_SESSION_COOKIE = False
 
 
 class DevelopmentConfig(Config):

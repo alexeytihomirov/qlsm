@@ -26,6 +26,13 @@ You cannot delete the currently logged-in user.
 2. Find the user and click **Reset Password**.
 3. Enter and confirm the new password.
 
+### Staying Signed In
+
+Check **Keep me signed in** on the login screen to extend your session from the
+default (matches your server's configured JWT lifetime) to 90 days. Logging out
+immediately invalidates that session's cookie, regardless of which duration was
+chosen.
+
 ## API Keys
 
 The external REST API uses Bearer token authentication, separate from the session cookie used by the UI. API keys are managed in **Settings → API Keys**.
