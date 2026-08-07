@@ -72,3 +72,57 @@ describe('BackupRestorePage export', () => {
     expect(mocks.exportBackup).not.toHaveBeenCalled();
   });
 });
+
+describe('BackupRestorePage import', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.importBackup.mockResolvedValue({ message: 'Backup restored successfully.' });
+  });
+
+  const selectFile = () => {
+    const file = new File(['backup contents'], 'backup.qlsmbak');
+    const input = screen.getByLabelText(/backup file/i);
+    fireEvent.change(input, { target: { files: [file] } });
+    return file;
+  };
+
+  it('disables the import button until RESTORE is typed', async () => {
+    render(<BackupRestorePage />);
+    selectFile();
+    const importButton = screen.getByRole('button', { name: /^import backup$/i });
+    expect(importButton).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/type restore to confirm/i), { target: { value: 'RESTORE' } });
+    expect(importButton).toBeEnabled();
+  });
+
+  it('calls importBackup with the file and password once confirmed', async () => {
+    render(<BackupRestorePage />);
+    selectFile();
+    fireEvent.change(screen.getByLabelText(/backup password/i), { target: { value: 'pw' } });
+    fireEvent.change(screen.getByLabelText(/type restore to confirm/i), { target: { value: 'RESTORE' } });
+    fireEvent.click(screen.getByRole('button', { name: /^import backup$/i }));
+
+    await waitFor(() => {
+      expect(mocks.importBackup).toHaveBeenCalledWith(expect.any(File), 'pw');
+      expect(mocks.showSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it('shows an explicit wipe warning before the confirm field is usable', () => {
+    render(<BackupRestorePage />);
+    expect(screen.getByText(/permanently wipe/i)).toBeInTheDocument();
+  });
+
+  it('warns when the restored backup was made on a different QLSM version', async () => {
+    mocks.importBackup.mockResolvedValue({ message: 'Backup restored successfully.', data: { qlsm_version: '0.0.1-does-not-match' } });
+    render(<BackupRestorePage />);
+    selectFile();
+    fireEvent.change(screen.getByLabelText(/type restore to confirm/i), { target: { value: 'RESTORE' } });
+    fireEvent.click(screen.getByRole('button', { name: /^import backup$/i }));
+
+    await waitFor(() => {
+      expect(mocks.showSuccess).toHaveBeenCalledWith(expect.stringMatching(/0\.0\.1-does-not-match/));
+    });
+  });
+});
