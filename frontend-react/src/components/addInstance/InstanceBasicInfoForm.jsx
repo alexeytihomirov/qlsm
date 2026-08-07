@@ -17,6 +17,10 @@ function InstanceBasicInfoForm({
   // Narrow variant: the Redis DB field holds a single digit, so it gets less
   // right padding -- only the chevron sits on that side.
   const listboxBtnNarrowClass = listboxBtnClass.replace('pr-10', 'pr-8');
+  // The Redis DB column is a fixed 5rem grid track -- too narrow for the
+  // "in use" tooltip icon next to each option, which clips it. Let the
+  // options panel grow past the button's width instead of matching it.
+  const listboxOptionsWideClass = listboxOptionsClass.replace('w-full', 'w-max min-w-full');
 
   const selectedOccupant = redisDbOptions.find((option) => option.db === redisDb && option.inUse)?.instanceName ?? null;
 
@@ -156,7 +160,7 @@ function InstanceBasicInfoForm({
                     </span>
                   </Listbox.Button>
                   <Transition show={open} as="div" leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
-                    <Listbox.Options className={listboxOptionsClass}>
+                    <Listbox.Options className={listboxOptionsWideClass}>
                       {redisDbOptions.map((option) => (
                         <Listbox.Option
                           key={option.db}
@@ -165,7 +169,7 @@ function InstanceBasicInfoForm({
                         >
                           {({ selected }) => (
                             <>
-                              <span className={`flex items-center gap-1.5 truncate ${selected ? 'font-medium' : 'font-normal'}`}>
+                              <span className={`flex items-center gap-1.5 ${selected ? 'font-medium' : 'font-normal'}`}>
                                 {option.db}
                                 {option.inUse && (
                                   <InfoTooltip text={`Used by ${option.instanceName}`} variant="warning" size={13} />
