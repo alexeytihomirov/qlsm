@@ -327,7 +327,7 @@ function InstanceDetailsModal({ instanceId, isOpen, onClose, onInstanceDeleted, 
                           </span>
                         </Field>
                         <Field label="Port"><span className="font-mono">{instance.port}</span></Field>
-                        <Field label="Redis DB Instance"><span className="font-mono">{effectiveRedisDb(instance)}</span></Field>
+                        <Field label="Redis DB"><span className="font-mono">{effectiveRedisDb(instance)}</span></Field>
                         <Field label="CPU Affinity"><span className="font-mono">{cpuAffinityLabel}</span></Field>
                         <Field label="Hostname">{instance.hostname || 'N/A'}</Field>
                         <Field label="Status"><StatusIndicator status={instance.status} /></Field>

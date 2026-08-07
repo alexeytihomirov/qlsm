@@ -264,7 +264,7 @@ describe('InstanceDetailsModal lan rate guard', () => {
       />
     );
 
-    expect(await screen.findByText('Redis DB Instance')).toBeInTheDocument();
+    expect(await screen.findByText('Redis DB')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
@@ -296,7 +296,7 @@ describe('InstanceDetailsModal lan rate guard', () => {
       />
     );
 
-    expect(await screen.findByText('Redis DB Instance')).toBeInTheDocument();
+    expect(await screen.findByText('Redis DB')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 });
