@@ -8,7 +8,11 @@ from ui.models import Host, QLInstance
 
 @pytest.fixture(scope='module')
 def test_app():
-    app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'})
+    app = create_app({
+        'TESTING': True,
+        'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'RCON_ENABLED': False,  # Avoid mutating the global SocketIO singleton with a message queue
+    })
     with app.app_context():
         yield app
 
