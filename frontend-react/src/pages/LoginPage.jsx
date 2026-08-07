@@ -9,6 +9,7 @@ function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -17,7 +18,7 @@ function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const response = await login(username, password);
+      const response = await login(username, password, rememberMe);
       if (response && response.data && response.data.message === "Login successful." && response.data.user) {
         loginContext(response.data.user);
         // Use the Credential Management API with the form element directly — this is
@@ -120,6 +121,20 @@ function LoginPage() {
                 <div className="login-input-border" />
               </div>
             </div>
+
+            {/* Keep me signed in */}
+            <label className="login-remember-me" htmlFor="rememberMe">
+              <input
+                id="rememberMe"
+                name="rememberMe"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                disabled={loading}
+                className="login-remember-checkbox"
+              />
+              <span className="login-remember-text">Keep me signed in</span>
+            </label>
 
             {/* Error message */}
             {error && (

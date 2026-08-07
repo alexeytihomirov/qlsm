@@ -3689,6 +3689,29 @@ body {
   opacity: 0.5;
 }
 
+/* Keep me signed in */
+.login-remember-me {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.login-remember-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.login-remember-text {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 /* Error message */
 .login-error {
   display: flex;
