@@ -4,8 +4,6 @@ QLSM can export the full operational state of this instance — database, SSH ke
 
 Backup & Restore is found at **Settings → Backup & Restore**.
 
-![](../images/backup-restore-page.png)
-
 ## What's Included
 
 - The database: hosts, instances, users, preset metadata, your external API key, app settings (including a saved Vultr API key), and plugin binary descriptions.
@@ -22,6 +20,8 @@ Built-in presets are not included — they ship with QLSM itself and are restore
 1. Go to **Settings → Backup & Restore**.
 2. Optionally set a **Password** and confirm it.
 3. Click **Export Backup**. The `.qlsmbak` file downloads to your browser.
+
+![](../images/backup-export-panel.png)
 
 ### When To Use A Password
 
@@ -40,6 +40,8 @@ Importing is **destructive**: it wipes this QLSM instance's database and every i
 3. Enter the backup's password, if it has one.
 4. Type `RESTORE` in the confirmation field.
 5. Click **Import Backup**.
+
+![](../images/backup-import-panel.png)
 
 QLSM restores the database and files, then invalidates your current session — log in again afterward using the credentials from the *restored* backup, not your old ones.
 
