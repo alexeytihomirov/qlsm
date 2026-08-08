@@ -159,13 +159,17 @@ class TestRestoreBackupArchive:
         assert len(snapshots) == 3
 
     def test_rollback_removes_archive_only_file_with_no_prior_counterpart(self, app, app_root, monkeypatch):
-        """terraform/ssh-keys/old_key has no counterpart in the archive
-        (the archive only contains its own host's files), so restoring it
-        introduces a brand-new file with nothing to swap it in for. If a
-        later step fails, that archive-only file must be removed by
-        rollback, not left behind as an orphan."""
-        (app_root / 'terraform' / 'ssh-keys' / 'old_key').unlink()
+        """terraform/ssh-keys/old_key exists in the archive but is removed
+        locally *after* the archive is built, so restoring introduces a
+        file with nothing local to swap it in for (backup_path=None in
+        _swap_tree's bookkeeping). If a later step fails, that
+        archive-introduced file must be removed by rollback, not left
+        behind as an orphan. Building the archive before the unlink is
+        essential here: unlinking first would mean neither the local disk
+        nor the archive has the file, and the final assertion would pass
+        vacuously without exercising the archive-only rollback path at all."""
         blob = _make_backup_with_host(app, app_root)
+        (app_root / 'terraform' / 'ssh-keys' / 'old_key').unlink()
 
         def _boom(_data):
             raise RuntimeError('simulated failure after file swap')
