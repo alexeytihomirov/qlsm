@@ -32,17 +32,14 @@ Required fields:
 - **Port**
 - **Server Hostname** (this is auto-synced with `sv_hostname` value)
 
-Optional toggle:
+Optional fields:
 
-- [**99k LAN Rate**](../features/99k-lan-rate.md)
+- [**99k LAN Rate**](../features/99k-lan-rate.md) (toggle)
+- **Redis DB** (dropdown)
 
 `99k LAN Rate` controls LAN-rate profile for the instance.
 Changing this later from the actions menu triggers reconfigure/restart.
 Reference: [Instance Actions Menu](../operations/instance-actions-menu.md)
-
-Dropdown field:
-
-- **Redis DB**
 
 `Redis DB` is a dropdown listing every DB from 1 to 8 for the selected host. An info icon next to a DB number means another instance on the host already uses it. Picking it anyway is fine if you want the two instances to share plugin state.
 
