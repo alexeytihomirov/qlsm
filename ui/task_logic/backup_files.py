@@ -13,6 +13,12 @@ TERRAFORM_STATE_DIR = os.path.join('terraform', 'vultr-root', 'terraform.tfstate
 CONFIGS_DIR = 'configs'
 MINQLX_PLUGINS_DIR = os.path.join('ql-assets', 'data', 'minqlx-plugins')
 SYSTEM_HOOKS_DIR = os.path.join('ql-assets', 'data', 'system-hooks')
+RESTORE_PATH_PREFIX = '.qlsm-restore-'
+
+
+def is_restore_child(name):
+    """Return whether a direct child belongs to restore bookkeeping."""
+    return name.startswith(RESTORE_PATH_PREFIX)
 
 
 def backup_file_trees():
@@ -44,8 +50,10 @@ def walk_tree(root, skip=None):
     if not os.path.isdir(root):
         return
     for current_root, dirs, files in os.walk(root):
-        if current_root == root and skip:
-            dirs[:] = [d for d in dirs if not skip(d)]
+        if current_root == root:
+            excluded = lambda name: is_restore_child(name) or (skip and skip(name))
+            dirs[:] = [name for name in dirs if not excluded(name)]
+            files = [name for name in files if not excluded(name)]
         for filename in sorted(files):
             full_path = os.path.join(current_root, filename)
             if os.path.islink(full_path):

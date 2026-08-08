@@ -13,6 +13,7 @@ rolled back from those moved-aside copies before the error propagates.
 import datetime
 import io
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -22,10 +23,11 @@ from ui import db
 from ui.backup_crypto import BackupDecryptError, decrypt_archive, encrypt_archive
 from ui.task_logic.backup_db_import import BackupImportError, replace_database
 from ui.task_logic.backup_export import BACKUP_MANIFEST_FORMAT_VERSION, build_backup_zip_bytes
-from ui.task_logic.backup_files import backup_file_trees
+from ui.task_logic.backup_files import backup_file_trees, is_restore_child
 
 BACKUP_SNAPSHOTS_DIR = 'backup_snapshots'
 MAX_RETAINED_SNAPSHOTS = 3
+logger = logging.getLogger(__name__)
 
 
 class BackupRestoreError(ValueError):
@@ -110,12 +112,37 @@ def _extract_tree(archive, prefix, staging_dir):
             os.chmod(target, mode)
 
 
-def _reserve_temp_path(parent):
-    """Reserve a unique name inside `parent` without leaving anything on
+def _reserve_temp_path(root):
+    """Reserve a unique name inside `root` without leaving anything on
     disk at that path — same trick as preset_import_routes._make_backup_path."""
-    path = tempfile.mkdtemp(prefix='.qlsm-restore-old-', dir=parent)
+    path = tempfile.mkdtemp(prefix='.qlsm-restore-old-', dir=root)
     os.rmdir(path)
     return path
+
+
+def _remove_restore_path(path):
+    """Best-effort cleanup that never hides a restore's primary result."""
+    try:
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.remove(path)
+    except Exception as error:
+        logger.warning('Failed to remove restore path %s: %s', path, error)
+
+
+def _restore_displaced(root, displaced):
+    for name, backup_path in reversed(displaced):
+        target = os.path.join(root, name)
+        _remove_restore_path(target)
+        if backup_path:
+            try:
+                os.rename(backup_path, target)
+            except Exception as error:
+                logger.warning(
+                    'Failed to roll back restore path %s to %s: %s',
+                    backup_path, target, error,
+                )
 
 
 def _swap_tree(root, staged_dir, skip=None):
@@ -133,29 +160,37 @@ def _swap_tree(root, staged_dir, skip=None):
     Caller must ensure `root`'s parent directory already exists.
     """
     os.makedirs(root, exist_ok=True)
-    parent = os.path.dirname(root) or '.'
+    excluded = lambda name: is_restore_child(name) or (skip and skip(name))
     current_children = [
         name for name in os.listdir(root)
-        if skip is None or not skip(name)
+        if not excluded(name)
     ]
 
-    swapped_children = []
+    displaced = []
+    installed = []
     existing_names = set()
-    for name in current_children:
-        backup_path = _reserve_temp_path(parent)
-        os.rename(os.path.join(root, name), backup_path)
-        swapped_children.append((name, backup_path))
-        existing_names.add(name)
+    try:
+        for name in current_children:
+            backup_path = _reserve_temp_path(root)
+            os.rename(os.path.join(root, name), backup_path)
+            displaced.append((name, backup_path))
+            existing_names.add(name)
 
-    if os.path.isdir(staged_dir):
-        for name in os.listdir(staged_dir):
-            if skip is not None and skip(name):
-                continue
-            os.rename(os.path.join(staged_dir, name), os.path.join(root, name))
-            if name not in existing_names:
-                swapped_children.append((name, None))
+        if os.path.isdir(staged_dir):
+            for name in os.listdir(staged_dir):
+                if excluded(name):
+                    continue
+                os.rename(os.path.join(staged_dir, name), os.path.join(root, name))
+                installed.append(name)
+    except Exception:
+        for name in reversed(installed):
+            _remove_restore_path(os.path.join(root, name))
+        _restore_displaced(root, displaced)
+        raise
 
-    return swapped_children
+    return displaced + [
+        (name, None) for name in installed if name not in existing_names
+    ]
 
 
 def restore_backup_archive(blob, password):
@@ -167,51 +202,39 @@ def restore_backup_archive(blob, password):
     _write_safety_snapshot()
 
     trees = backup_file_trees()
-    # A single staging root, sibling to every managed tree — never nested
-    # inside one. Living under the app's own working directory (not the
-    # system temp dir) guarantees every staged directory is on the same
-    # filesystem as its eventual target, so every os.rename below is
-    # atomic — never a cross-device copy that could fail partway.
-    staging_root = tempfile.mkdtemp(prefix='.qlsm-restore-staging-', dir='.')
     staged_dirs = {}
     swapped = []
+    committed = False
     try:
         for prefix, root, _skip in trees:
-            staging = os.path.join(staging_root, prefix.replace('/', '__'))
-            os.makedirs(staging)
-            _extract_tree(archive, prefix, staging)
+            os.makedirs(root, exist_ok=True)
+            staging = tempfile.mkdtemp(prefix='.qlsm-restore-staging-', dir=root)
             staged_dirs[prefix] = staging
+            _extract_tree(archive, prefix, staging)
 
         for prefix, root, skip in trees:
-            os.makedirs(os.path.dirname(root) or '.', exist_ok=True)
             swapped_children = _swap_tree(root, staged_dirs[prefix], skip)
             swapped.append((root, swapped_children))
 
         replace_database(db_data)
         db.session.commit()
+        committed = True
     except Exception:
-        db.session.rollback()
+        try:
+            db.session.rollback()
+        except Exception as error:
+            logger.warning('Failed to roll back database restore: %s', error)
         for root, swapped_children in reversed(swapped):
-            for name, backup_path in swapped_children:
-                target = os.path.join(root, name)
-                if os.path.isdir(target):
-                    shutil.rmtree(target, ignore_errors=True)
-                elif os.path.isfile(target):
-                    os.remove(target)
-                if backup_path:
-                    os.rename(backup_path, target)
+            _restore_displaced(root, swapped_children)
         raise
     finally:
-        shutil.rmtree(staging_root, ignore_errors=True)
-
-    for root, swapped_children in swapped:
-        for _name, backup_path in swapped_children:
-            if not backup_path:
-                continue
-            if os.path.isdir(backup_path):
-                shutil.rmtree(backup_path, ignore_errors=True)
-            elif os.path.isfile(backup_path):
-                os.remove(backup_path)
+        for staging in staged_dirs.values():
+            _remove_restore_path(staging)
+        if committed:
+            for _root, swapped_children in swapped:
+                for _name, backup_path in swapped_children:
+                    if backup_path:
+                        _remove_restore_path(backup_path)
 
     return {
         'qlsm_version': manifest.get('qlsm_version'),

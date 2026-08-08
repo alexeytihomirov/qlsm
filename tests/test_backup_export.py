@@ -45,6 +45,21 @@ class TestBuildBackupZipBytes:
         # configs/presets must not be double-captured under the 'configs' prefix
         assert not any(n.startswith('files/configs/presets/') for n in names)
 
+    def test_excludes_retained_restore_paths(self, app, app_root):
+        retained = app_root / 'terraform' / 'ssh-keys' / '.qlsm-restore-old-retained'
+        retained.mkdir()
+        (retained / 'displaced-private-key').write_text('MUST NOT BE EXPORTED')
+
+        with app.app_context():
+            zip_bytes = build_backup_zip_bytes()
+
+        archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        assert not any('.qlsm-restore-' in name for name in archive.namelist())
+        assert not any(
+            archive.read(name) == b'MUST NOT BE EXPORTED'
+            for name in archive.namelist()
+        )
+
 
 class TestBuildBackupArchive:
     def test_no_password_is_plaintext(self, app, app_root):
