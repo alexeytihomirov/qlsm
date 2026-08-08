@@ -67,6 +67,7 @@ def test_partial_swap_restores_children_when_staged_install_fails(tmp_path, monk
 
     assert raised.value is sentinel
     assert not (root / 'archive-a').exists()
+    assert not (root / 'archive-b').exists()
     assert (root / 'old-a').read_text() == 'old a'
     assert (root / 'old-b').read_text() == 'old b'
     assert not _restore_paths(tmp_path)
