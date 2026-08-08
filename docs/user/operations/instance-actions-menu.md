@@ -77,7 +77,7 @@ Reference: [RCON Console](rcon-console.md)
 
 `99k LAN Rate` is a per-instance toggle shown directly in the menu.
 
-<img src="../../images/instance-actions-menu-99k-lan-rate.png" width="213" />
+<img src="../../images/instance-actions-menu-99k-lan-rate.png" width="208" />
 
 What to expect:
 
