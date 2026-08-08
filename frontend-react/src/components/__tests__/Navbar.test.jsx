@@ -35,3 +35,25 @@ describe('Navbar Global RCON navigation', () => {
     expect(mobileGlobal.compareDocumentPosition(documentation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe('Navbar Backup & Restore navigation', () => {
+  it('links to the Backup & Restore page from the desktop settings dropdown', async () => {
+    const user = userEvent.setup();
+    renderNavbar();
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    // Headless UI marks the rest of the page aria-hidden while this menu's
+    // portal is open, which getByRole('link', ...) correctly excludes —
+    // use getByText like the mobile-menu test below, which reads raw text
+    // content and isn't affected by that.
+    const link = await screen.findByText('Backup & Restore');
+    expect(link.closest('a')).toHaveAttribute('href', '/settings/backup');
+  });
+
+  it('links to the Backup & Restore page from the mobile settings dropdown', async () => {
+    const user = userEvent.setup();
+    renderNavbar();
+    await user.click(screen.getByRole('button', { name: /open navigation menu/i }));
+    const link = await screen.findByText('Backup & Restore');
+    expect(link.closest('a')).toHaveAttribute('href', '/settings/backup');
+  });
+});

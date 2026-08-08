@@ -100,6 +100,23 @@ def release_locks(entity_type, entity_ids, token):
             )
 
 
+def any_lock_held():
+    """Return True if any task_lock:* key currently exists in Redis.
+
+    Used to block backup export/import while a background task might be
+    mid-flight against a host or instance (e.g. a Terraform apply), so a
+    backup can never capture a half-applied state.
+    """
+    redis_client = _get_redis()
+    cursor = 0
+    while True:
+        cursor, keys = redis_client.scan(cursor=cursor, match='task_lock:*', count=100)
+        if keys:
+            return True
+        if cursor == 0:
+            return False
+
+
 def force_release_lock(entity_type, entity_id):
     """Unconditionally delete a stale lock regardless of owner.
 

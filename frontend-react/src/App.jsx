@@ -14,6 +14,7 @@ import ServersPage from './pages/ServersPage';
 import GlobalRconPage from './pages/GlobalRconPage';
 import DocsPage from './pages/DocsPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import BackupRestorePage from './pages/BackupRestorePage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
                   <Route path="/presets/edit/:presetId" element={<EditPresetPage />} />
                   <Route path="/docs/*" element={<DocsPage />} />
                   <Route path="/settings/users" element={<UserManagementPage />} />
+                  <Route path="/settings/backup" element={<BackupRestorePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>
               </Routes>

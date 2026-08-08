@@ -878,6 +878,57 @@ export const revokeApiKey = async () => {
   }
 };
 
+// Global Backup & Restore API
+export const exportBackup = async (password) => {
+  try {
+    const response = await apiClient.post(
+      '/settings/backup/export',
+      { password: password || null },
+      { responseType: 'blob' }
+    );
+    const disposition = response.headers['content-disposition'] || '';
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    const filename = match ? match[1] : 'qlsm-backup.qlsmbak';
+    return { blob: response.data, filename };
+  } catch (error) {
+    if (error.response?.data instanceof Blob) {
+      const text = await error.response.data.text();
+      try {
+        throw JSON.parse(text);
+      } catch (parseError) {
+        if (parseError instanceof SyntaxError) throw new Error('Export failed');
+        throw parseError;
+      }
+    }
+    throw error.response ? error.response.data : new Error('Export failed');
+  }
+};
+
+export const importBackup = async (file, password) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (password) formData.append('password', password);
+  try {
+    const response = await apiClient.post('/settings/backup/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    throw error.response ? error.response.data : new Error('Import failed');
+  }
+};
+
+// Vultr API key setting
+export const getVultrKeySetting = async () => {
+  const response = await apiClient.get('/settings/vultr-key');
+  return response.data.data;
+};
+
+export const setVultrKeySetting = async (key) => {
+  const response = await apiClient.put('/settings/vultr-key', { key });
+  return response.data.data;
+};
+
 export const getServerStatus = async () => {
   const response = await apiClient.get('/server-status');
   return response.data.data; // {instanceId: statusData}

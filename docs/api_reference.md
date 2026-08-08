@@ -882,6 +882,103 @@ For legacy presets, `checked_plugins`, `checked_factories`, or `enabled_hooks` m
 - Reserved names: `default`
 - Must be unique
 
+## Settings
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/settings/api-key` | GET | Get the current external API key (`null` if none exists) |
+| `/settings/api-key` | POST | Delete any existing key and generate a new one |
+| `/settings/api-key` | DELETE | Revoke (delete) the current API key |
+| `/settings/vultr-key` | GET | Get the configured Vultr API key |
+| `/settings/vultr-key` | PUT | Set (or clear) the Vultr API key |
+| `/settings/backup/export` | POST | Export the full instance state as a downloadable `.qlsmbak` archive |
+| `/settings/backup/import` | POST | Wipe and restore the full instance state from an uploaded `.qlsmbak` archive |
+
+### Get / Set Vultr API Key
+
+```
+GET /api/settings/vultr-key
+PUT /api/settings/vultr-key
+```
+
+`GET` returns the key currently in effect — the DB-backed value if one has been saved, otherwise the `VULTR_API_KEY` value from `.env` (see [Vultr Cloud Deployment](user/getting-started/add-host.md)):
+
+```json
+{
+  "data": { "key": "ABCDEF0123456789..." }
+}
+```
+
+`key` is `null` if neither a DB value nor an `.env` value is set. `PUT` request body:
+
+```json
+{
+  "key": "ABCDEF0123456789..."
+}
+```
+
+An empty string clears the DB-backed value, falling back to `.env` again (if set). `400` if `key` is not a string. Saving through this endpoint is what makes the Vultr key travel with a [backup export](#export-backup).
+
+### Export Backup
+
+```
+POST /api/settings/backup/export
+```
+
+Request body — password is optional:
+
+```json
+{
+  "password": "correct horse battery staple"
+}
+```
+
+Omit `password` or send `null`/`""` to export unencrypted. On success, returns the archive itself as a `application/octet-stream` file download (`Content-Disposition: attachment; filename="qlsm-backup-<timestamp>.qlsmbak"`), not a JSON body.
+
+The archive contains the full database (hosts, instances, users, preset metadata, the external API key, app settings including the Vultr API key, plugin binary metadata) plus SSH keys, Terraform state, instance configs, non-builtin presets, and plugin binaries from disk. `REDIS_PASSWORD` and `SECRET_KEY` are intentionally excluded — each host generates its own, and a mismatch after restore only requires signing in again.
+
+Responses:
+
+- `200 OK` — archive file download.
+- `400 Bad Request` — `password` was provided but is not a string.
+- `409 Conflict` — a background task currently holds a lock (e.g. Terraform/Ansible mid-run); retry once it finishes.
+- `500 Internal Server Error` — archive build failed.
+
+### Import Backup
+
+```
+POST /api/settings/backup/import
+Content-Type: multipart/form-data
+```
+
+Multipart form fields:
+
+- `file` (required) — a `.qlsmbak` archive, maximum 500 MB.
+- `password` (optional) — required only if the archive was exported with one.
+
+This **wipes and replaces** this QLSM instance's entire database and every managed file tree listed under [Export Backup](#export-backup) with the contents of the archive. A local pre-restore safety snapshot is written to `backup_snapshots/` on the server first, but there is no way to trigger a rollback to it from the UI. All existing sessions are invalidated by the restored credentials, so the caller must log in again afterward.
+
+Success response (`200 OK`):
+
+```json
+{
+  "data": {
+    "qlsm_version": "1.14.0",
+    "created_at": "2026-08-01T12:00:00Z"
+  },
+  "message": "Backup restored successfully."
+}
+```
+
+`qlsm_version`/`created_at` are read from the archive's manifest, letting the caller warn if the backup came from a different QLSM version than the one running.
+
+Responses:
+
+- `200 OK` — restore succeeded; body as above.
+- `400 Bad Request` — no file/empty file, file exceeds 500 MB, wrong password, or the archive is corrupt/not a QLSM backup (`BackupDecryptError`/`BackupRestoreError`/`BackupImportError` messages are returned as-is).
+- `409 Conflict` — a background task currently holds a lock; retry once it finishes.
+- `500 Internal Server Error` — restore failed after validation passed; already-swapped files and the database are rolled back to their pre-restore state.
+
 ## Socket.IO RCON Events
 
 RCON runs over the **default Socket.IO namespace** (`/`), not a dedicated

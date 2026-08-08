@@ -12,6 +12,18 @@ from .common import append_log # Import from the common module
 
 log = logging.getLogger(__name__)
 
+
+def _terraform_env():
+    """Subprocess env for Terraform, with the DB-backed Vultr key merged
+    in on top of the parent environment (which may still carry a bootstrap
+    VULTR_API_KEY from .env — the DB value takes priority when set)."""
+    from ui.vultr_settings import get_vultr_api_key
+    env = dict(os.environ)
+    vultr_key = get_vultr_api_key()
+    if vultr_key:
+        env['VULTR_API_KEY'] = vultr_key
+    return env
+
 def _detect_stale_state_404(stderr):
     """
     Detects if the error is due to a stale Terraform state (404 instance not found).
@@ -48,7 +60,7 @@ def _cleanup_stale_state(host, resource_address, terraform_root_dir):
             check=True,
             capture_output=True,
             text=True,
-            env=os.environ
+            env=_terraform_env()
         )
 
         log.info(f"Successfully removed stale resource {resource_address} from state.")
@@ -99,7 +111,7 @@ def _run_terraform_command(host, command_args, terraform_root_dir, parse_json=Fa
                                 check=True,
                                 capture_output=True,
                                 text=True,
-                                env=os.environ) # Pass environment variables (e.g., VULTR_API_KEY)
+                                env=_terraform_env()) # Pass environment variables (e.g., VULTR_API_KEY)
         log.debug(f"Terraform stdout:\n{result.stdout}")
         if result.stderr:
             log.warning(f"Terraform stderr:\n{result.stderr}") # Log stderr as warning

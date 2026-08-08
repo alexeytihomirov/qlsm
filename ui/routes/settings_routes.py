@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required
 from ui import db
 from ui.models import ApiKey
+from ui.vultr_settings import get_vultr_api_key, set_vultr_api_key
 
 settings_api_bp = Blueprint('settings_api_routes', __name__)
 
@@ -56,4 +57,24 @@ def revoke_api_key():
         return jsonify({'message': 'API key revoked.'})
     return jsonify({'error': {'message': 'No active API key to revoke.'}}), 404
 
+
+@settings_api_bp.route('/vultr-key', methods=['GET'])
+@jwt_required()
+def get_vultr_key_setting():
+    """Return the configured Vultr API key, or null if unset."""
+    return jsonify({'data': {'key': get_vultr_api_key() or None}})
+
+
+@settings_api_bp.route('/vultr-key', methods=['PUT'])
+@jwt_required()
+def update_vultr_key_setting():
+    """Set (or clear, with an empty string) the Vultr API key."""
+    data = request.get_json() or {}
+    value = data.get('key', '')
+    if not isinstance(value, str):
+        return jsonify({'error': {'message': 'key must be a string.'}}), 400
+    set_vultr_api_key(value)
+    db.session.commit()
+    current_app.logger.info('Vultr API key updated via Settings.')
+    return jsonify({'data': {'key': get_vultr_api_key() or None}, 'message': 'Vultr API key updated.'})
 

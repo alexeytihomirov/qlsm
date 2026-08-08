@@ -106,3 +106,21 @@ class TestReleaseLocks:
             call('instance', 3, 'batch-token'),
             call('instance', 4, 'batch-token'),
         ]
+
+
+from ui.task_lock import any_lock_held
+
+
+class TestAnyLockHeld:
+    def test_false_when_no_keys(self, mock_redis):
+        mock_redis.scan.return_value = (0, [])
+        assert any_lock_held() is False
+
+    def test_true_when_a_key_is_found(self, mock_redis):
+        mock_redis.scan.return_value = (0, [b'task_lock:host:1'])
+        assert any_lock_held() is True
+
+    def test_scans_across_cursor_pages(self, mock_redis):
+        mock_redis.scan.side_effect = [(5, []), (0, [b'task_lock:instance:2'])]
+        assert any_lock_held() is True
+        assert mock_redis.scan.call_count == 2
