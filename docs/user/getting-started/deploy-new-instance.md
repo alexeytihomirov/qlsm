@@ -8,7 +8,7 @@ Prerequisite: [Add A Host](add-host.md)
 
 Host limit: each host can have a maximum of **8 instances**, using game ports 27960-27967. If a host is already full, deploy the new instance to a different host or remove an existing one first.
 
-> **Hosts created before this limit was raised:** their firewall was configured to allow only the first four game ports. If you add a fifth or later instance to such a host and it is unreachable, re-run host setup from the host's actions menu to refresh the firewall rules. Hosts you manage yourself (self and standalone) refresh their rules automatically on the next instance operation.
+> **Hosts created before this limit was raised:** their firewall was configured to allow only the first four game ports. If you add a fifth or later instance to such a host and it is unreachable, [re-run host setup](../operations/host-actions-menu.md#re-run-host-setup) from the host's actions menu to refresh the firewall rules. Hosts you manage yourself (self and standalone) refresh their rules automatically on the next instance operation.
 
 ## Default Preset Behavior
 
