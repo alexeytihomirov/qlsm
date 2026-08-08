@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import pytest
 
@@ -21,7 +22,7 @@ def test_partial_swap_restores_children_when_displacement_fails(tmp_path, monkey
     _write_tree(root, {'old-a': 'old a', 'old-b': 'old b'})
     _write_tree(staged, {'archive-a': 'archive a'})
     sentinel = OSError('second displacement failed')
-    real_rename = os.rename
+    real_move = shutil.move
     displaced = 0
 
     def fail_second_displacement(source, target):
@@ -30,9 +31,9 @@ def test_partial_swap_restores_children_when_displacement_fails(tmp_path, monkey
             displaced += 1
             if displaced == 2:
                 raise sentinel
-        return real_rename(source, target)
+        return real_move(source, target)
 
-    monkeypatch.setattr('ui.task_logic.backup_import.os.rename', fail_second_displacement)
+    monkeypatch.setattr('ui.task_logic.backup_import.shutil.move', fail_second_displacement)
 
     with pytest.raises(OSError) as raised:
         _swap_tree(str(root), str(staged))
@@ -49,7 +50,7 @@ def test_partial_swap_restores_children_when_staged_install_fails(tmp_path, monk
     _write_tree(root, {'old-a': 'old a', 'old-b': 'old b'})
     _write_tree(staged, {'archive-a': 'archive a', 'archive-b': 'archive b'})
     sentinel = OSError('second staged install failed')
-    real_rename = os.rename
+    real_move = shutil.move
     installed = 0
 
     def fail_second_staged_install(source, target):
@@ -58,9 +59,9 @@ def test_partial_swap_restores_children_when_staged_install_fails(tmp_path, monk
             installed += 1
             if installed == 2:
                 raise sentinel
-        return real_rename(source, target)
+        return real_move(source, target)
 
-    monkeypatch.setattr('ui.task_logic.backup_import.os.rename', fail_second_staged_install)
+    monkeypatch.setattr('ui.task_logic.backup_import.shutil.move', fail_second_staged_install)
 
     with pytest.raises(OSError) as raised:
         _swap_tree(str(root), str(staged))
@@ -92,3 +93,38 @@ def test_swap_leaves_restore_namespace_children_unmanaged(tmp_path):
     assert (root / 'archive-data').read_text() == 'install me'
     assert (staged_foreign / 'archive-secret').read_text() == 'do not install'
     assert swapped == [('archive-data', None)]
+
+
+def test_swap_survives_a_directory_rename_that_only_works_via_copy_fallback(tmp_path, monkeypatch):
+    """Reproduces the live production failure: a directory whose plain
+    os.rename() throws EXDEV (observed on OverlayFS for an un-copied-up
+    image layer, unrelated to any Docker bind mount) must still swap
+    successfully, because shutil.move() falls back to copy+delete."""
+    import errno
+
+    root = tmp_path / 'managed'
+    staged = tmp_path / 'staged'
+    root.mkdir()
+    (root / 'stuck-dir').mkdir()
+    (root / 'stuck-dir' / 'plugin.py').write_text('old plugin')
+    _write_tree(staged, {'new-file': 'new content'})
+    real_rename = os.rename
+
+    def rename_refuses_stuck_dir(source, target):
+        if os.path.basename(source) == 'stuck-dir':
+            raise OSError(errno.EXDEV, 'Invalid cross-device link', source, target)
+        return real_rename(source, target)
+
+    monkeypatch.setattr('ui.task_logic.backup_import.os.rename', rename_refuses_stuck_dir)
+
+    swapped = _swap_tree(str(root), str(staged))
+
+    assert (root / 'new-file').read_text() == 'new content'
+    assert not (root / 'stuck-dir').exists()
+    displaced_name, backup_path = next(
+        (name, path) for name, path in swapped if name == 'stuck-dir'
+    )
+    assert displaced_name == 'stuck-dir'
+    assert os.path.isdir(backup_path)
+    with open(os.path.join(backup_path, 'plugin.py')) as f:
+        assert f.read() == 'old plugin'

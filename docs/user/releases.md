@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.25.2` | 2026-08-08 | [#171](https://github.com/dngrtech/qlsm/pull/171) | Fix a second backup-restore crash on Docker deployments. |
 | `v1.25.1` | 2026-08-07 | [#170](https://github.com/dngrtech/qlsm/pull/170) | Bug fixes and improvements. |
 | `v1.25.0` | 2026-08-07 | [#169](https://github.com/dngrtech/qlsm/pull/169) | Add Global Backup & Restore — export and restore a QLSM instance's full state to migrate to a new host. |
 | `v1.24.0` | 2026-08-06 | [#166](https://github.com/dngrtech/qlsm/pull/166) | Choose the Redis database for a new instance in the Add Instance modal. |

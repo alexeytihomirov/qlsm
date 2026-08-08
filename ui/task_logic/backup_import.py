@@ -137,7 +137,7 @@ def _restore_displaced(root, displaced):
         _remove_restore_path(target)
         if backup_path:
             try:
-                os.rename(backup_path, target)
+                shutil.move(backup_path, target)
             except Exception as error:
                 logger.warning(
                     'Failed to roll back restore path %s to %s: %s',
@@ -172,7 +172,7 @@ def _swap_tree(root, staged_dir, skip=None):
     try:
         for name in current_children:
             backup_path = _reserve_temp_path(root)
-            os.rename(os.path.join(root, name), backup_path)
+            shutil.move(os.path.join(root, name), backup_path)
             displaced.append((name, backup_path))
             existing_names.add(name)
 
@@ -180,7 +180,7 @@ def _swap_tree(root, staged_dir, skip=None):
             for name in os.listdir(staged_dir):
                 if excluded(name):
                     continue
-                os.rename(os.path.join(staged_dir, name), os.path.join(root, name))
+                shutil.move(os.path.join(staged_dir, name), os.path.join(root, name))
                 installed.append(name)
     except Exception:
         for name in reversed(installed):
