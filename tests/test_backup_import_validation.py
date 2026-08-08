@@ -1,6 +1,8 @@
 import io
 import json
+import logging
 import os
+import shutil
 import zipfile
 
 import pytest
@@ -116,3 +118,58 @@ def test_malformed_database_row_rolls_back_database_and_completed_file_swaps(app
         assert reached_replace_database
         assert [host.name for host in Host.query.all()] == ['local-host']
     assert _managed_tree_contents(app_root) == contents_before_restore
+
+
+def test_post_commit_cleanup_failure_keeps_restored_state_and_is_not_exported(
+    app, app_root, monkeypatch, caplog,
+):
+    configs = app_root / 'configs'
+    archived = configs / 'archived-host'
+    archived.mkdir()
+    (archived / 'server.cfg').write_text('archived config')
+    with app.app_context():
+        db.session.add(Host(name='archived-host', provider='vultr'))
+        db.session.commit()
+        zip_bytes = build_backup_zip_bytes()
+        db.session.query(Host).delete()
+        db.session.add(Host(name='local-host', provider='standalone'))
+        db.session.commit()
+
+    shutil.rmtree(archived)
+    displaced = configs / 'local-only'
+    displaced.mkdir()
+    (displaced / 'server.cfg').write_text('displaced config')
+    real_rmtree = shutil.rmtree
+    retained_paths = []
+
+    def retain_one_rollback_path(path, *args, **kwargs):
+        if (
+            os.path.realpath(os.path.dirname(path)) == os.path.realpath(configs)
+            and os.path.basename(path).startswith('.qlsm-restore-old-')
+            and not retained_paths
+        ):
+            retained_paths.append(path)
+            raise OSError('injected cleanup failure')
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr('ui.task_logic.backup_import.shutil.rmtree', retain_one_rollback_path)
+    caplog.set_level(logging.WARNING, logger='ui.task_logic.backup_import')
+
+    with app.app_context():
+        summary = restore_backup_archive(encrypt_archive(zip_bytes, None), None)
+        assert [host.name for host in Host.query.all()] == ['archived-host']
+        exported = build_backup_zip_bytes()
+
+    assert summary['qlsm_version'] == '1.0.0'
+    assert (archived / 'server.cfg').read_text() == 'archived config'
+    assert not displaced.exists()
+    assert len(retained_paths) == 1
+    retained = retained_paths[0]
+    with open(os.path.join(retained, 'server.cfg'), encoding='utf-8') as file:
+        assert file.read() == 'displaced config'
+    assert retained in caplog.text
+    assert 'injected cleanup failure' in caplog.text
+    names = zipfile.ZipFile(io.BytesIO(exported)).namelist()
+    assert not any('.qlsm-restore-' in name for name in names)
+    archive = zipfile.ZipFile(io.BytesIO(exported))
+    assert not any(archive.read(name) == b'displaced config' for name in names)

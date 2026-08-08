@@ -71,3 +71,24 @@ def test_partial_swap_restores_children_when_staged_install_fails(tmp_path, monk
     assert (root / 'old-a').read_text() == 'old a'
     assert (root / 'old-b').read_text() == 'old b'
     assert not _restore_paths(tmp_path)
+
+
+def test_swap_leaves_restore_namespace_children_unmanaged(tmp_path):
+    root = tmp_path / 'managed'
+    staged = root / '.qlsm-restore-staging-owned'
+    foreign = root / '.qlsm-restore-staging-foreign'
+    root.mkdir()
+    staged.mkdir()
+    foreign.mkdir()
+    (foreign / 'local-data').write_text('leave untouched')
+    (staged / 'archive-data').write_text('install me')
+    staged_foreign = staged / '.qlsm-restore-old-foreign'
+    staged_foreign.mkdir()
+    (staged_foreign / 'archive-secret').write_text('do not install')
+
+    swapped = _swap_tree(str(root), str(staged))
+
+    assert (foreign / 'local-data').read_text() == 'leave untouched'
+    assert (root / 'archive-data').read_text() == 'install me'
+    assert (staged_foreign / 'archive-secret').read_text() == 'do not install'
+    assert swapped == [('archive-data', None)]
