@@ -68,3 +68,4 @@ Rate limit: 200 requests per minute. Sensitive fields (ZMQ credentials, logs) ar
 ## Related Pages
 
 - [Deploy A New Instance](../getting-started/deploy-new-instance.md)
+- [Backup & Restore](backup-restore.md)

@@ -111,6 +111,11 @@
         "id": "user-management",
         "title": "User Management & API Keys",
         "path": "/docs/administration/user-management.md"
+      },
+      {
+        "id": "backup-restore",
+        "title": "Backup & Restore",
+        "path": "/docs/administration/backup-restore.md"
       }
     ]
   },

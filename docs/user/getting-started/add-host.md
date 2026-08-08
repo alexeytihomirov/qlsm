@@ -67,6 +67,8 @@ VULTR_API_KEY=your_vultr_api_key
 
 Then start with `docker compose up -d`.
 
+You can also set or change the Vultr API key later without editing `.env`, from **Settings → Vultr API Key**. A key saved there takes precedence over `.env` and travels with a [global backup](../administration/backup-restore.md).
+
 One-line install example with both a domain and Vultr provisioning:
 
 ```bash
