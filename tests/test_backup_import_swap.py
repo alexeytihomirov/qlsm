@@ -126,4 +126,5 @@ def test_swap_survives_a_directory_rename_that_only_works_via_copy_fallback(tmp_
     )
     assert displaced_name == 'stuck-dir'
     assert os.path.isdir(backup_path)
-    assert open(os.path.join(backup_path, 'plugin.py')).read() == 'old plugin'
+    with open(os.path.join(backup_path, 'plugin.py')) as f:
+        assert f.read() == 'old plugin'
