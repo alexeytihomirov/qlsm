@@ -34,7 +34,7 @@ The menu is grouped by intent, which makes it faster to scan once you know the p
 
 Use **Edit Config** when the change belongs to this instance only.
 
-<img src="../../images/instance-actions-menu-edit-config.png" width="212" />
+<img src="../../images/instance-actions-menu-edit-config.png" width="208" />
 <img src="../../images/instance-edit-config.png" width="800" />
 
 Inside the modal you can change:
