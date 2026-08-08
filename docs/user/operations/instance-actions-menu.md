@@ -2,7 +2,7 @@
 
 Open from instance row **Actions** in the Servers page.
 
-<img src="../../images/instance-actions-menu-general.png" width="263" />
+<img src="../../images/instance-actions-menu-general.png" width="214" />
 
 Use this menu for day-to-day instance operations: change config, run live admin commands, inspect logs, toggle LAN rate, restart, stop/start, or remove the instance.
 
