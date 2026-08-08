@@ -78,6 +78,7 @@ nav:
     - LD_PRELOAD Hooks: features/hooks.md
   - Administration:
     - User Management & API Keys: administration/user-management.md
+    - Backup & Restore: administration/backup-restore.md
   - Release Notes: releases.md
   - Help:
     - Deployment Troubleshooting: help/deployment-troubleshooting.md
