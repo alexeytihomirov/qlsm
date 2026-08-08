@@ -19,12 +19,13 @@ import tempfile
 import zipfile
 
 from ui import db
-from ui.backup_crypto import BackupDecryptError, decrypt_archive
+from ui.backup_crypto import BackupDecryptError, decrypt_archive, encrypt_archive
 from ui.task_logic.backup_db_import import BackupImportError, replace_database
 from ui.task_logic.backup_export import BACKUP_MANIFEST_FORMAT_VERSION, build_backup_zip_bytes
 from ui.task_logic.backup_files import backup_file_trees
 
 BACKUP_SNAPSHOTS_DIR = 'backup_snapshots'
+MAX_RETAINED_SNAPSHOTS = 3
 
 
 class BackupRestoreError(ValueError):
@@ -62,6 +63,15 @@ def _parse_archive(blob, password):
     return manifest, db_data, archive
 
 
+def _prune_old_snapshots():
+    names = sorted(
+        name for name in os.listdir(BACKUP_SNAPSHOTS_DIR)
+        if name.startswith('pre-restore-') and name.endswith('.qlsmbak')
+    )
+    for name in names[:-MAX_RETAINED_SNAPSHOTS]:
+        os.remove(os.path.join(BACKUP_SNAPSHOTS_DIR, name))
+
+
 def _write_safety_snapshot():
     """Silently capture current state before any destructive step, purely
     as a recovery-of-last-resort if the restore fails partway. Never
@@ -72,7 +82,8 @@ def _write_safety_snapshot():
         timestamp = datetime.datetime.utcnow().strftime('%Y%m%d-%H%M%S-%f')
         snapshot_path = os.path.join(BACKUP_SNAPSHOTS_DIR, f'pre-restore-{timestamp}.qlsmbak')
         with open(snapshot_path, 'wb') as f:
-            f.write(build_backup_zip_bytes())
+            f.write(encrypt_archive(build_backup_zip_bytes(), None))
+        _prune_old_snapshots()
     except Exception:
         pass
 
@@ -84,11 +95,14 @@ def _extract_tree(archive, prefix, staging_dir):
             continue
         rel_path = info.filename[len(archive_prefix):]
         if not rel_path or '..' in rel_path.split('/'):
-            continue
+            raise BackupRestoreError(f'Backup archive contains an unsafe path entry: {info.filename!r}')
         target = os.path.join(staging_dir, *rel_path.split('/'))
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with archive.open(info) as source, open(target, 'wb') as dest:
             shutil.copyfileobj(source, dest)
+        mode = (info.external_attr >> 16) & 0o777  # mask strips setuid/setgid/sticky
+        if mode:
+            os.chmod(target, mode)
 
 
 def _reserve_temp_path(parent):
@@ -121,14 +135,20 @@ def _swap_tree(root, staged_dir, skip=None):
     ]
 
     swapped_children = []
+    existing_names = set()
     for name in current_children:
         backup_path = _reserve_temp_path(parent)
         os.rename(os.path.join(root, name), backup_path)
         swapped_children.append((name, backup_path))
+        existing_names.add(name)
 
     if os.path.isdir(staged_dir):
         for name in os.listdir(staged_dir):
+            if skip is not None and skip(name):
+                continue
             os.rename(os.path.join(staged_dir, name), os.path.join(root, name))
+            if name not in existing_names:
+                swapped_children.append((name, None))
 
     return swapped_children
 

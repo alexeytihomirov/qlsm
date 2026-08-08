@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required
 from ui import db
 from ui.models import ApiKey
+from ui.vultr_settings import get_vultr_api_key, set_vultr_api_key
 
 settings_api_bp = Blueprint('settings_api_routes', __name__)
 
@@ -55,9 +56,6 @@ def revoke_api_key():
         current_app.logger.info('External API key revoked.')
         return jsonify({'message': 'API key revoked.'})
     return jsonify({'error': {'message': 'No active API key to revoke.'}}), 404
-
-
-from ui.vultr_settings import get_vultr_api_key, set_vultr_api_key
 
 
 @settings_api_bp.route('/vultr-key', methods=['GET'])

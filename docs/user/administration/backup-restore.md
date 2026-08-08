@@ -41,6 +41,8 @@ Importing is **destructive**: it wipes this QLSM instance's database and every i
 
 QLSM restores the database and files, then invalidates your current session — log in again afterward using the credentials from the *restored* backup, not your old ones.
 
+Before making any changes, QLSM saves a safety-net snapshot of the instance's own prior state to `backup_snapshots/` on the server (the 3 most recent are kept, older ones are pruned automatically). Treat these the same as any backup file — they contain the same sensitive material (SSH keys, API keys, credentials).
+
 ## Migrate To A New Host
 
 Use this flow to move QLSM itself to a new machine while keeping every QLDS server it manages running and reachable.

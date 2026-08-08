@@ -1,3 +1,4 @@
+import io
 import os
 import zipfile
 
@@ -121,6 +122,80 @@ class TestRestoreBackupArchive:
                 restore_backup_archive(blob, None)
 
         assert (app_root / 'terraform' / 'ssh-keys' / 'must_survive_rollback').exists()
+
+    def test_restored_ssh_key_keeps_its_permissions(self, app, app_root):
+        (app_root / 'terraform' / 'ssh-keys' / 'old_key').chmod(0o600)
+        with app.app_context():
+            db.session.add(Host(name='h', provider='vultr'))
+            db.session.commit()
+            zip_bytes = build_backup_zip_bytes()
+        blob = encrypt_archive(zip_bytes, None)
+
+        with app.app_context():
+            restore_backup_archive(blob, None)
+
+        mode = os.stat(app_root / 'terraform' / 'ssh-keys' / 'old_key').st_mode & 0o777
+        assert mode == 0o600
+
+    def test_safety_snapshot_can_be_restored(self, app, app_root):
+        blob = _make_backup_with_host(app, app_root)
+        with app.app_context():
+            restore_backup_archive(blob, None)
+        snapshots = os.listdir(BACKUP_SNAPSHOTS_DIR)
+        snapshot_path = os.path.join(BACKUP_SNAPSHOTS_DIR, snapshots[0])
+        with open(snapshot_path, 'rb') as f:
+            snapshot_blob = f.read()
+
+        with app.app_context():
+            # Must not raise BackupRestoreError('Not a valid QLSM backup file.')
+            restore_backup_archive(snapshot_blob, None)
+
+    def test_prunes_old_safety_snapshots(self, app, app_root):
+        blob = _make_backup_with_host(app, app_root)
+        with app.app_context():
+            for _ in range(5):
+                restore_backup_archive(blob, None)
+        snapshots = os.listdir(BACKUP_SNAPSHOTS_DIR)
+        assert len(snapshots) == 3
+
+    def test_rollback_removes_archive_only_file_with_no_prior_counterpart(self, app, app_root, monkeypatch):
+        """terraform/ssh-keys/old_key has no counterpart in the archive
+        (the archive only contains its own host's files), so restoring it
+        introduces a brand-new file with nothing to swap it in for. If a
+        later step fails, that archive-only file must be removed by
+        rollback, not left behind as an orphan."""
+        (app_root / 'terraform' / 'ssh-keys' / 'old_key').unlink()
+        blob = _make_backup_with_host(app, app_root)
+
+        def _boom(_data):
+            raise RuntimeError('simulated failure after file swap')
+
+        monkeypatch.setattr('ui.task_logic.backup_import.replace_database', _boom)
+
+        with app.app_context():
+            with pytest.raises(RuntimeError):
+                restore_backup_archive(blob, None)
+
+        assert not (app_root / 'terraform' / 'ssh-keys' / 'old_key').exists()
+
+    def test_path_traversal_entry_raises_and_touches_nothing(self, app, app_root):
+        with app.app_context():
+            db.session.query(Host).delete()
+            db.session.add(Host(name='untouched', provider='standalone'))
+            db.session.commit()
+            zip_bytes = build_backup_zip_bytes()
+
+        buffer = io.BytesIO(zip_bytes)
+        with zipfile.ZipFile(buffer, 'a', compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('files/ssh-keys/../../../../tmp/pwned', 'malicious payload')
+        blob = encrypt_archive(buffer.getvalue(), None)
+
+        with app.app_context():
+            with pytest.raises(BackupRestoreError):
+                restore_backup_archive(blob, None)
+
+            assert [h.name for h in Host.query.all()] == ['untouched']
+        assert not os.path.exists('/tmp/pwned')
 
     def test_builtin_presets_are_never_touched(self, app, app_root, monkeypatch):
         """configs/presets/_builtin ships with the app (it's in git, not
