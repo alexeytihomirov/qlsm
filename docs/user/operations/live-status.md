@@ -4,7 +4,7 @@ Live status shows near-real-time player and match state for each running instanc
 
 ## Open Live Status
 
-1. In the **Servers** page, click the player count pill in the instance row: <img class="docs-inline-icon" src="../images/player-count.png" width="80" />.
+1. In the **Servers** page, click the player count pill in the instance row: <img class="docs-inline-icon" src="../../images/player-count.png" width="80" />.
 2. QLSM opens the full **Live Status** drawer.
 
 ![Instance Live Status](../images/instance-live-status.png)
