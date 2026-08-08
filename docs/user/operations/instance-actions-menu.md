@@ -67,7 +67,7 @@ Use logs when something failed. Use details when you want context. Use chat logs
 
 Use **RCON Console** for live administration on a server that is already running.
 
-<img src="../../images/instance-actions-menu-rcon.png" width="211" />
+<img src="../../images/instance-actions-menu-rcon.png" width="208" />
 
 RCON is the fastest option when you need an immediate game-side command such as `status`, map changes, or plugin commands. If the menu item is disabled, the instance is usually not in a ready state or is missing RCON connectivity details.
 
