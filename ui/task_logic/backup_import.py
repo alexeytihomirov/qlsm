@@ -76,12 +76,17 @@ def _write_safety_snapshot():
     """Silently capture current state before any destructive step, purely
     as a recovery-of-last-resort if the restore fails partway. Never
     exposed in any UI list; best-effort only — must never block a
-    restore."""
+    restore. Written owner-only (0700 dir / 0600 file) since this is a
+    plaintext-equivalent dump of every secret the instance holds — SSH
+    keys, the Vultr API key, user credentials — same as any backup made
+    without a password."""
     try:
-        os.makedirs(BACKUP_SNAPSHOTS_DIR, exist_ok=True)
+        os.makedirs(BACKUP_SNAPSHOTS_DIR, mode=0o700, exist_ok=True)
+        os.chmod(BACKUP_SNAPSHOTS_DIR, 0o700)  # mode= above only applies on creation
         timestamp = datetime.datetime.utcnow().strftime('%Y%m%d-%H%M%S-%f')
         snapshot_path = os.path.join(BACKUP_SNAPSHOTS_DIR, f'pre-restore-{timestamp}.qlsmbak')
-        with open(snapshot_path, 'wb') as f:
+        fd = os.open(snapshot_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'wb') as f:
             f.write(encrypt_archive(build_backup_zip_bytes(), None))
         _prune_old_snapshots()
     except Exception:

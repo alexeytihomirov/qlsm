@@ -108,6 +108,19 @@ class TestRestoreBackupArchive:
         assert len(snapshots) == 1
         assert snapshots[0].endswith('.qlsmbak')
 
+    def test_safety_snapshot_is_owner_only(self, app, app_root):
+        """backup_snapshots/ holds plaintext-equivalent dumps of every
+        secret the instance has (SSH keys, API keys, credentials) — the
+        directory and file must not be group/world-readable."""
+        blob = _make_backup_with_host(app, app_root)
+        with app.app_context():
+            restore_backup_archive(blob, None)
+        dir_mode = os.stat(BACKUP_SNAPSHOTS_DIR).st_mode & 0o777
+        assert dir_mode == 0o700
+        snapshot_name = os.listdir(BACKUP_SNAPSHOTS_DIR)[0]
+        file_mode = os.stat(os.path.join(BACKUP_SNAPSHOTS_DIR, snapshot_name)).st_mode & 0o777
+        assert file_mode == 0o600
+
     def test_rollback_on_db_failure_restores_old_file_trees(self, app, app_root, monkeypatch):
         blob = _make_backup_with_host(app, app_root)
         (app_root / 'terraform' / 'ssh-keys' / 'must_survive_rollback').write_text('x')
