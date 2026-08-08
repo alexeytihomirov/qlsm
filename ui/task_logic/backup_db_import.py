@@ -11,8 +11,8 @@ from ui.models import (
     ApiKey, AppSetting, BinaryMetadata, ConfigPreset, Host, HostStatus,
     InstanceStatus, QLFilterStatus, QLInstance, User,
 )
+from ui.task_logic.backup_db_export import DB_EXPORT_FORMAT_VERSION
 
-DB_EXPORT_FORMAT_VERSION = 1
 _REQUIRED_KEYS = ('hosts', 'instances', 'users', 'presets', 'api_keys', 'app_settings', 'binary_metadata')
 
 
