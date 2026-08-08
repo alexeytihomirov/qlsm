@@ -1,3 +1,4 @@
+import errno
 import io
 import os
 import zipfile
@@ -7,6 +8,7 @@ from ui import db
 from ui.models import Host, ConfigPreset
 from ui.backup_crypto import encrypt_archive
 from ui.task_logic.backup_export import build_backup_zip_bytes
+from ui.task_logic.backup_files import backup_file_trees
 from ui.task_logic.backup_import import restore_backup_archive, BackupRestoreError, BACKUP_SNAPSHOTS_DIR
 
 
@@ -27,6 +29,34 @@ def _make_backup_with_host(app, app_root, password=None):
         db.session.commit()
         zip_bytes = build_backup_zip_bytes()
     return encrypt_archive(zip_bytes, password)
+
+
+def _reject_crossing_ssh_mount(monkeypatch, app_root):
+    mount_root = os.path.realpath(app_root / 'terraform' / 'ssh-keys')
+    real_rename = os.rename
+
+    def guarded_rename(source, target):
+        source_path = os.path.realpath(source)
+        target_path = os.path.realpath(target)
+        source_inside = os.path.commonpath((mount_root, source_path)) == mount_root
+        target_inside = os.path.commonpath((mount_root, target_path)) == mount_root
+        if source_inside != target_inside:
+            raise OSError(errno.EXDEV, 'Invalid cross-device link', source, target)
+        return real_rename(source, target)
+
+    monkeypatch.setattr('ui.task_logic.backup_import.os.rename', guarded_rename)
+
+
+def _managed_tree_contents(app_root):
+    contents = {}
+    for _prefix, root, _skip in backup_file_trees():
+        root_path = app_root / root
+        for directory, _dirs, files in os.walk(root_path):
+            for filename in files:
+                path = os.path.join(directory, filename)
+                with open(path, 'rb') as file:
+                    contents[os.path.relpath(path, app_root)] = file.read()
+    return contents
 
 
 class TestRestoreBackupArchive:
@@ -63,6 +93,20 @@ class TestRestoreBackupArchive:
         assert not (app_root / 'terraform' / 'ssh-keys' / 'unexpected_leftover').exists()
         # The app-shipped builtin preset folder must be untouched by the swap.
         assert (app_root / 'configs' / 'presets' / '_builtin' / 'default' / 'server.cfg').exists()
+
+    def test_restores_across_managed_tree_filesystem_boundary(self, app, app_root, monkeypatch):
+        blob = _make_backup_with_host(app, app_root)
+        ssh_keys = app_root / 'terraform' / 'ssh-keys'
+        (ssh_keys / 'old_key').unlink()
+        (ssh_keys / 'unexpected_leftover').write_text('remove me')
+        _reject_crossing_ssh_mount(monkeypatch, app_root)
+
+        with app.app_context():
+            restore_backup_archive(blob, None)
+
+        assert (ssh_keys / 'old_key').read_text() == 'OLD KEY'
+        assert not (ssh_keys / 'unexpected_leftover').exists()
+        assert not list(ssh_keys.glob('.qlsm-restore-*'))
 
     def test_swapped_out_file_child_is_cleaned_up_after_success(self, app, app_root):
         """terraform/ssh-keys has flat *files* as direct children (unlike
@@ -129,12 +173,14 @@ class TestRestoreBackupArchive:
             raise RuntimeError('simulated failure after file swap')
 
         monkeypatch.setattr('ui.task_logic.backup_import.replace_database', _boom)
+        _reject_crossing_ssh_mount(monkeypatch, app_root)
 
         with app.app_context():
             with pytest.raises(RuntimeError):
                 restore_backup_archive(blob, None)
 
         assert (app_root / 'terraform' / 'ssh-keys' / 'must_survive_rollback').exists()
+        assert not list((app_root / 'terraform' / 'ssh-keys').glob('.qlsm-restore-*'))
 
     def test_restored_ssh_key_keeps_its_permissions(self, app, app_root):
         (app_root / 'terraform' / 'ssh-keys' / 'old_key').chmod(0o600)
@@ -206,6 +252,7 @@ class TestRestoreBackupArchive:
         with zipfile.ZipFile(buffer, 'a', compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('files/ssh-keys/../../../../tmp/pwned', 'malicious payload')
         blob = encrypt_archive(buffer.getvalue(), None)
+        contents_before_restore = _managed_tree_contents(app_root)
 
         with app.app_context():
             with pytest.raises(BackupRestoreError):
@@ -213,6 +260,9 @@ class TestRestoreBackupArchive:
 
             assert [h.name for h in Host.query.all()] == ['untouched']
         assert not os.path.exists('/tmp/pwned')
+        assert _managed_tree_contents(app_root) == contents_before_restore
+        for _prefix, root, _skip in backup_file_trees():
+            assert not list((app_root / root).glob('.qlsm-restore-staging-*'))
 
     def test_builtin_presets_are_never_touched(self, app, app_root, monkeypatch):
         """configs/presets/_builtin ships with the app (it's in git, not
