@@ -4,6 +4,8 @@ QLSM can export the full operational state of this instance — database, SSH ke
 
 Backup & Restore is found at **Settings → Backup & Restore**.
 
+![](../images/backup-restore-page.png)
+
 ## What's Included
 
 - The database: hosts, instances, users, preset metadata, your external API key, app settings (including a saved Vultr API key), and plugin binary descriptions.
