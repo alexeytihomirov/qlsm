@@ -2,6 +2,8 @@
 
 Use **View MinQLX Logs** from the instance action menu to read `minqlx.log` and rotated archives. This is the MinQLX plugin log — player events, chat/console output, votes, and plugin activity — as opposed to service/runtime output ([Server Logs](server-logs.md)) or the dedicated chat history ([Chat Logs](chat-logs.md)).
 
+![Instance Actions: View MinQLX Logs](../images/instance-actions-menu-view-minqlx-logs.png)
+
 ## File Selection
 
 The modal loads available files and keeps valid names only:
