@@ -14,6 +14,7 @@ const instances = [
 ];
 const targetKey = (user = 7) => `qlsm-global-rcon-targets-${user}`;
 const expandedKey = (user = 7) => `qlsm-global-rcon-expanded-hosts-${user}`;
+const liveEventsKey = (user = 7) => `qlsm-global-rcon-live-events-${user}`;
 
 function renderPreferences(props = { hosts, instances, inventoryReady: true }) {
   return renderHook(({ value }) => useGlobalRconPreferences(value), { initialProps: { value: props } });
@@ -152,5 +153,34 @@ describe('useGlobalRconPreferences', () => {
     expect(JSON.parse(localStorage.getItem(targetKey(7)))).toEqual(['1:11']);
     expect(JSON.parse(localStorage.getItem(targetKey(8)))).toEqual(['2:21']);
     expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it('defaults live events to off and persists explicit changes', () => {
+    const { result } = renderPreferences();
+    expect(result.current.liveEventsEnabled).toBe(false);
+    act(() => result.current.setLiveEventsEnabled(true));
+    expect(result.current.liveEventsEnabled).toBe(true);
+    expect(JSON.parse(localStorage.getItem(liveEventsKey()))).toBe(true);
+  });
+
+  it('restores a stored live-events preference', () => {
+    localStorage.setItem(liveEventsKey(), JSON.stringify(true));
+    const { result } = renderPreferences();
+    expect(result.current.liveEventsEnabled).toBe(true);
+  });
+
+  it('defaults live events to off on malformed storage', () => {
+    localStorage.setItem(liveEventsKey(), '{broken');
+    expect(renderPreferences().result.current.liveEventsEnabled).toBe(false);
+  });
+
+  it('keeps the live-events preference isolated per user', () => {
+    const { result, rerender } = renderPreferences();
+    act(() => result.current.setLiveEventsEnabled(true));
+    auth.user = { id: 8 };
+    rerender({ value: { hosts, instances, inventoryReady: true } });
+    expect(result.current.liveEventsEnabled).toBe(false);
+    expect(JSON.parse(localStorage.getItem(liveEventsKey(7)))).toBe(true);
+    expect(localStorage.getItem(liveEventsKey(8))).toBeNull();
   });
 });

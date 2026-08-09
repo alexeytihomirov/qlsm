@@ -3,12 +3,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { buildRconHosts } from '../utils/rconTargets';
 const TARGETS_PREFIX = 'qlsm-global-rcon-targets-';
 const EXPANDED_PREFIX = 'qlsm-global-rcon-expanded-hosts-';
+const LIVE_EVENTS_PREFIX = 'qlsm-global-rcon-live-events-';
 
 function keysFor(userId) {
   if (userId === null || userId === undefined) return null;
   return {
     targets: `${TARGETS_PREFIX}${userId}`,
     expanded: `${EXPANDED_PREFIX}${userId}`,
+    liveEvents: `${LIVE_EVENTS_PREFIX}${userId}`,
   };
 }
 function readArray(key) {
@@ -26,12 +28,30 @@ function loadPreferences(userId) {
     userId,
     selectedKeys: new Set(readArray(keys?.targets).filter((value) => typeof value === 'string')),
     expandedHostIds: new Set(readArray(keys?.expanded).filter((value) => ['string', 'number'].includes(typeof value))),
+    liveEventsEnabled: readBoolean(keys?.liveEvents, false),
   };
 }
 function writeSet(key, values) {
   if (!key) return;
   try {
     localStorage.setItem(key, JSON.stringify([...values]));
+  } catch {
+    // localStorage can be unavailable, full, or blocked. State remains usable in memory.
+  }
+}
+function readBoolean(key, fallback) {
+  if (!key) return fallback;
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? 'null');
+    return typeof value === 'boolean' ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writeBoolean(key, value) {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // localStorage can be unavailable, full, or blocked. State remains usable in memory.
   }
@@ -80,7 +100,7 @@ export function useGlobalRconPreferences({
     const selectedChanged = !sameSet(active.selectedKeys, selectedKeys);
     const expandedChanged = !sameSet(active.expandedHostIds, expandedHostIds);
     if (!identityChanged && !selectedChanged && !expandedChanged) return;
-    const next = { userId, selectedKeys, expandedHostIds };
+    const next = { userId, selectedKeys, expandedHostIds, liveEventsEnabled: active.liveEventsEnabled };
     setStored(next);
     if (selectedChanged) writeSet(storageKeys?.targets, selectedKeys);
     if (expandedChanged) writeSet(storageKeys?.expanded, expandedHostIds);
@@ -146,17 +166,27 @@ export function useGlobalRconPreferences({
     });
   }, [hostIds, loaded, storageKeys?.expanded, userId]);
 
+  const setLiveEventsEnabled = useCallback((value) => {
+    setStored((previous) => {
+      const base = previous.userId === userId ? previous : loaded;
+      writeBoolean(storageKeys?.liveEvents, value);
+      return { ...base, userId, liveEventsEnabled: value };
+    });
+  }, [loaded, storageKeys?.liveEvents, userId]);
+
   return {
     selectedKeys,
     expandedHostIds,
     // True only after both inventories loaded successfully; false preserves unverified persisted IDs.
     inventoryReady,
+    liveEventsEnabled: active.liveEventsEnabled,
     setTargetChecked,
     setHostChecked,
     selectAllEligible,
     selectNone,
     toggleHostExpanded,
     setAllHostsExpanded,
+    setLiveEventsEnabled,
   };
 }
 
