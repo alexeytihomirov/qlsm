@@ -83,13 +83,17 @@ function cloneResult(target, state, reason) {
   };
 }
 
-export function useRconCommandRuns() {
+export function useRconCommandRuns({ liveEventsEnabled = true } = {}) {
   const [runs, setRuns] = useState([]);
   const [rawStreams, setRawStreams] = useState(new Map());
   const runsRef = useRef([]);
   const rawRef = useRef(new Map());
   const activeRef = useRef(new Map());
   const timersRef = useRef(new Map());
+  const liveEventsEnabledRef = useRef(liveEventsEnabled);
+  useEffect(() => {
+    liveEventsEnabledRef.current = liveEventsEnabled;
+  }, [liveEventsEnabled]);
 
   const publishRuns = useCallback((next) => {
     runsRef.current = next;
@@ -261,9 +265,17 @@ export function useRconCommandRuns() {
     const key = exactEventKey(message);
     if (!key) return;
     const event = eventFromMessage(message);
-    appendRaw(key, event);
     const runId = activeRef.current.get(key);
-    if (!runId) return;
+    if (runId && !liveEventsEnabledRef.current) {
+      const settledResult = runsRef.current.find((run) => run.id === runId)?.results.find((item) => item.key === key);
+      const settled = !settledResult || settledResult.state === 'quiet' || settledResult.state === 'no_response';
+      if (settled) return; // Idle chatter to a cold target: drop it, don't reopen the run.
+    }
+    if (!runId) {
+      if (liveEventsEnabledRef.current) appendRaw(key, event);
+      return;
+    }
+    appendRaw(key, event);
     clearTimersFor(runId, key);
     const changed = replaceResult(runId, key, (result) => {
       const state = result.state === 'failed' || result.state === 'rejected'
