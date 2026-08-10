@@ -5,27 +5,6 @@ instance's reply separately.
 
 Open it from **GLOBAL RCON** in the top navigation, or go to `/global-rcon`.
 
-## Global RCON vs the RCON Console
-
-| | [RCON Console](rcon-console.md) | Global RCON |
-|---|---|---|
-| Scope | One instance | Every instance you select |
-| Opened from | Instance **Actions** menu | Top navigation |
-| Live game events | Yes, optional structured stats overlay | Raw console output only, gated by the **Live events** checkbox (off by default; no structured overlay either way) |
-| Output | Single stream | Grouped per target, per command |
-
-Every ready target keeps an open RCON connection. A command's reply always
-arrives while it's in flight, regardless of the **Live events** checkbox.
-Once a target's connection has been quiet for about 1.5 seconds after a
-reply, or hasn't responded at all within about 5 seconds, further output for
-it is only shown when **Live events** is checked — including the rare case
-of a slow reply's tail, or an entire very late reply, arriving after that
-window. It's off by default; check it to see that output, plus the chat,
-connects, and admin messages the server prints on its own. What Global RCON
-doesn't have, either way, is the per-instance console's optional
-**structured stats overlay** (a separate parsed kill-feed/event view). Use
-the per-instance console when you want that overlay for a single server.
-
 ## Selecting targets
 
 The **Targets** pane lists your hosts and their instances.
@@ -107,31 +86,6 @@ Per-target status labels:
 | No response yet | Nothing arrived within ~5 seconds |
 | Skipped | Not ready when you pressed Send |
 | Rejected / Failed | The instance refused the command or the session dropped |
-
-!!! warning "Queued is delivery, not success"
-    **Queued** and **No response yet** only describe message delivery and
-    silence. They do not mean the command did what you wanted. Many QLDS and
-    minqlx commands print nothing on success — and a command that fails
-    server-side can also print nothing. Always verify anything that changes
-    state by reading it back.
-
-A target's block can keep showing **Receiving** and growing well past your
-command's actual reply — the connection stays open, so any chat, connect, or
-admin-plugin lines the server prints in the meantime land in the same block.
-It settles once the target has been quiet for about 1.5 seconds, and starts
-fresh the next time you send that target a command.
-
-### Verify changes by reading them back
-
-To grant a permission level, run the mutation and then the matching read:
-
-```text
-qlx !setperm 76561190000000000 5
-qlx !getperm 76561190000000000
-```
-
-The second command's output is your evidence; the first command's **Queued**
-badge is not.
 
 ## Filtering output
 
