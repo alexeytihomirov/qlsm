@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   startRun: vi.fn(), applyDispatchAck: vi.fn(), appendMessage: vi.fn(), applyTargetStatus: vi.fn(),
   sendCommand: vi.fn().mockResolvedValue({ run_id: 'run-id', targets: [] }),
-  prefArgs: null, fleetArgs: null, inventoryError: null, statuses: null,
+  setLiveEventsEnabled: vi.fn(),
+  prefArgs: null, fleetArgs: null, runsArgs: null, inventoryError: null, statuses: null, liveEventsEnabled: false,
 }));
 vi.mock('../../hooks/useServers', () => ({ useServers: () => ({
   serversData: [{ id: 1, name: 'Host', instances: [
@@ -15,16 +16,23 @@ vi.mock('../../hooks/useServers', () => ({ useServers: () => ({
 vi.mock('../../hooks/useHostOrder', () => ({ useHostOrder: () => ({ getOrderedHosts: (hosts) => hosts }) }));
 vi.mock('../../hooks/useGlobalRconPreferences', () => ({ default: (args) => {
   state.prefArgs = args;
-  return { selectedKeys: new Set(['1:11', '1:12']), expandedHostIds: new Set([1]), setTargetChecked: vi.fn(), setHostChecked: vi.fn(), selectAllEligible: vi.fn(), selectNone: vi.fn(), toggleHostExpanded: vi.fn() };
+  return {
+    selectedKeys: new Set(['1:11', '1:12']), expandedHostIds: new Set([1]), setTargetChecked: vi.fn(),
+    setHostChecked: vi.fn(), selectAllEligible: vi.fn(), selectNone: vi.fn(), toggleHostExpanded: vi.fn(),
+    liveEventsEnabled: state.liveEventsEnabled, setLiveEventsEnabled: state.setLiveEventsEnabled,
+  };
 } }));
 vi.mock('../../hooks/useFleetRconSession', () => ({ useFleetRconSession: (args) => {
   state.fleetArgs = args;
   return { connected: true, statuses: state.statuses ?? new Map([['1:11', { state: 'ready' }], ['1:12', { state: 'connecting' }]]), sendCommand: state.sendCommand };
 } }));
-vi.mock('../../hooks/useRconCommandRuns', () => ({ default: () => ({
-  runs: [], rawStreams: new Map(), startRun: state.startRun, applyDispatchAck: state.applyDispatchAck,
-  appendMessage: state.appendMessage, applyTargetStatus: state.applyTargetStatus,
-}) }));
+vi.mock('../../hooks/useRconCommandRuns', () => ({ default: (args) => {
+  state.runsArgs = args;
+  return {
+    runs: [], rawStreams: new Map(), startRun: state.startRun, applyDispatchAck: state.applyDispatchAck,
+    appendMessage: state.appendMessage, applyTargetStatus: state.applyTargetStatus,
+  };
+} }));
 vi.mock('../../components/rcon/RconTargetTree', () => ({ default: () => <div data-testid="target-tree" /> }));
 vi.mock('../../components/rcon/GlobalRconOutput', () => ({ default: ({ commandInput, onFilterChange }) => (
   <div data-testid="output">
@@ -38,7 +46,7 @@ vi.mock('../../components/rcon/RconCommandInput', () => ({ default: ({ disabled,
 import GlobalRconPage from '../GlobalRconPage';
 
 beforeEach(() => {
-  state.inventoryError = null; state.statuses = null;
+  state.inventoryError = null; state.statuses = null; state.liveEventsEnabled = false;
   Object.values(state).forEach((value) => value?.mockClear?.());
 });
 describe('GlobalRconPage', () => {
@@ -99,5 +107,26 @@ describe('GlobalRconPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hide targets' }));
     expect(screen.getByRole('button', { name: 'Show targets' })).toHaveAttribute('aria-expanded', 'false');
     expect(state.fleetArgs.targets).toEqual([{ host_id: 1, instance_id: 11 }, { host_id: 1, instance_id: 12 }]);
+  });
+
+  it('renders the Live events checkbox reflecting the stored preference and forwards toggles', () => {
+    state.liveEventsEnabled = true;
+    render(<GlobalRconPage />);
+    const checkbox = screen.getByRole('checkbox', { name: /live events/i });
+    expect(checkbox).toBeChecked();
+    expect(state.runsArgs).toEqual({ liveEventsEnabled: true });
+
+    fireEvent.click(checkbox);
+    expect(state.setLiveEventsEnabled).toHaveBeenCalledWith(false);
+  });
+
+  it('defaults the Live events checkbox to unchecked and threads the off preference through to the runs hook', () => {
+    // state.liveEventsEnabled is left at its beforeEach default of false —
+    // this exercises the actual shipped default end to end, not just the
+    // flipped-on case above.
+    render(<GlobalRconPage />);
+    const checkbox = screen.getByRole('checkbox', { name: /live events/i });
+    expect(checkbox).not.toBeChecked();
+    expect(state.runsArgs).toEqual({ liveEventsEnabled: false });
   });
 });
