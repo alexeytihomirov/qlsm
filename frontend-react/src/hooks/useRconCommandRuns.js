@@ -10,6 +10,9 @@ export const MAX_RAW_LINES = 1_000;
 export const RCON_QUIET_MS = QUIET_AFTER_MS;
 export const RCON_NO_RESPONSE_MS = NO_RESPONSE_AFTER_MS;
 const ACTIVE_STATES = new Set(['pending_dispatch', 'queued', 'receiving', 'quiet', 'no_response']);
+// Distinct from ACTIVE_STATES: a run can still be "active" for status purposes
+// while being settled for live-events suppression purposes.
+const SETTLED_STATES = new Set(['quiet', 'no_response']);
 
 function nowTimestamp() {
   return new Date().toLocaleTimeString();
@@ -268,7 +271,7 @@ export function useRconCommandRuns({ liveEventsEnabled = true } = {}) {
     const runId = activeRef.current.get(key);
     if (runId && !liveEventsEnabledRef.current) {
       const settledResult = runsRef.current.find((run) => run.id === runId)?.results.find((item) => item.key === key);
-      const settled = !settledResult || settledResult.state === 'quiet' || settledResult.state === 'no_response';
+      const settled = !settledResult || SETTLED_STATES.has(settledResult.state);
       if (settled) return; // Idle chatter to a cold target: drop it, don't reopen the run.
     }
     if (!runId) {

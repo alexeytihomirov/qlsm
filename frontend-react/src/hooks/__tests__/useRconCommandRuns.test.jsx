@@ -612,4 +612,27 @@ describe('useRconCommandRuns attribution, quiet timers, and statuses', () => {
       expect.objectContaining({ content: 'first' }),
     ]);
   });
+
+  it('suppresses a very late reply after a run times out to no_response when live events are off', () => {
+    const hook = renderHook(({ liveEventsEnabled }) => useRconCommandRuns({ liveEventsEnabled }), {
+      initialProps: { liveEventsEnabled: true },
+    });
+    start(hook);
+    act(() => hook.result.current.applyDispatchAck('run-1', {
+      targets: [{ ...one, state: 'queued' }],
+    }));
+    act(() => vi.advanceTimersByTime(NO_RESPONSE_AFTER_MS));
+    expect(resultFor(hook, 'run-1').state).toBe('no_response');
+
+    hook.rerender({ liveEventsEnabled: false });
+    act(() => hook.result.current.appendMessage({ ...one, content: 'very late reply' }));
+
+    // Deliberate trade-off (see spec Edge Cases): a no_response run does not
+    // reopen while Live events is off, even though this message IS the reply.
+    expect(resultFor(hook, 'run-1').state).toBe('no_response');
+    expect(resultFor(hook, 'run-1').lines).toEqual([]);
+    expect(hook.result.current.rawStreams.get('1:11')).toEqual([
+      expect.objectContaining({ type: 'command', content: 'status' }),
+    ]);
+  });
 });
