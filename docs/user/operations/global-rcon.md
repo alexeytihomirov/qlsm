@@ -11,15 +11,20 @@ Open it from **GLOBAL RCON** in the top navigation, or go to `/global-rcon`.
 |---|---|---|
 | Scope | One instance | Every instance you select |
 | Opened from | Instance **Actions** menu | Top navigation |
-| Live game events | Yes, optional structured stats overlay | Raw console output only (no structured overlay) |
+| Live game events | Yes, optional structured stats overlay | Raw console output only, gated by the **Live events** checkbox (off by default; no structured overlay either way) |
 | Output | Single stream | Grouped per target, per command |
 
-Every ready target keeps an open RCON connection, so console output the
-server prints on its own — chat, connects, admin messages — arrives live in
-Global RCON too, not just the reply to a command you sent. What Global RCON
-doesn't have is the per-instance console's optional **structured stats
-overlay** (a separate parsed kill-feed/event view). Use the per-instance
-console when you want that overlay for a single server.
+Every ready target keeps an open RCON connection. A command's reply always
+arrives while it's in flight, regardless of the **Live events** checkbox.
+Once a target's connection has been quiet for about 1.5 seconds after a
+reply, or hasn't responded at all within about 5 seconds, further output for
+it is only shown when **Live events** is checked — including the rare case
+of a slow reply's tail, or an entire very late reply, arriving after that
+window. It's off by default; check it to see that output, plus the chat,
+connects, and admin messages the server prints on its own. What Global RCON
+doesn't have, either way, is the per-instance console's optional
+**structured stats overlay** (a separate parsed kill-feed/event view). Use
+the per-instance console when you want that overlay for a single server.
 
 ## Selecting targets
 

@@ -43,7 +43,7 @@ export default function GlobalRconPage() {
     rconHosts.flatMap((host) => host.instances.filter((target) => target.eligible).map((target) => target.key)),
     preferences.selectedKeys,
   ), [preferences.selectedKeys, rconHosts]);
-  const runs = useRconCommandRuns();
+  const runs = useRconCommandRuns({ liveEventsEnabled: preferences.liveEventsEnabled });
   const [activeFilter, setActiveFilter] = useState('all');
   const [targetsOpen, setTargetsOpen] = useState(true);
   const session = useFleetRconSession({
@@ -100,8 +100,19 @@ export default function GlobalRconPage() {
     <div className="global-rcon-page">
       <header className="global-rcon-header">
         <div><h1><Terminal size={24} /> Global RCON</h1></div>
-        <div className="global-rcon-summary"><Radio size={15} className={session.connected ? 'text-emerald-500' : 'text-theme-muted'} />
-          {readyTargets.length} ready / {selectedEligible.length} eligible selected</div>
+        <div className="global-rcon-summary">
+          <Radio size={15} className={session.connected ? 'text-emerald-500' : 'text-theme-muted'} />
+          {readyTargets.length} ready / {selectedEligible.length} eligible selected
+          <label className="global-rcon-live-events-toggle">
+            <input
+              type="checkbox"
+              checked={preferences.liveEventsEnabled}
+              onChange={(event) => preferences.setLiveEventsEnabled(event.target.checked)}
+              className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+            />
+            Live events
+          </label>
+        </div>
       </header>
       <div className="global-rcon-layout">
         <aside className={`global-rcon-targets scrollbar-thin ${targetsOpen ? '' : 'global-rcon-targets-collapsed'}`}>

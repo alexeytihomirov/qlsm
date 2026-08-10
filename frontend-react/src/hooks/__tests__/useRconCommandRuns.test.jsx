@@ -545,4 +545,94 @@ describe('useRconCommandRuns attribution, quiet timers, and statuses', () => {
     act(() => hook.result.current.clearRuns());
     expect(hook.result.current.runs).toEqual([]);
   });
+
+  it('defaults to live events enabled so idle unsolicited output still appears', () => {
+    const hook = renderHook(() => useRconCommandRuns());
+    act(() => hook.result.current.appendMessage({ host_id: 9, instance_id: 99, content: 'idle chatter' }));
+    expect(hook.result.current.rawStreams.get('9:99')).toEqual([
+      expect.objectContaining({ content: 'idle chatter' }),
+    ]);
+  });
+
+  it('drops idle unsolicited messages when live events are disabled but keeps active-run replies', () => {
+    const hook = renderHook(({ liveEventsEnabled }) => useRconCommandRuns({ liveEventsEnabled }), {
+      initialProps: { liveEventsEnabled: false },
+    });
+    start(hook, 'run-1', 'status', [one]);
+    act(() => hook.result.current.appendMessage({ ...one, content: 'reply line' }));
+    act(() => hook.result.current.appendMessage({ host_id: 9, instance_id: 99, content: 'idle chatter' }));
+
+    expect(resultFor(hook, 'run-1').lines).toEqual([
+      expect.objectContaining({ content: 'reply line' }),
+    ]);
+    // rawStreams for the active target also carries the command line startRun appended.
+    expect(hook.result.current.rawStreams.get('1:11')).toEqual([
+      expect.objectContaining({ type: 'command', content: 'status' }),
+      expect.objectContaining({ content: 'reply line' }),
+    ]);
+    expect(hook.result.current.rawStreams.has('9:99')).toBe(false);
+  });
+
+  it('reacts to live events being toggled after mount without remounting', () => {
+    const hook = renderHook(({ liveEventsEnabled }) => useRconCommandRuns({ liveEventsEnabled }), {
+      initialProps: { liveEventsEnabled: true },
+    });
+    act(() => hook.result.current.appendMessage({ host_id: 9, instance_id: 99, content: 'first' }));
+    expect(hook.result.current.rawStreams.get('9:99')).toHaveLength(1);
+
+    hook.rerender({ liveEventsEnabled: false });
+    act(() => hook.result.current.appendMessage({ host_id: 9, instance_id: 99, content: 'second' }));
+    expect(hook.result.current.rawStreams.get('9:99')).toHaveLength(1);
+
+    hook.rerender({ liveEventsEnabled: true });
+    act(() => hook.result.current.appendMessage({ host_id: 9, instance_id: 99, content: 'third' }));
+    expect(hook.result.current.rawStreams.get('9:99')).toHaveLength(2);
+  });
+
+  it('suppresses late trickle after a run goes quiet when live events are off, without reopening the run', () => {
+    const hook = renderHook(({ liveEventsEnabled }) => useRconCommandRuns({ liveEventsEnabled }), {
+      initialProps: { liveEventsEnabled: true },
+    });
+    start(hook);
+    act(() => hook.result.current.appendMessage({ ...one, content: 'first' }));
+    act(() => vi.advanceTimersByTime(QUIET_AFTER_MS));
+    expect(resultFor(hook, 'run-1').state).toBe('quiet');
+
+    hook.rerender({ liveEventsEnabled: false });
+    act(() => hook.result.current.appendMessage({ ...one, content: 'late while off' }));
+
+    // Settled run does not reopen, and the message is dropped entirely — not
+    // appended to the raw stream either, matching the "no run active" branch.
+    expect(resultFor(hook, 'run-1').state).toBe('quiet');
+    expect(resultFor(hook, 'run-1').lines).toEqual([
+      expect.objectContaining({ content: 'first' }),
+    ]);
+    expect(hook.result.current.rawStreams.get('1:11')).toEqual([
+      expect.objectContaining({ type: 'command', content: 'status' }),
+      expect.objectContaining({ content: 'first' }),
+    ]);
+  });
+
+  it('suppresses a very late reply after a run times out to no_response when live events are off', () => {
+    const hook = renderHook(({ liveEventsEnabled }) => useRconCommandRuns({ liveEventsEnabled }), {
+      initialProps: { liveEventsEnabled: true },
+    });
+    start(hook);
+    act(() => hook.result.current.applyDispatchAck('run-1', {
+      targets: [{ ...one, state: 'queued' }],
+    }));
+    act(() => vi.advanceTimersByTime(NO_RESPONSE_AFTER_MS));
+    expect(resultFor(hook, 'run-1').state).toBe('no_response');
+
+    hook.rerender({ liveEventsEnabled: false });
+    act(() => hook.result.current.appendMessage({ ...one, content: 'very late reply' }));
+
+    // Deliberate trade-off (see spec Edge Cases): a no_response run does not
+    // reopen while Live events is off, even though this message IS the reply.
+    expect(resultFor(hook, 'run-1').state).toBe('no_response');
+    expect(resultFor(hook, 'run-1').lines).toEqual([]);
+    expect(hook.result.current.rawStreams.get('1:11')).toEqual([
+      expect.objectContaining({ type: 'command', content: 'status' }),
+    ]);
+  });
 });

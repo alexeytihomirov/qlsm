@@ -4352,7 +4352,8 @@ body {
 .global-rcon-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .global-rcon-header h1 { display: flex; align-items: center; gap: .6rem; font-size: 1.35rem; font-weight: 700; }
 .global-rcon-header p, .global-rcon-summary, .global-rcon-state { color: var(--text-secondary); font-size: .875rem; }
-.global-rcon-summary { display: flex; align-items: center; gap: .4rem; white-space: nowrap; }
+.global-rcon-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; white-space: nowrap; }
+.global-rcon-live-events-toggle { display: flex; align-items: center; gap: .35rem; cursor: pointer; user-select: none; }
 .global-rcon-layout { display: grid; min-height: 0; flex: 1; grid-template-columns: 26.4rem minmax(0, 1fr); gap: 1rem; }
 .global-rcon-targets { min-width: 0; border: 1px solid var(--surface-border); border-radius: .75rem; background: var(--surface-raised); padding: 1rem; overflow: auto; }
 .global-rcon-targets-title { display: flex; align-items: center; justify-content: space-between; margin: -1rem -1rem .75rem; }
