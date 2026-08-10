@@ -13,6 +13,7 @@ Features:
 - [LD_PRELOAD hooks](https://dngrtech.github.io/qlsm/features/hooks/) manager: upload, enable/disable, reorder, and delete custom native `.so` libraries loaded into each QLDS process at launch. System hooks (like `force_rate.so` for 99k LAN rate) are managed automatically.
 - Optional [QLFilter ](https://dngrtech.github.io/qlsm/features/qlfilter/) deployment (anti-DDOS protection)
 - Per-instance [RCON console](https://dngrtech.github.io/qlsm/operations/rcon-console/) with command line and live feed of all server events
+- Global [RCON console](https://dngrtech.github.io/qlsm/operations/global-rcon/) to send one command to many instances at once and shows each instance's reply separately.
 - [Live server status](https://dngrtech.github.io/qlsm/operations/live-status/) with current map, gametype, mode/factory, match timer, player list, and scores
 - [Syntax-aware editors](https://dngrtech.github.io/qlsm/operations/edit-configs/) (CodeMirror) for `server.cfg`, `mappool.txt`, `access.txt`, and `workshop.txt`, featuring a Python linter for minqlx plugin's code validation. The editor includes search and replace functionality for easy editing
 - Upload common config files, factories, and custom minqlx plugins. 
