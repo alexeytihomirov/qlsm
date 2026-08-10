@@ -15,21 +15,21 @@ QLSM supports three ways to run your Quake Live servers:
 ## Key Features
 
 - **[Live server status](https://dngrtech.github.io/qlsm/operations/live-status/)** — current map, gametype, match state, players, and scores visible at a glance. ZMQ credentials auto-generated and displayed.
+- **[99k LAN rate mode](../features/99k-lan-rate.md)** — patches the QLDS LAN-detection function via LD_PRELOAD so every client is treated as LAN, enabling the high-bandwidth rate path. Real improvement for LG-heavy or large CA/FFA servers.
+- **[LD_PRELOAD hooks](../features/hooks.md)** — upload custom native `.so` libraries loaded into each QLDS process at launch. System hooks (like `force_rate.so`) are managed automatically.
 - **In-browser [config editors](https://dngrtech.github.io/qlsm/operations/edit-configs/)** — CodeMirror-powered editors for `server.cfg`, `mappool.txt`, `access.txt`, and `workshop.txt`. Syntax highlighting, search/replace, and inline validation.
 - **minqlx [plugin management](https://dngrtech.github.io/qlsm/operations/edit-configs/)** — enable plugins with checkboxes. Python validation built in.
-- **minqlx damage hook** — QLSM ships minqlx with the `damage` event/dispatcher backported from the [mgaertne/minqlx fork](https://github.com/MinoMino/minqlx/compare/master...mgaertne:minqlx:master), available for plugins to hook.
 - **[Factory](https://dngrtech.github.io/qlsm/operations/edit-configs/#factories) file management** — select which factory files deploy to each instance.
 - **[Presets](../presets/overview.md)** — save a full config/plugin/factory set as a reusable preset. Export/import presets as ZIP archives to backup/restore configuration or move setups between QLSM installs.
 - **[RCON Console](../operations/rcon-console.md)** — send commands and watch live server events in the browser.
-- **Global [RCON Console](https://dngrtech.github.io/qlsm/operations/global-rcon/)** to send one command to many instances at once and shows each instance's reply separately.
-- **Logs** — [server logs](../operations/server-logs.md), [chat logs](../operations/chat-logs.md), and [minqlx logs](../operations/minqlx-logs.md) (including rotated archives), searchable.
-- **[Workshop management](https://dngrtech.github.io/qlsm/operations/update-workshop-item/)** — push updates [manually](../operations/update-workshop-item.md) or schedule [automatic restarts](../operations/auto-restart.md) that also pull the latest Steam Workshop content.
+- **Global [RCON Console](https://dngrtech.github.io/qlsm/operations/global-rcon/)** — send one command to many instances at once and shows each instance's reply separately.
+- **Logs Retrieval** — [server logs](../operations/server-logs.md), [chat logs](../operations/chat-logs.md), and [minqlx logs](../operations/minqlx-logs.md) (including rotated archives), searchable.
+- **[Workshop management](https://dngrtech.github.io/qlsm/operations/update-workshop-item/)** — pull Steam Workshop content updates [manually](../operations/update-workshop-item.md) or schedule [automatic restarts](../operations/auto-restart.md) that also pull the latest Steam Workshop content for all deployed instances.
 - **Redis DB selection when deploying an instance** — give each QLDS instance its own DB, or share one DB across instances that need to share plugin state.
 - **[QLFilter](../features/qlfilter.md)** — optional eBPF/XDP anti-DDoS filter that drops reflection garbage before it reaches your QLDS ports.
-- **[99k LAN rate mode](../features/99k-lan-rate.md)** — patches the QLDS LAN-detection function via LD_PRELOAD so every client is treated as LAN, enabling the high-bandwidth rate path. Real improvement for LG-heavy or large CA/FFA servers.
-- **[LD_PRELOAD hooks](../features/hooks.md)** — upload custom native `.so` libraries loaded into each QLDS process at launch. System hooks (like `force_rate.so`) are managed automatically.
 - **[User and API management](../administration/user-management.md)** — multi-user support, API keys, external REST API.
-
+- **minqlx damage hook** — QLSM ships minqlx with the `damage` event/dispatcher backported from the [mgaertne/minqlx fork](https://github.com/MinoMino/minqlx/compare/master...mgaertne:minqlx:master), available for plugins to hook.
+  
 ## Where To Start
 
 - [Add A Host](add-host.md)
