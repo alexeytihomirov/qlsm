@@ -271,6 +271,7 @@ export function useRconCommandRuns({ liveEventsEnabled = true } = {}) {
     const runId = activeRef.current.get(key);
     if (runId && !liveEventsEnabledRef.current) {
       const settledResult = runsRef.current.find((run) => run.id === runId)?.results.find((item) => item.key === key);
+      // !settledResult means activeRef/runsRef are out of sync; treat defensively as settled.
       const settled = !settledResult || SETTLED_STATES.has(settledResult.state);
       if (settled) return; // Idle chatter to a cold target: drop it, don't reopen the run.
     }
