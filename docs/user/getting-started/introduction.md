@@ -2,7 +2,7 @@
 
 QLSM (Quake Live Server Management) is a free, open source web UI for deploying and managing Quake Live dedicated servers without using terminal.
 
-<img width="1312" height="936" alt="qlsm-main" src="https://github.com/user-attachments/assets/764c64af-f618-45ba-93df-dbf7eb9aa7bb" />
+<img width="1312" height="936" alt="qlsm-main" src="https://github.com/user-attachments/assets/f3ebc318-d429-42d3-bbee-aa7fdda3b797" />
 
 ## Three Deployment Modes
 
