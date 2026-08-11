@@ -115,6 +115,26 @@ def test_changed_fresh_identity_promotes_updated_instance_and_logs_once(app):
         assert stored.logs.count(MESSAGE) == 1
 
 
+def test_promotion_preserves_log_committed_after_its_snapshot(app, monkeypatch):
+    with app.app_context():
+        from ui.task_logic import instance_runtime_reconciliation as reconciliation
+
+        instance = _create_instance()
+        snapshot = reconciliation.RuntimeSnapshot(instance.id, InstanceStatus.UPDATED, OLD_ID)
+        concurrent_log = "[manual] Concurrent task log entry\n"
+        monkeypatch.setattr(
+            reconciliation,
+            "_read_runtime_snapshot",
+            _replace_after_snapshot(snapshot, {"logs": concurrent_log}),
+        )
+
+        assert _reconcile(instance, _observation()) == 1
+
+        stored = _stored(instance.id)
+        assert concurrent_log in stored.logs
+        assert stored.logs.count(MESSAGE) == 1
+
+
 def test_changed_fresh_identity_only_advances_running_baseline(app):
     with app.app_context():
         instance = _create_instance(status=InstanceStatus.RUNNING)
@@ -216,6 +236,59 @@ def test_lost_promotion_race_preserves_replaced_baseline(app, monkeypatch):
         )
 
         assert _reconcile(instance, _observation()) == 0
+
+        stored = _stored(instance.id)
+        assert stored.status is InstanceStatus.UPDATED
+        assert stored.runtime_invocation_id == REPLACEMENT_ID
+        assert stored.logs is None
+
+
+@pytest.mark.parametrize(
+    "values, expected_status, expected_baseline",
+    [
+        ({"runtime_invocation_id": REPLACEMENT_ID}, InstanceStatus.UPDATED, REPLACEMENT_ID),
+        ({"status": InstanceStatus.RESTARTING}, InstanceStatus.RESTARTING, None),
+    ],
+)
+def test_lost_null_baseline_race_preserves_task_owned_state(
+    app, monkeypatch, values, expected_status, expected_baseline
+):
+    with app.app_context():
+        from ui.task_logic import instance_runtime_reconciliation as reconciliation
+
+        instance = _create_instance(baseline=None)
+        snapshot = reconciliation.RuntimeSnapshot(instance.id, InstanceStatus.UPDATED, None)
+        monkeypatch.setattr(
+            reconciliation,
+            "_read_runtime_snapshot",
+            _replace_after_snapshot(snapshot, values),
+        )
+
+        assert _reconcile(instance, _observation()) == 0
+
+        stored = _stored(instance.id)
+        assert stored.status is expected_status
+        assert stored.runtime_invocation_id == expected_baseline
+        assert stored.logs is None
+
+
+def test_all_zero_race_closes_its_transaction_without_a_log(app, monkeypatch):
+    with app.app_context():
+        from ui.task_logic import instance_runtime_reconciliation as reconciliation
+
+        instance = _create_instance()
+        snapshot = reconciliation.RuntimeSnapshot(instance.id, InstanceStatus.UPDATED, OLD_ID)
+        rollback = Mock(wraps=db.session.rollback)
+        monkeypatch.setattr(db.session, "rollback", rollback)
+        monkeypatch.setattr(
+            reconciliation,
+            "_read_runtime_snapshot",
+            _replace_after_snapshot(snapshot, {"runtime_invocation_id": REPLACEMENT_ID}),
+        )
+
+        assert _reconcile(instance, _observation()) == 0
+        rollback.assert_called_once()
+        assert not db.session().in_transaction()
 
         stored = _stored(instance.id)
         assert stored.status is InstanceStatus.UPDATED

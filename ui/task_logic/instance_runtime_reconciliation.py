@@ -62,21 +62,21 @@ def _observed_identity(observation):
 def _reconcile_observation(instance_id, observation):
     snapshot = _read_runtime_snapshot(instance_id)
     if snapshot is None or snapshot.status not in ELIGIBLE_STATUSES:
-        return False, False
+        return False, False, False
 
     observed_identity = _observed_identity(observation)
     if snapshot.runtime_invocation_id is None:
         changed = _guarded_runtime_update(
             snapshot, {"runtime_invocation_id": observed_identity}
         )
-        return changed, False
+        return True, changed, False
     if snapshot.runtime_invocation_id == observed_identity:
-        return False, False
+        return False, False, False
     if snapshot.status is InstanceStatus.RUNNING:
         changed = _guarded_runtime_update(
             snapshot, {"runtime_invocation_id": observed_identity}
         )
-        return changed, False
+        return True, changed, False
 
     changed = _guarded_runtime_update(
         snapshot,
@@ -86,16 +86,17 @@ def _reconcile_observation(instance_id, observation):
         },
     )
     if not changed:
-        return False, False
+        return True, False, False
 
-    promoted = db.session.get(QLInstance, snapshot.id)
+    promoted = db.session.get(QLInstance, snapshot.id, populate_existing=True)
     if promoted is not None:
         append_log(promoted, RESTART_CONFIRMED_LOG)
-    return True, True
+    return True, True, True
 
 
 def reconcile_runtime_observations(instances, observations):
     """Apply safe identity reconciliation for one successfully polled host."""
+    attempted = False
     wrote = False
     promotions = 0
     try:
@@ -103,11 +104,16 @@ def reconcile_runtime_observations(instances, observations):
             observation = observations.get(str(instance.port))
             if not observation_has_fresh_status(observation):
                 continue
-            changed, promoted = _reconcile_observation(instance.id, observation)
+            attempted_cas, changed, promoted = _reconcile_observation(
+                instance.id, observation
+            )
+            attempted = attempted or attempted_cas
             wrote = wrote or changed
             promotions += int(promoted)
         if wrote:
             db.session.commit()
+        elif attempted:
+            db.session.rollback()
     except Exception:
         db.session.rollback()
         logger.exception("Failed to reconcile runtime observations")
