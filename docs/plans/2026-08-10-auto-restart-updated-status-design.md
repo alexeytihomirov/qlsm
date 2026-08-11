@@ -231,6 +231,16 @@ No target-host changes, timer redeployment, minqlx plugin updates, or public API
 migration are required. The release must bump `VERSION`, `docs/user/version.json`,
 and `docs/user/releases.md` together.
 
+## Docker Migration Readiness
+
+In Docker Compose, `web` is the sole migration owner (`RUN_MIGRATIONS=true`) and
+has a healthcheck that becomes healthy only after its entrypoint has completed
+database initialization or Alembic upgrade and Gunicorn has started. The
+database-consuming `worker` and `poller` services depend on that healthy `web`
+service, in addition to their Redis readiness requirement. This prevents either
+consumer from loading ORM rows against a pre-migration SQLite schema; unrelated
+services keep their existing startup behavior.
+
 ## Testing
 
 Backend tests cover:
@@ -257,6 +267,8 @@ Backend tests cover:
   overwritten by the guarded write, and no reconciliation log on a lost race.
 - One instance failure not blocking reconciliation of another instance.
 - Database rollback followed by successful retry on a later poll.
+- Compose parsing confirms migration ownership, the web healthcheck, and healthy-web
+  dependencies for the worker and poller.
 
 Frontend tests use fake timers to cover:
 

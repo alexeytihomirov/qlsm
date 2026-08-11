@@ -40,6 +40,15 @@ This document outlines the technical stack, development environment setup, key t
 * **Deployment Target (Instances):** Quake Live Dedicated Server (QLDS) + minqlx installed directly on host (`/home/ql/qlds-{id}`) via Ansible.
 * **Deployment Target (Hosts):** Linux VMs provisioned via Terraform (e.g., on Vultr, GCP).
 
+### Docker migration readiness
+
+Docker Compose assigns database initialization and Alembic upgrades solely to the
+`web` service through `RUN_MIGRATIONS=true`. Its healthcheck is therefore the
+migration-readiness signal: the database-consuming RQ `worker` and status `poller`
+start only after `web` is healthy. This prevents persisted jobs or polling ORM
+loads from observing a pre-migration SQLite schema, while their Redis and host-init
+dependencies remain in place.
+
 ## Architecture Diagram (Reflecting Host Provisioning & Instance Deployment)
 
 ```mermaid

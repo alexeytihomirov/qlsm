@@ -126,6 +126,8 @@ services:
         condition: service_healthy
       host-init:
         condition: service_completed_successfully
+      web:
+        condition: service_healthy
     command: flask rq worker
     volumes:
       - ./data:/app/data
@@ -149,6 +151,11 @@ services:
   # ── Status Poller (game server status polling) ─────────────────────────────
   poller:
     <<: *app
+    depends_on:
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     command: flask run-status-poller
 
   # ── Caddy (reverse proxy + automatic TLS) ─────────────────────────────────

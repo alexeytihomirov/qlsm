@@ -19,6 +19,15 @@
 - Do not start or restart any development server or related process.
 - The legacy `ui/task_logic/ansible_instance_mgmt.py` file already exceeds the repository size limit. Add only the minimal integration call there and keep all new probe/reconciliation logic in focused modules under 300 lines.
 
+## Final review amendment: Docker migration readiness
+
+The Compose `web` service remains the only `RUN_MIGRATIONS=true` migration owner
+and retains its healthcheck. `worker` and `poller` must each depend on `web` with
+`condition: service_healthy` before starting, while retaining their existing Redis
+and host-init dependencies where applicable. Add a focused Compose-parsing pytest
+regression test, validate with `docker compose config --quiet`, and do not add a
+separate migration service or change the entrypoint.
+
 ### Task 1: Persist internal runtime identity metadata
 
 **Files:**
