@@ -1,8 +1,10 @@
 import json
 import io
+import os
 import shlex
 import subprocess
 import sys
+import time
 import types
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -63,7 +65,8 @@ def test_build_probe_covers_all_port_db_pairs_with_one_bounded_ssh_command():
     assert "socket_connect_timeout=1" in script
     assert "socket_timeout=1" in script
     assert "ThreadPoolExecutor(max_workers=min(8, len(ports_dbs)))" in script
-    assert "wait(futures, timeout=2)" in script
+    assert "multiprocessing.Process" in script
+    assert "worker.kill()" in script
     assert "timeout=5" in script
 
 
@@ -117,6 +120,54 @@ def test_remote_probe_bounds_redis_and_preserves_partial_systemd_sibling(monkeyp
     assert systemctl_calls[0][0][2:4] == ["qlds@27960.service", "qlds@27961.service"]
     assert systemctl_calls[0][1]["timeout"] == 5
     assert all(call["socket_connect_timeout"] == call["socket_timeout"] == 1 for call in redis_calls)
+
+
+def test_remote_probe_process_exits_after_redis_deadline_with_blocking_worker(tmp_path):
+    """A blocking Redis worker cannot keep the completed remote probe interpreter alive."""
+    from ui.task_logic.service_runtime import build_runtime_probe_command
+
+    (tmp_path / "redis.py").write_text(
+        "import time\n"
+        "class Redis:\n"
+        "    def __init__(self, **kwargs): self.db = kwargs['db']\n"
+        "    def get(self, key):\n"
+        "        if self.db == 2: time.sleep(5)\n"
+        "        return b'{\"map\": \"campgrounds\"}'\n"
+    )
+    systemctl = tmp_path / "systemctl"
+    systemctl.write_text(
+        "#!/bin/sh\n"
+        "printf 'Id=qlds@27960.service\\nActiveState=active\\n'\n"
+        "printf 'InvocationID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'\n"
+        "printf 'ActiveEnterTimestampMonotonic=1000000\\n'\n"
+        "exit 1\n"
+    )
+    systemctl.chmod(0o755)
+    command = build_runtime_probe_command(_host(), [_instance(27960), _instance(27961)])
+    environment = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "PYTHONPATH": str(tmp_path),
+    }
+    started_at = time.monotonic()
+    process = subprocess.Popen(
+        [sys.executable, "-c", _remote_script(command)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=environment,
+    )
+
+    try:
+        stdout, stderr = process.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        pytest.fail("blocking Redis worker kept the remote probe alive past its deadline")
+
+    assert time.monotonic() - started_at < 2.5
+    assert process.returncode == 0, stderr
+    assert json.loads(stdout)["27960"]["status"] == {"map": "campgrounds"}
 
 
 def test_build_probe_uses_self_host_target_and_never_exposes_plaintext_password(monkeypatch):

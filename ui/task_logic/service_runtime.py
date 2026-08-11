@@ -64,9 +64,11 @@ def _remote_probe_script(ports_dbs, redis_password):
     return f'''import base64
 import json
 import math
+import multiprocessing
+import queue
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import redis
 
@@ -96,17 +98,33 @@ def read_status(port, db):
 
 statuses = {{port: None for port, _ in ports_dbs}}
 if ports_dbs:
-    executor = ThreadPoolExecutor(max_workers=min(8, len(ports_dbs)))
-    futures = {{executor.submit(read_status, port, db): port for port, db in ports_dbs}}
-    done, pending = wait(futures, timeout=2)
-    for future in done:
+    def collect_statuses(status_queue):
+        with ThreadPoolExecutor(max_workers=min(8, len(ports_dbs))) as executor:
+            futures = {{executor.submit(read_status, port, db): port for port, db in ports_dbs}}
+            for future in as_completed(futures):
+                port = futures[future]
+                try:
+                    status = future.result()
+                except Exception:
+                    status = None
+                status_queue.put((port, status))
+        status_queue.put((None, None))
+
+    status_queue = multiprocessing.Queue()
+    worker = multiprocessing.Process(target=collect_statuses, args=(status_queue,), daemon=True)
+    worker.start()
+    redis_deadline = time.monotonic() + 2
+    while time.monotonic() < redis_deadline:
         try:
-            statuses[futures[future]] = future.result()
-        except Exception:
-            pass
-    for future in pending:
-        future.cancel()
-    executor.shutdown(wait=False, cancel_futures=True)
+            port, status = status_queue.get(timeout=redis_deadline - time.monotonic())
+        except queue.Empty:
+            break
+        if port is None:
+            break
+        statuses[port] = status
+    if worker.is_alive():
+        worker.kill()
+    worker.join(timeout=0.1)
 
 units = [f"qlds@{{port}}.service" for port, _ in ports_dbs]
 systemd_stdout = ""
