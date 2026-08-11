@@ -84,18 +84,22 @@ Introduce a focused backend helper that reads `InvocationID`, `ActiveState`, and
 SSH. Inputs use validated integer ports and the host's existing SSH connection
 settings. The remote probe uses one bounded multi-unit `systemctl show` command,
 not one sequential subprocess per port. It converts the monotonic active-enter
-timestamp to a conservative whole-second epoch value using the target host's boot
-time. An identity is usable only when the unit is explicitly `active`, the ID is
-a normalized 32-character hexadecimal value, and the start timestamp is valid.
+timestamp to a conservative whole-second epoch value by sampling
+`time.monotonic()` immediately before `time.time()` on the target. This uses the
+same suspend-exclusive clock domain as systemd and avoids biasing the derived
+start earlier during sampling. An identity is usable only when the unit is
+explicitly `active`, the ID is a normalized 32-character hexadecimal value, and
+the start timestamp is valid.
 
 Redis reads use explicit one-second connect and read timeouts and bounded
 concurrency of at most eight workers. The multi-unit systemd query has a
-five-second timeout, and the containing SSH call has a ten-second deadline: five
-seconds for systemd, up to two seconds for the bounded Redis phase, and three
-seconds for connection and serialization overhead. Missing units and individual
-Redis failures produce partial observations; the remote script still emits valid
-siblings. Empty output, SSH failure, timeout, or malformed host-level output
-returns no host observation rather than aborting the entire poll cycle.
+five-second timeout, and the containing SSH call has a twelve-second deadline:
+three seconds for connection, up to two seconds for the bounded Redis phase,
+five seconds for systemd, plus two seconds of startup, authentication, cleanup,
+and output headroom. Missing units and individual Redis failures produce partial
+observations; the remote script still emits valid siblings. Empty output, SSH
+failure, timeout, or malformed host-level output returns no host observation
+rather than aborting the entire poll cycle.
 
 The regular status poll gathers Redis live status and runtime metadata in the same
 SSH round-trip. Runtime metadata remains internal; only the existing live-status

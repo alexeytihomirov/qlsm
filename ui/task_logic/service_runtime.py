@@ -14,6 +14,11 @@ from ui.task_logic.self_host_network import resolve_self_host_management_target
 
 logger = logging.getLogger(__name__)
 INVOCATION_ID_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+SSH_CONNECT_TIMEOUT = 3
+REDIS_PHASE_TIMEOUT = 2
+SYSTEMD_TIMEOUT = 5
+RUNTIME_PROBE_HEADROOM = 2
+RUNTIME_PROBE_TIMEOUT = SSH_CONNECT_TIMEOUT + REDIS_PHASE_TIMEOUT + SYSTEMD_TIMEOUT + RUNTIME_PROBE_HEADROOM
 
 @dataclass(frozen=True)
 class RuntimeObservation:
@@ -74,10 +79,8 @@ import redis
 
 ports_dbs = {ports_dbs!r}
 redis_password_b64 = {password_b64!r}
-with open("/proc/uptime", encoding="ascii") as uptime_file:
-    uptime_seconds = float(uptime_file.read().split()[0])
-now_epoch = time.time()
-boot_epoch = now_epoch - uptime_seconds
+monotonic_now = time.monotonic()
+wall_now = time.time()
 redis_password = (
     base64.b64decode(redis_password_b64).decode()
     if redis_password_b64 is not None else None
@@ -113,7 +116,7 @@ if ports_dbs:
     status_queue = multiprocessing.Queue()
     worker = multiprocessing.Process(target=collect_statuses, args=(status_queue,), daemon=True)
     worker.start()
-    redis_deadline = time.monotonic() + 2
+    redis_deadline = time.monotonic() + {REDIS_PHASE_TIMEOUT}
     while time.monotonic() < redis_deadline:
         try:
             port, status = status_queue.get(timeout=redis_deadline - time.monotonic())
@@ -143,7 +146,7 @@ if units:
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout={SYSTEMD_TIMEOUT},
         )
         systemd_stdout = result.stdout or ""
     except subprocess.TimeoutExpired as error:
@@ -172,7 +175,7 @@ for port, _ in ports_dbs:
     except (TypeError, ValueError):
         monotonic_usec = 0
     service_started_at = (
-        math.floor(boot_epoch + monotonic_usec / 1_000_000)
+        math.floor(wall_now - monotonic_now + monotonic_usec / 1_000_000)
         if monotonic_usec > 0 else None
     )
     observations[str(port)] = {{
@@ -195,7 +198,7 @@ def build_runtime_probe_command(host, instances, redis_password=None):
         "-p", str(host.ssh_port),
         "-o", "StrictHostKeyChecking=no",
         "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=3",
+        "-o", f"ConnectTimeout={SSH_CONNECT_TIMEOUT}",
         "-l", host.ssh_user,
         _ssh_target_for_host(host),
         f"python3 -c {shlex.quote(script)}",
@@ -263,7 +266,7 @@ def probe_host_runtime(host, instances, redis_password=None):
         logger.warning("Could not build runtime probe for host %s: %s", getattr(host, "name", "?"), exc)
         return None
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=RUNTIME_PROBE_TIMEOUT)
     except subprocess.TimeoutExpired:
         logger.warning("SSH timeout probing runtime on host %s", getattr(host, "ip_address", "?"))
         return None

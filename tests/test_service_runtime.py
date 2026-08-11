@@ -170,6 +170,54 @@ def test_remote_probe_process_exits_after_redis_deadline_with_blocking_worker(tm
     assert json.loads(stdout)["27960"]["status"] == {"map": "campgrounds"}
 
 
+def test_remote_probe_rejects_status_stale_after_suspend_offset(monkeypatch):
+    """Suspend-inclusive uptime must not make an old Redis payload look fresh."""
+    from ui.task_logic.service_runtime import (
+        build_runtime_probe_command,
+        observation_has_fresh_status,
+        parse_runtime_probe_output,
+    )
+
+    printed = []
+    fake_redis = types.ModuleType("redis")
+    fake_time = types.ModuleType("time")
+    fake_time.monotonic = lambda: 200
+    fake_time.time = lambda: 1000
+
+    class FakeRedis:
+        def __init__(self, **kwargs):
+            pass
+
+        def get(self, key):
+            return b'{"updated": 900}'
+
+    def fake_systemctl(command, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=(
+                "Id=qlds@27960.service\nActiveState=active\n"
+                f"InvocationID={'a' * 32}\nActiveEnterTimestampMonotonic=150000000\n"
+            ),
+            stderr="",
+        )
+
+    fake_redis.Redis = FakeRedis
+    monkeypatch.setitem(sys.modules, "redis", fake_redis)
+    monkeypatch.setitem(sys.modules, "time", fake_time)
+    monkeypatch.setattr(subprocess, "run", fake_systemctl)
+    command = build_runtime_probe_command(_host(), [_instance(27960)])
+
+    exec(
+        _remote_script(command),
+        {"__name__": "runtime_probe", "open": lambda *_args, **_kwargs: io.StringIO("300.0 0.0"), "print": printed.append},
+    )
+
+    observation = parse_runtime_probe_output(printed[0])["27960"]
+
+    assert observation.service_started_at == 950
+    assert observation_has_fresh_status(observation) is False
+
+
 def test_build_probe_uses_self_host_target_and_never_exposes_plaintext_password(monkeypatch):
     """A self-host probe must reach its management target without leaking secrets."""
     from ui.task_logic import service_runtime
@@ -270,9 +318,16 @@ def test_fresh_status_requires_valid_active_identity_and_post_start_integer_upda
 
 
 @patch(f"{MODULE}.subprocess.run")
-def test_probe_host_runtime_uses_ten_second_ssh_budget_and_returns_observations(mock_run):
-    """The local round trip must be bounded while returning a successful host map."""
-    from ui.task_logic.service_runtime import probe_host_runtime
+def test_probe_host_runtime_uses_composed_budget_with_cleanup_headroom(mock_run):
+    """The host deadline must leave two seconds beyond its three inner phases."""
+    from ui.task_logic.service_runtime import (
+        REDIS_PHASE_TIMEOUT,
+        RUNTIME_PROBE_HEADROOM,
+        RUNTIME_PROBE_TIMEOUT,
+        SSH_CONNECT_TIMEOUT,
+        SYSTEMD_TIMEOUT,
+        probe_host_runtime,
+    )
 
     mock_run.return_value = SimpleNamespace(
         returncode=0,
@@ -283,7 +338,13 @@ def test_probe_host_runtime_uses_ten_second_ssh_budget_and_returns_observations(
     observations = probe_host_runtime(_host(), [_instance()])
 
     assert observations["27960"].invocation_id == "a" * 32
-    assert mock_run.call_args.kwargs["timeout"] == 10
+    assert (SSH_CONNECT_TIMEOUT, REDIS_PHASE_TIMEOUT, SYSTEMD_TIMEOUT) == (3, 2, 5)
+    assert RUNTIME_PROBE_HEADROOM == 2
+    assert RUNTIME_PROBE_TIMEOUT == 12
+    assert RUNTIME_PROBE_TIMEOUT == (
+        SSH_CONNECT_TIMEOUT + REDIS_PHASE_TIMEOUT + SYSTEMD_TIMEOUT + RUNTIME_PROBE_HEADROOM
+    )
+    assert mock_run.call_args.kwargs["timeout"] == RUNTIME_PROBE_TIMEOUT
 
 
 @pytest.mark.parametrize(

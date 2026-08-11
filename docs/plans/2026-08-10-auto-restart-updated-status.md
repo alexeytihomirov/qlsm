@@ -155,7 +155,8 @@ Create focused tests for:
 - No plaintext password in the SSH command.
 - Exactly one multi-unit `systemctl show` call for every validated unit on a host.
 - Explicit one-second Redis connect/read timeouts, at most eight concurrent Redis
-  workers, a five-second systemd deadline, and a ten-second outer SSH deadline.
+  workers, a five-second systemd deadline, and a twelve-second outer SSH deadline
+  with two seconds of startup/authentication/cleanup/output headroom.
 - A valid observation containing `status`, an active unit, a normalized
   32-character invocation ID, and a whole-second service start time.
 - Inactive, missing, or malformed units yielding no usable invocation identity
@@ -223,7 +224,8 @@ Build one remote Python command per host. Validate every port as an integer and
 every Redis DB with `resolve_redis_db()` before constructing unit names. The remote
 script must:
 
-1. Read `/proc/uptime` and `time.time()` once to derive the host boot epoch.
+1. Sample `time.monotonic()` immediately before `time.time()` once, deriving the
+   epoch offset from the same suspend-exclusive clock domain systemd uses.
 2. Read Redis DBs with a `ThreadPoolExecutor(max_workers=min(8, len(ports)))`.
    Each client sets `socket_connect_timeout=1` and `socket_timeout=1`; each Redis
    failure becomes `status=None` for that port.
@@ -251,13 +253,13 @@ script must:
    observation per requested port even when `systemctl` reports a missing unit or
    exits nonzero after printing valid sibling records. Convert a positive
    `ActiveEnterTimestampMonotonic` value to
-   `floor(boot_epoch + monotonic_usec / 1_000_000)`.
+   `floor(wall_now - monotonic_now + monotonic_usec / 1_000_000)`.
 
 Encode the Redis password before embedding it in the remote script. Quote the
 completed script with `shlex.quote`; never interpolate unvalidated user strings
-into the unit name. The local SSH subprocess uses `timeout=10`, a budget composed
-of the five-second systemd deadline, no more than two seconds for concurrent Redis
-work, and three seconds for connection and output overhead.
+into the unit name. The local SSH subprocess uses `timeout=12`: three seconds
+for connection, no more than two seconds for concurrent Redis work, five seconds
+for systemd, and two seconds of startup/authentication/cleanup/output headroom.
 
 Normalize invocation IDs with:
 

@@ -243,7 +243,7 @@ qlsm/
 
 ### Live Status and Workshop Preview
 1. `serverchecker` plugin on each game instance writes live status to Redis key `minqlx:server_status:<port>`. For self hosts, minqlx uses the shared QLSM Redis with a per-instance DB resolved by `ui.constants.resolve_redis_db()` (chosen at creation, or derived from `port - 27959` if not).
-2. Poller (`ui/task_logic/server_status_poll.py`) SSHes hosts, reads per-instance status, and internally reads each systemd unit's invocation identity, active state, and service start time before writing management Redis keys `server:status:<host_id>:<instance_id>`.
+2. Poller (`ui/task_logic/server_status_poll.py`) SSHes hosts, reads per-instance status, and internally reads each systemd unit's invocation identity, active state, and service start time before writing management Redis keys `server:status:<host_id>:<instance_id>`. The shared runtime probe converts `ActiveEnterTimestampMonotonic` with target-host `time.monotonic()` sampled immediately before `time.time()`, preserving systemd's suspend-exclusive clock domain. Its 12-second SSH deadline reserves 3 seconds for connection, 2 for Redis, 5 for systemd, and 2 for startup, authentication, cleanup, and output.
 3. Frontend polls `GET /api/server-status` for live map/player/state data.
 4. Status payload now includes `workshop_item_id` when the current map can be resolved to a workshop item.
 5. Frontend may call `GET /api/server-status/workshop-preview/<workshop_id>` to resolve/cached Steam `preview_url`.
