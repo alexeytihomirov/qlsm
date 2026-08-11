@@ -53,7 +53,8 @@ def test_force_update_workshop_success_no_restarts(app, mock_run_playbook, mock_
         assert updated_inst1.status == InstanceStatus.UPDATED
         
         updated_inst2 = get_instance(inst2_id)
-        assert updated_inst2.status == InstanceStatus.UPDATED
+        assert updated_inst2.status == InstanceStatus.STOPPED
+        assert 'service left stopped' in updated_inst2.logs
 
 
 def test_force_update_workshop_success_with_restarts(app, mock_run_playbook, mock_get_current_job, mock_restart_instance_queue):
@@ -86,8 +87,8 @@ def test_force_update_workshop_success_with_restarts(app, mock_run_playbook, moc
         assert updated_inst1.status == InstanceStatus.RESTARTING
         
         updated_inst2 = get_instance(inst2_id)
-        assert updated_inst2.status == InstanceStatus.UPDATED # Didn't restart
-        assert 'Not restarting because instance was stopped' in updated_inst2.logs
+        assert updated_inst2.status == InstanceStatus.STOPPED # Didn't restart
+        assert 'service left stopped' in updated_inst2.logs
 
 
 def test_force_update_workshop_ansible_failure(app, mock_run_playbook, mock_get_current_job, mock_restart_instance_queue):

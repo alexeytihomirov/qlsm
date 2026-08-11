@@ -7,10 +7,31 @@ from flask import current_app
 from ui import rq
 from ui.models import HostStatus, InstanceStatus
 from ui.database import get_host, update_host, get_instance, update_instance
+from . import service_runtime
 from .ansible_runner import _run_host_ansible_playbook
 
 
 log = logging.getLogger(__name__)
+
+
+def _capture_pending_baselines(host, instances):
+    try:
+        baselines = service_runtime.probe_host_invocation_ids(host, instances)
+    except Exception:
+        current_app.logger.warning(
+            "Workshop update succeeded, but runtime baseline capture failed for host %s",
+            host.id,
+            exc_info=True,
+        )
+        return {}
+    if not isinstance(baselines, dict):
+        current_app.logger.warning(
+            "Workshop update succeeded without runtime baselines for host %s",
+            host.id,
+        )
+        return {}
+    return baselines
+
 
 def force_update_workshop_logic(host_id, workshop_id, restart_instance_ids):
     host = get_host(host_id)
@@ -54,32 +75,41 @@ def force_update_workshop_logic(host_id, workshop_id, restart_instance_ids):
             current_app.logger.info(f"Workshop item {workshop_id} updated on {host.name}.")
             update_host(host.id, status=HostStatus.ACTIVE, logs=f"Workshop item {workshop_id} updated.\n{original_host_logs}")
 
+            pending_instances = [
+                instance for instance in host.instances
+                if (
+                    original_instance_states[instance.id]["status"] != InstanceStatus.STOPPED
+                    and instance.id not in restart_instance_ids
+                )
+            ]
+            baselines = (
+                _capture_pending_baselines(host, pending_instances)
+                if pending_instances else {}
+            )
+
             # Now handle instances
             from ui.tasks import restart_instance
             for instance in host.instances:
                 orig_state = original_instance_states[instance.id]["status"]
 
-                if instance.id in restart_instance_ids:
-                    # If it was stopped, we agreed auto-restart from UI shouldn't be processed,
-                    # but just in case it sneaks through, we skip restarting STOPPED instances.
-                    if orig_state == InstanceStatus.STOPPED:
-                        update_instance(
-                            instance.id,
-                            status=InstanceStatus.UPDATED,
-                            logs=f"Workshop {workshop_id} updated. Not restarting because instance was stopped.\n{original_instance_states[instance.id]['logs']}"
-                        )
-                    else:
-                        update_instance(
-                            instance.id,
-                            status=InstanceStatus.RESTARTING,
-                            logs=f"Workshop {workshop_id} updated. Queuing restart...\n{original_instance_states[instance.id]['logs']}"
-                        )
-                        restart_instance.queue(instance.id)
+                if orig_state == InstanceStatus.STOPPED:
+                    update_instance(
+                        instance.id,
+                        status=InstanceStatus.STOPPED,
+                        logs=f"Workshop {workshop_id} updated while stopped; service left stopped.\n{original_instance_states[instance.id]['logs']}"
+                    )
+                elif instance.id in restart_instance_ids:
+                    update_instance(
+                        instance.id,
+                        status=InstanceStatus.RESTARTING,
+                        logs=f"Workshop {workshop_id} updated. Queuing restart...\n{original_instance_states[instance.id]['logs']}"
+                    )
+                    restart_instance.queue(instance.id)
                 else:
-                    # No restart requested.
                     update_instance(
                         instance.id,
                         status=InstanceStatus.UPDATED,
+                        runtime_invocation_id=baselines.get(str(instance.port)),
                         logs=f"Workshop {workshop_id} updated.\n{original_instance_states[instance.id]['logs']}"
                     )
             return True
