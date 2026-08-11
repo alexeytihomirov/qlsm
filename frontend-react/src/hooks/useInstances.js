@@ -5,7 +5,18 @@ import { useNotification } from '../components/NotificationProvider';
 import { useLoading } from '../contexts/LoadingContext'; // Import useLoading
 
 export const POLLING_INTERVAL = 3000; // 3 seconds
+export const UPDATED_POLLING_INTERVAL = 30000; // 30 seconds
 export const POLLABLE_INSTANCE_STATUSES = ['deploying', 'deleting', 'restarting', 'configuring', 'stopping', 'starting'];
+
+export function getInstancePollingInterval(instances) {
+  if (instances.some(instance => POLLABLE_INSTANCE_STATUSES.includes(instance.status))) {
+    return POLLING_INTERVAL;
+  }
+  if (instances.some(instance => instance.status === 'updated')) {
+    return UPDATED_POLLING_INTERVAL;
+  }
+  return null;
+}
 
 export function useInstances() {
   const [instances, setInstances] = useState([]);
@@ -56,16 +67,16 @@ export function useInstances() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Ensure initial fetch runs only once on mount
 
-  const shouldPoll = useMemo(
-    () => instances.some(instance => POLLABLE_INSTANCE_STATUSES.includes(instance.status)),
+  const pollingInterval = useMemo(
+    () => getInstancePollingInterval(instances),
     [instances]
   );
 
   useEffect(() => {
-    if (!shouldPoll) return;
-    const intervalId = setInterval(() => refreshInstances(false), POLLING_INTERVAL);
+    if (pollingInterval === null) return undefined;
+    const intervalId = setInterval(() => refreshInstances(false), pollingInterval);
     return () => clearInterval(intervalId);
-  }, [shouldPoll, refreshInstances]);
+  }, [pollingInterval, refreshInstances]);
 
   const handleDeleteRequest = (instanceId, instanceName) => {
     setSelectedInstance({ id: instanceId, name: instanceName });
