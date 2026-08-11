@@ -8,6 +8,7 @@ from flask import current_app
 from ui import db
 from ui.models import Host, HostStatus, InstanceStatus
 from ui.task_logic.common import append_log
+from ui.task_logic.instance_runtime_reconciliation import reconcile_runtime_observations
 from ui.task_logic.service_runtime import RuntimeObservation, probe_host_runtime
 
 
@@ -85,7 +86,11 @@ def poll_all_hosts():
             continue
         total_instances += len(running)
         poll_result = _fetch_and_cache_host(host, running, redis_client)
-        if host.status == HostStatus.ERROR and poll_result and poll_result.active_count:
+        if poll_result is None:
+            continue
+        reconcile_runtime_observations(running, poll_result.observations)
+        active_count = poll_result.active_count
+        if host.status == HostStatus.ERROR and active_count:
             try:
                 host.status = HostStatus.ACTIVE
                 append_log(host, "Recovered automatically: status poll succeeded after ERROR.")

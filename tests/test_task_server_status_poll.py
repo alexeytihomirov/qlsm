@@ -121,6 +121,33 @@ def test_poll_all_hosts_skips_no_running_instances(mock_host_class, mock_fetch):
     mock_fetch.assert_not_called()
 
 
+@patch(f"{POLL_MODULE}.reconcile_runtime_observations")
+@patch(f"{POLL_MODULE}._fetch_and_cache_host")
+@patch(f"{POLL_MODULE}.Host")
+def test_poll_all_hosts_reconciles_completed_host_observations(
+    mock_host_class, mock_fetch, mock_reconcile
+):
+    """Reconciliation runs only after a successful host probe/cache cycle."""
+    from flask import Flask
+    from ui.task_logic.server_status_poll import HostPollResult, poll_all_hosts
+
+    instance = _make_instance()
+    instance.status = InstanceStatus.UPDATED
+    host = _make_host()
+    host.status = HostStatus.ACTIVE
+    host.instances = [instance]
+    observations = {"27960": RuntimeObservation({"updated": 2}, "a" * 32, True, 1)}
+    mock_host_class.query.filter.return_value.all.return_value = [host]
+    mock_fetch.return_value = HostPollResult(active_count=1, observations=observations)
+    app = Flask(__name__)
+    app.extensions["redis"] = MagicMock()
+
+    with app.app_context():
+        poll_all_hosts()
+
+    mock_reconcile.assert_called_once_with([instance], observations)
+
+
 @patch(f"{POLL_MODULE}._fetch_and_cache_host")
 @patch(f"{POLL_MODULE}.Host")
 def test_poll_all_hosts_no_redis(mock_host_class, mock_fetch):
