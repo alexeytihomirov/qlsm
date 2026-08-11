@@ -792,10 +792,10 @@ Set `VERSION` to:
 1.26.1
 ```
 
-Set `docs/user/version.json` `latest` to `1.26.1`. Add a top release row dated `2026-08-10` with PR `—` unless the actual PR number is already known:
+Set `docs/user/version.json` `latest` to `1.26.1`. Add a top release row dated `2026-08-11` with PR `—` unless the actual PR number is already known:
 
 ```markdown
-| `v1.26.1` | 2026-08-10 | — | Clear an instance's `UPDATED` status after QLSM confirms that its service restarted and resumed live status, including scheduled host auto-restarts. |
+| `v1.26.1` | 2026-08-11 | — | Clear an instance's `UPDATED` status after QLSM confirms that its service restarted and resumed live status, including scheduled host auto-restarts. |
 ```
 
 Before editing, re-read all three version files. If `main` has advanced and the branch has been rebased, bump the then-current patch version instead; the three values must remain identical.
@@ -828,16 +828,16 @@ git commit -m "docs: explain runtime-confirmed status updates"
 
 **Step 1: Run backend verification**
 
-Run:
+Run focused local verification:
 
 ```bash
 pytest tests/test_runtime_invocation_model.py tests/test_service_runtime.py tests/test_instance_runtime_reconciliation.py tests/test_task_server_status_poll.py tests/test_task_apply_config.py tests/test_task_apply_config_runtime_baseline.py tests/test_task_workshop_runtime_baseline.py tests/test_task_ansible_workshop_update.py tests/test_backup_db_serializers.py -v
-pytest tests/
 python3 -m py_compile ui/task_logic/service_runtime.py ui/task_logic/instance_runtime_reconciliation.py ui/task_logic/server_status_poll.py ui/task_logic/ansible_instance_mgmt.py ui/task_logic/ansible_workshop_update.py
 .venv/bin/flask db heads
 ```
 
-Expected: all tests PASS, compilation succeeds, and exactly one migration head is reported.
+Expected: the focused tests PASS, compilation succeeds, and exactly one migration
+head is reported. Leave the full `pytest tests/` suite to PR CI.
 
 **Step 2: Run frontend verification**
 
@@ -909,27 +909,24 @@ git status --short
 
 Expected: branch is `bug/auto-restart-updated-status` and the worktree is clean.
 
-**Step 2: Push and open a pull request**
+**Step 2: Push the branch**
 
-Push the branch and create a PR targeting `main`. Include the status-transition matrix and verification commands in the PR body.
+Push the branch so it is available for user review:
 
 ```bash
 git push -u origin bug/auto-restart-updated-status
-gh pr create --base main --title "Fix UPDATED status after scheduled restarts" --body "## Summary
-- track each QLDS service runtime with systemd InvocationID
-- clear UPDATED only after a new invocation resumes live status
-- preserve fast polling for QLSM-managed restarts and add slow UPDATED refreshes
-
-## Test plan
-- pytest tests/
-- cd frontend-react && pnpm test
-- cd frontend-react && pnpm lint
-- cd frontend-react && pnpm build"
 ```
 
-**Step 3: Stop before merge**
+**Step 3: Wait for user instruction before opening a pull request**
 
-Report the PR URL to the user and wait for explicit merge approval. Do not enable auto-merge and do not run `gh pr merge` until the user clearly asks for it.
+Stop after pushing and ask the user whether to open a pull request. Only after
+explicit instruction, create a PR targeting `main` and include the status-transition
+matrix and verification commands in its body. Never enable auto-merge or run
+`gh pr merge` until the user clearly asks for it.
+
+**Step 4: Stop before merge**
+
+If a PR was opened, report its URL and wait for explicit merge approval.
 
 ---
 **Review loop closed:** 2026-08-10

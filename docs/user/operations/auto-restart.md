@@ -46,6 +46,12 @@ If timezone is wrong, restart happens at the wrong local time.
 1. Confirm host timezone in host details.
 2. Reopen the auto-restart modal and confirm mode/time.
 3. After first schedule window, verify instances came back healthy.
+4. For an instance previously marked **Updated**, verify that it returns to **Running**, its service unit is active, and the new service invocation publishes a live-status payload after startup.
+
+QLSM may take roughly 45 seconds in the worst case to show the confirmed status
+(up to 15 seconds for the backend poll plus 30 seconds for the settled frontend
+refresh). If a runtime probe fails, QLSM retries without changing the status; an
+instance that was already **Stopped** remains stopped.
 
 ## Related Pages
 
