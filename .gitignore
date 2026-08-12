@@ -1,4 +1,8 @@
-# Ignore everything
+# STRICT ALLOWLIST: everything is ignored by default. Each section below
+# un-ignores (`!`) exactly what should be tracked. Do NOT add explicit deny
+# lines for paths that are simply never allow-listed (e.g. docs/plans/) —
+# they're already ignored by the section's blanket `dir/*` rule. Deny lines
+# are only for re-ignoring generated files *inside* an allow-listed dir.
 *
 .*
 

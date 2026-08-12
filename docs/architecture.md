@@ -224,8 +224,8 @@ qlsm/
 1. User edits config, plugins, or factories → `PUT /api/instances/<id>/config`
 2. Managed config and factory maps are synced in `configs/<host>/<id>/`; plugin changes are committed from a draft workspace when `draft_id` is provided
 3. RQ task queued → `apply_instance_config_logic()`
-4. Ansible `sync_instance_configs_and_restart.yml` → Syncs configs and restarts
-5. Instance status → RUNNING
+4. Ansible `sync_instance_configs_and_restart.yml` → Syncs configs and restarts only when requested or required
+5. With a restart, the task transitions the instance to RUNNING promptly after Ansible completes. Without a restart, the instance is marked UPDATED and retains a runtime baseline until a later restart is confirmed.
 
 ### Server Log Retrieval
 1. Independent of any UI request, a host-side `qlsm-archive-serverlogs.timer` runs every 5 minutes and exports new journald entries for each `qlds@<port>.service` into `/home/ql/qlds-<port>/serverlogs/server.log`, tracked with a per-instance journald cursor. journald remains the log sink; the QLDS service unit template is unchanged, so no instance restart is needed for archiving to take effect. The same run applies a logrotate policy that rotates `server.log` daily or at 10 MB, keeping 90 dated, compressed archives.
@@ -243,10 +243,21 @@ qlsm/
 
 ### Live Status and Workshop Preview
 1. `serverchecker` plugin on each game instance writes live status to Redis key `minqlx:server_status:<port>`. For self hosts, minqlx uses the shared QLSM Redis with a per-instance DB resolved by `ui.constants.resolve_redis_db()` (chosen at creation, or derived from `port - 27959` if not).
-2. Poller (`ui/task_logic/server_status_poll.py`) SSHes hosts, reads per-instance status, and writes to management Redis keys `server:status:<host_id>:<instance_id>`.
+2. Poller (`ui/task_logic/server_status_poll.py`) SSHes hosts, reads per-instance status, and internally reads each systemd unit's invocation identity, active state, and service start time before writing management Redis keys `server:status:<host_id>:<instance_id>`. The shared runtime probe converts `ActiveEnterTimestampMonotonic` with target-host `time.monotonic()` sampled immediately before `time.time()`, preserving systemd's suspend-exclusive clock domain. Its 12-second SSH deadline reserves 3 seconds for connection, 2 for Redis, 5 for systemd, and 2 for startup, authentication, cleanup, and output.
 3. Frontend polls `GET /api/server-status` for live map/player/state data.
 4. Status payload now includes `workshop_item_id` when the current map can be resolved to a workshop item.
 5. Frontend may call `GET /api/server-status/workshop-preview/<workshop_id>` to resolve/cached Steam `preview_url`.
+
+When an instance is UPDATED, reconciliation requires an active invocation identity
+different from the stored baseline and a live-status payload whose integer `updated`
+timestamp is strictly later than that invocation's service start time. The database
+write is conditional on both the expected UPDATED status and the unchanged baseline,
+so probe failures retry safely and cannot overwrite a newer operation. QLSM-managed
+or manual QLSM restarts still return the instance to RUNNING promptly after Ansible;
+scheduled or external systemd restarts are promoted after the new invocation reports
+live status. A stopped instance remains STOPPED.
+The backend poll runs every 15 seconds and settled UPDATED instances refresh in the
+frontend every 30 seconds, so confirmed visibility can take roughly 45 seconds.
 
 ### Global Backup & Restore
 

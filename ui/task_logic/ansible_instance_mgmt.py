@@ -7,6 +7,7 @@ import shutil
 import time
 import subprocess
 from pathlib import Path
+from flask import current_app
 from rq import get_current_job
 
 # Import database and models - requires app context
@@ -14,6 +15,7 @@ from ui import db
 from ui.constants import resolve_redis_db
 from ui.models import QLInstance, InstanceStatus, Host # Need Host for cleanup path
 from .common import append_log # Import from the common module
+from . import service_runtime
 from .ansible_runner import _run_ansible_playbook
 from .cpu_affinity import ensure_instance_cpu_affinity
 from .self_host_network import is_self_host, with_self_host_network_extravars
@@ -640,6 +642,24 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
                      final_status = InstanceStatus.UPDATED
 
             append_log(instance, f"Task finished successfully. {status_msg} Status: {final_status.value}.")
+
+            if final_status == InstanceStatus.UPDATED:
+                try:
+                    baseline = service_runtime.probe_instance_invocation_id(instance)
+                except Exception:
+                    current_app.logger.warning(
+                        "Configuration synced, but runtime baseline capture failed for "
+                        "instance %s",
+                        instance.id,
+                        exc_info=True,
+                    )
+                    baseline = None
+                if baseline is None:
+                    current_app.logger.warning(
+                        "Configuration synced without a runtime baseline for instance %s",
+                        instance.id,
+                    )
+                instance.runtime_invocation_id = baseline
 
             instance.status = final_status
             db.session.commit()

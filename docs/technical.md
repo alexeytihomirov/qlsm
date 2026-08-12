@@ -40,6 +40,15 @@ This document outlines the technical stack, development environment setup, key t
 * **Deployment Target (Instances):** Quake Live Dedicated Server (QLDS) + minqlx installed directly on host (`/home/ql/qlds-{id}`) via Ansible.
 * **Deployment Target (Hosts):** Linux VMs provisioned via Terraform (e.g., on Vultr, GCP).
 
+### Docker migration readiness
+
+Docker Compose assigns database initialization and Alembic upgrades solely to the
+`web` service through `RUN_MIGRATIONS=true`. Its healthcheck is therefore the
+migration-readiness signal: the database-consuming RQ `worker` and status `poller`
+start only after `web` is healthy. This prevents persisted jobs or polling ORM
+loads from observing a pre-migration SQLite schema, while their Redis and host-init
+dependencies remain in place.
+
 ## Architecture Diagram (Reflecting Host Provisioning & Instance Deployment)
 
 ```mermaid
@@ -180,7 +189,7 @@ QLSM reserves Redis `DB 0`; minqlx instances use `DB 1..8` (Redis ships 16 datab
 `DB 1..8` is selectable at instance creation via the optional `redis_db` field; it defaults to the port-derived value (`port - REDIS_DB_PORT_OFFSET`) and there is no edit path afterward. `QLInstance.redis_db` is nullable — `NULL` means "derive from the port," which is how every pre-existing instance behaves. `ui.constants.resolve_redis_db(instance)` is the single function that resolves either case; both `ui/task_logic/ansible_instance_mgmt.py` and `ui/task_logic/server_status_poll.py` call it rather than re-deriving the formula.
 Self-host minqlx services receive `qlx_redisAddress`, `qlx_redisPassword`, and `qlx_redisDatabase` explicitly at deploy time.
 
-**QLInstance Model:** Represents a Quake Live server instance running on a specific `Host`.
+**QLInstance Model:** Represents a Quake Live server instance running on a specific `Host`. A private service-runtime baseline is persisted for safe `UPDATED` reconciliation; it is excluded from the API and backups and is not user-configurable.
 
 ```python
 class QLInstance(db.Model):
@@ -258,6 +267,7 @@ The project uses pytest for testing, with fixtures defined in `tests/conftest.py
 -   **Playbook Execution:** Playbooks are executed via direct `subprocess` calls to the `ansible-playbook` CLI within RQ background tasks defined in `ui/tasks.py`, which call logic functions within the `ui/task_logic/` package.
     -   **Host Setup (`ui/task_logic/ansible_host_setup.py`):** The `setup_host_ansible_logic` function (called by the `setup_host_ansible` task, which is enqueued by `provision_host_logic` in `ui/task_logic/terraform_provision.py` after successful Terraform apply) executes `setup_host.yml` targeting the new host's IP using the generated SSH key.
     -   **Instance Management (`ui/task_logic/ansible_instance_mgmt.py`):** Functions like `deploy_instance_logic`, `restart_instance_logic`, `delete_instance_logic` execute the relevant playbooks (`add_qlds_instance.yml`, `manage_qlds_service.yml`). They retrieve host details (IP, user, key path) from the associated `Host` object in the database and pass necessary instance-specific information (like `id`, `port`, `qlds_args`, `host_name`) as extra variables (`-e`). The core playbook execution is handled by a helper in `ui/task_logic/ansible_runner.py`.
+    -   **Runtime Status Polling (`ui/task_logic/server_status_poll.py`):** Periodically probes each host for live Redis status and systemd runtime identity, active state, and service start time. `ui/task_logic/service_runtime.py` samples target-host `time.monotonic()` immediately before `time.time()` to convert systemd's suspend-exclusive `ActiveEnterTimestampMonotonic` to epoch seconds. Its SSH deadline is 12 seconds: 3 for connection, 2 for Redis, 5 for systemd, and 2 for startup/authentication/cleanup/output headroom. `ui/task_logic/instance_runtime_reconciliation.py` conditionally promotes `UPDATED` only after a new invocation reports post-start live status.
     -   **QLFilter Management (`ui/task_logic/ansible_qlfilter_mgmt.py`):** Functions like `install_qlfilter_logic`, `uninstall_qlfilter_logic`, `check_qlfilter_status_logic` execute the QLFilter-related playbooks, targeting a specific host.
 -   **QLDS Service Management Playbook (`manage_qlds_service.yml`):** Manages the `qlds@<id>.service` systemd service on the target host using the `ansible/templates/qlds@.service.j2` template.
     *   **Purpose:** Start, stop, restart, enable, disable, delete service file, or query the status of a specific QLDS instance service. Ensures persistence and allows dynamic command-line arguments.

@@ -40,6 +40,15 @@ Use **Upload** when you want to bring in an existing file from another server. U
 - If **Restart after saving** is enabled, QLSM syncs the updated config to the instance and immediately restarts it, so the new config is applied right away.
 - If **Restart after saving** is disabled, QLSM still pushes and syncs the updated config to the instance, but it is not applied until that instance is restarted later.
 
+When restart is skipped, the instance remains **Updated** until QLSM confirms that
+the service has started a new runtime and that runtime has reported live status.
+This applies to both configuration saves and Workshop updates and also covers the
+next scheduled auto-restart. An instance that was already stopped remains
+**Stopped** after a no-restart Workshop update.
+
+When a managed or manual restart is requested through QLSM, the instance returns
+to **Running** promptly after Ansible completes.
+
 ## Managed `server.cfg` Cvars
 
 QLSM applies several runtime cvars outside the raw `server.cfg` text during deploy, restart, and config apply.

@@ -74,14 +74,14 @@ def _make_host():
 
 
 def test_status_poll_uses_stored_redis_db(test_app):
-    from ui.task_logic.server_status_poll import _build_ssh_command
+    from ui.task_logic.service_runtime import build_runtime_probe_command
     host = _make_host()
-    command = _build_ssh_command(host, [_make_instance(port=27961, redis_db=6)])
+    command = build_runtime_probe_command(host, [_make_instance(port=27961, redis_db=6)])
     assert '(27961, 6)' in ' '.join(command)
 
 
 def test_status_poll_falls_back_to_port_derivation(test_app):
-    from ui.task_logic.server_status_poll import _build_ssh_command
+    from ui.task_logic.service_runtime import build_runtime_probe_command
     host = _make_host()
-    command = _build_ssh_command(host, [_make_instance(port=27961, redis_db=None)])
+    command = build_runtime_probe_command(host, [_make_instance(port=27961, redis_db=None)])
     assert '(27961, 2)' in ' '.join(command)
