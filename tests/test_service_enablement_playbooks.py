@@ -38,3 +38,34 @@ def test_sync_restart_enables_unit():
     task = _find_task(tasks, "Restart QLDS service")
     systemd = task["ansible.builtin.systemd"]
     assert systemd.get("enabled") is True, "restart task must re-enable the unit"
+
+
+def test_hook_path_cleanup_runs_regardless_of_firewall_mode():
+    """Standalone/self hosts run in 'helper' firewall mode (see
+    uses_helper_firewall() in self_host_network.py), never 'full'. Gating
+    legacy-NAT-rule cleanup on firewall_mode_effective == 'full' means it
+    silently never runs for them, leaving a stale PREROUTING DNAT rule that
+    black-holes all inbound game traffic once route_localnet isn't enabled
+    on the real NIC (see: Slaughterhouse incident, 2026-08-12). This must
+    stay mode-agnostic like update_instance_hooks.yml's equivalent cleanup.
+    """
+    tasks = _load_tasks("manage_qlds_service.yml")
+    for name in (
+        "Check if PREROUTING DNAT legacy rule exists (hook path cleanup)",
+        "Remove PREROUTING DNAT legacy rule (hook path cleanup)",
+        "Check if POSTROUTING SNAT legacy rule exists (hook path cleanup)",
+        "Remove POSTROUTING SNAT legacy rule (hook path cleanup)",
+        "Check if INPUT SNAT legacy rule exists (hook path cleanup)",
+        "Remove INPUT SNAT legacy rule (hook path cleanup)",
+    ):
+        task = _find_task(tasks, name)
+        when = task["when"]
+        assert "firewall_mode_effective == 'full'" not in when, (
+            f"{name!r} must not require full firewall mode: {when}"
+        )
+        assert any("lan_rate_uses_hook" in cond for cond in when), (
+            f"{name!r} must still gate on lan_rate_uses_hook: {when}"
+        )
+
+    persist = _find_task(tasks, "Persist iptables after legacy rule cleanup (hook path)")
+    assert "firewall_mode_effective == 'full'" not in persist["when"]

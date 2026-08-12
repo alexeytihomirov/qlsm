@@ -97,6 +97,15 @@ if [ -s "$TMP_DIR/lan_rate_udp_ports" ]; then
   "$SYSCTL" -w net.ipv4.conf.all.route_localnet=1
   "$SYSCTL" -w net.ipv4.conf.default.route_localnet=1
   "$SYSCTL" -w net.ipv4.conf.lo.route_localnet=1
+  # conf.all is only a template for interfaces created *after* it's set --
+  # existing interfaces (the real NIC packets DNAT'd to 127.0.0.1 arrive on)
+  # keep their own value, which defaults to 0. Without this the kernel treats
+  # the post-DNAT 127.0.0.1 destination as martian and silently drops the
+  # packet on that interface, even though iptables already accepted it.
+  DEFAULT_IFACE="$(ip route | awk '/^default/ {print $5; exit}')"
+  if [ -n "$DEFAULT_IFACE" ]; then
+    "$SYSCTL" -w "net.ipv4.conf.${DEFAULT_IFACE}.route_localnet=1"
+  fi
 fi
 
 # Build nat table ruleset and apply atomically — no gap where chains are empty
