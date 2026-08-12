@@ -149,3 +149,6 @@ ui/qlds.db
 ui/tasks.py.backup
 ui/tasks.py.new
 frontend-react/tools/tailwindcss
+docs/plans/
+docs/findings/
+docs/assess-review-findings/
