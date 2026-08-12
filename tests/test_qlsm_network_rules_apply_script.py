@@ -19,11 +19,13 @@ def test_script_enables_route_localnet_on_the_detected_default_interface():
     content = SCRIPT.read_text()
 
     assert "ip route" in content, "script must detect the real default interface"
-    assert 'route_localnet=1' in content
 
-    all_idx = content.index("net.ipv4.conf.all.route_localnet")
-    iface_idx = content.index("route_localnet=1", content.index("DEFAULT_IFACE"))
-    assert iface_idx > all_idx, (
-        "per-interface route_localnet must be set (in addition to all/default/lo), "
-        "otherwise DNAT-to-loopback silently drops on the real NIC"
+    # Pin the actual interpolated sysctl call, not just that both substrings
+    # appear somewhere in the file -- a refactor that keeps "DEFAULT_IFACE"
+    # and "route_localnet=1" around but drops the interpolation between them
+    # would still pass a looser ordering-only check.
+    assert 'net.ipv4.conf.${DEFAULT_IFACE}.route_localnet=1' in content, (
+        "must set route_localnet on the detected interface itself (in addition "
+        "to all/default/lo), otherwise DNAT-to-loopback silently drops on the "
+        "real NIC"
     )

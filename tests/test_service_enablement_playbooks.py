@@ -68,4 +68,9 @@ def test_hook_path_cleanup_runs_regardless_of_firewall_mode():
         )
 
     persist = _find_task(tasks, "Persist iptables after legacy rule cleanup (hook path)")
+    # persist["when"] is a folded scalar string (needs and/or, not just AND-list
+    # membership like the tasks above), so these are substring checks.
     assert "firewall_mode_effective == 'full'" not in persist["when"]
+    assert "lan_rate_uses_hook" in persist["when"], (
+        "persist task must still gate on lan_rate_uses_hook: {}".format(persist["when"])
+    )
