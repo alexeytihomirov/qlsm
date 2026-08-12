@@ -117,9 +117,12 @@ if ports_dbs:
     worker = multiprocessing.Process(target=collect_statuses, args=(status_queue,), daemon=True)
     worker.start()
     redis_deadline = time.monotonic() + {REDIS_PHASE_TIMEOUT}
-    while time.monotonic() < redis_deadline:
+    while True:
+        remaining = redis_deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
-            port, status = status_queue.get(timeout=redis_deadline - time.monotonic())
+            port, status = status_queue.get(timeout=remaining)
         except queue.Empty:
             break
         if port is None:

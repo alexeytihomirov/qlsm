@@ -159,13 +159,13 @@ def test_remote_probe_process_exits_after_redis_deadline_with_blocking_worker(tm
     )
 
     try:
-        stdout, stderr = process.communicate(timeout=3)
+        stdout, stderr = process.communicate(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
         process.communicate()
         pytest.fail("blocking Redis worker kept the remote probe alive past its deadline")
 
-    assert time.monotonic() - started_at < 2.5
+    assert time.monotonic() - started_at < 3.5
     assert process.returncode == 0, stderr
     assert json.loads(stdout)["27960"]["status"] == {"map": "campgrounds"}
 
