@@ -2,11 +2,7 @@
 
 📚 **[User Guide →](https://dngrtech.github.io/qlsm/)** · [Issues](https://github.com/dngrtech/qlsm/issues)
 
-
-
-https://github.com/user-attachments/assets/05f1c3d2-6851-423d-9731-067e35c27ed9
-
-
+![QLSM demo — Servers page, editing an instance's config, plugins, factories, and hooks](docs/user/videos/edit-instance-config-demo.gif)
 
 Features:
 - Three deployment modes (Debian 12 and Ubuntu 22 are tested, Debian 12 is recommended):
