@@ -2,6 +2,8 @@
 
 📚 **[User Guide →](https://dngrtech.github.io/qlsm/)** · [Issues](https://github.com/dngrtech/qlsm/issues)
 
+<video src="docs/user/videos/edit-instance-config-demo.mp4" controls width="1280"></video>
+
 Features:
 - Three deployment modes (Debian 12 and Ubuntu 22 are tested, Debian 12 is recommended):
   * QLSM self-deployment: run QLDS instances on the same machine as QLSM
@@ -35,11 +37,6 @@ Features:
 - Per-user host/instance ordering and expanded-state preferences stored in browser local storage
 
 Everything runs over SSH via Ansible.
-
-
-<video src="docs/user/videos/edit-instance-config-demo.mp4" controls width="1280"></video>
-
-
 
 ## Stack
 
