@@ -69,9 +69,10 @@ class namesplus(minqlx.Plugin):
 
         # Enforce admin-set names if qlx_enforceAdminName is enabled
         if self.get_cvar("qlx_enforceAdminName", bool) and name_key in self.db:
-            changed["name"] = self.db[name_key]  # Restore admin-set name
+            stored_name = self.db[name_key]
+            changed["name"] = stored_name  # Restore admin-set name
             player.name = stored_name  # Force name update immediately
-            player.tell(f"^3Your name has been updated to: {self.db[name_key]}")  # Notify player
+            player.tell(f"^3Your name has been updated to: {stored_name}")  # Notify player
             return changed
 
         # Regular name handling
@@ -79,9 +80,10 @@ class namesplus(minqlx.Plugin):
             if name_key not in self.db:
                 self.steam_names[player.steam_id] = self.clean_text(changed["name"])
             elif self.steam_names.get(player.steam_id) == self.clean_text(changed["name"]):
-                changed["name"] = self.db[name_key]
+                stored_name = self.db[name_key]
+                changed["name"] = stored_name
                 player.name = stored_name  # Force name update immediately
-                player.tell(f"^3Your name has been updated to: {self.db[name_key]}")  # Notify player
+                player.tell(f"^3Your name has been updated to: {stored_name}")  # Notify player
                 return changed
             else:
                 del self.db[name_key]

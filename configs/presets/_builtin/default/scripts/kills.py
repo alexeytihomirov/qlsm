@@ -909,14 +909,14 @@ class kills(minqlx.Plugin):
         kill_categories = ["speedkill", "highspeed", "airpummel", "pummeled", "grenaded",
                            "rocket", "plasma", "airrail", "telefrag", "teamtelefrag"]
         for kill in kill_categories:
-            for key in self.db.keys("minqlx:players:*:{}:*".format(kill)):
+            for key in self.db.scan_iter("minqlx:players:*:{}:*".format(kill)):
                 split_key = key.split(":")
                 if len(split_key) != 5:
                     continue
                 if split_key[2][0] != "9":
                     self.db[PLAYER_KEY.format(split_key[2]) + ":" + kill + ":" + split_key[4]] = self.db[key]
                 del self.db[key]
-            for old in self.db.keys("minqlx:players:*:{}".format(kill)):
+            for old in self.db.scan_iter("minqlx:players:*:{}".format(kill)):
                 del self.db[old]
 
     def kills_version(self, player, msg, channel):
