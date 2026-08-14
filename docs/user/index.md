@@ -2,6 +2,8 @@
 
 QLSM is a free, open source web UI for deploying and managing Quake Live dedicated servers without using a terminal. Flask backend, React frontend, Ansible for automation, Terraform for provisioning.
 
+![](videos/edit-instance-config-demo.webp)
+
 ## Start here
 
 - **[What Is QLSM?](getting-started/introduction.md)** — deployment modes, feature overview, where to go next.
