@@ -5,6 +5,8 @@ instance's reply separately.
 
 Open it from **GLOBAL RCON** in the top navigation, or go to `/global-rcon`.
 
+![Global RCON demo](../videos/global-rcon-demo.webp)
+
 ## Selecting targets
 
 The **Targets** pane lists your hosts and their instances.
