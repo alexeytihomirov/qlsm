@@ -7,9 +7,9 @@ function InstanceOptionsRow({
   lanRateEnabled, onLanRateChange,
   lanRateDisabled = false,
   lanRateUnavailableReason = null,
-  autoGeneratePasswords, onAutoGeneratePasswordsChange,
-  zmqStatsPassword, onZmqStatsPasswordChange,
-  zmqRconPassword, onZmqRconPasswordChange,
+  autoGeneratePasswords = true, onAutoGeneratePasswordsChange,
+  zmqStatsPassword = '', onZmqStatsPasswordChange,
+  zmqRconPassword = '', onZmqRconPasswordChange,
   passwordErrors = {},
 }) {
   const inputClass = (hasError) => (

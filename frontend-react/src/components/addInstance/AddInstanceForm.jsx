@@ -890,6 +890,13 @@ function AddInstanceForm({
     });
     setIsFullScreenEditorOpen(true);
   }, []);
+  // Re-enabling auto-generate disables the password inputs, so any validation
+  // errors on them are no longer actionable -- clear them with the toggle.
+  const handleAutoGeneratePasswordsChange = useCallback((enabled) => {
+    setAutoGeneratePasswords(enabled);
+    if (enabled) setPasswordErrors({});
+  }, []);
+
   const handleCloseFullScreenEditor = useCallback(() => { setIsFullScreenEditorOpen(false); }, []);
   const handleSaveFullScreenEditor = useCallback((newContent) => {
     if (editingFileDetails.kind === 'plugin') {
@@ -1003,7 +1010,7 @@ function AddInstanceForm({
           lanRateDisabled={!lanRateSupported}
           lanRateUnavailableReason={lanRateUnavailableReason}
           autoGeneratePasswords={autoGeneratePasswords}
-          onAutoGeneratePasswordsChange={setAutoGeneratePasswords}
+          onAutoGeneratePasswordsChange={handleAutoGeneratePasswordsChange}
           zmqStatsPassword={zmqStatsPassword}
           onZmqStatsPasswordChange={setZmqStatsPassword}
           zmqRconPassword={zmqRconPassword}

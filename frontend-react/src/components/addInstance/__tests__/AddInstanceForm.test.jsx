@@ -1381,6 +1381,45 @@ describe('AddInstanceForm draft lifecycle', () => {
       });
     });
 
+    it('clears password errors when auto generate is switched back on', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('password-errors')).toHaveTextContent('is required');
+      });
+
+      // Re-enabling auto generate disables the inputs, so their errors must go
+      // with them -- otherwise the red borders stick to fields nobody can edit.
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+
+      expect(screen.getByTestId('password-errors')).toHaveTextContent('{}');
+    });
+
     it('does not send typed passwords after auto generate is switched back on', async () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined);
 
