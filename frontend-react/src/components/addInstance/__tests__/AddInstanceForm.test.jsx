@@ -162,11 +162,7 @@ vi.mock('../../fileManager', () => ({
 
 vi.mock('../InstanceBasicInfoForm', () => ({
   default: ({
-    lanRateDisabled,
-    lanRateEnabled,
-    lanRateUnavailableReason,
     onHostChange,
-    onLanRateChange,
     onPortChange,
     onRedisDbChange,
     port,
@@ -178,15 +174,27 @@ vi.mock('../InstanceBasicInfoForm', () => ({
       <div data-testid="selected-host">{selectedHostId || 'none'}</div>
       <div data-testid="port">{port || 'none'}</div>
       <div data-testid="redis-db">{redisDb ?? 'none'}</div>
-      <div data-testid="lan-rate-enabled">{String(lanRateEnabled)}</div>
-      <div data-testid="lan-rate-disabled">{String(lanRateDisabled)}</div>
-      <div data-testid="lan-rate-reason">{lanRateUnavailableReason || ''}</div>
       <button type="button" onClick={() => onHostChange('1')}>Select Host 1</button>
       <button type="button" onClick={() => onHostChange('2')}>Select Host 2</button>
       <button type="button" onClick={() => onPortChange('27963')}>Set Port 27963</button>
       <button type="button" onClick={() => onPortChange('27965')}>Set Port 27965</button>
       <button type="button" onClick={() => onRedisDbChange(1)}>Pick Redis DB 1</button>
       <button type="button" onClick={() => onRedisDbChange(7)}>Pick Redis DB 7</button>
+    </div>
+  ),
+}));
+
+vi.mock('../InstanceOptionsRow', () => ({
+  default: ({
+    lanRateDisabled,
+    lanRateEnabled,
+    lanRateUnavailableReason,
+    onLanRateChange,
+  }) => (
+    <div>
+      <div data-testid="lan-rate-enabled">{String(lanRateEnabled)}</div>
+      <div data-testid="lan-rate-disabled">{String(lanRateDisabled)}</div>
+      <div data-testid="lan-rate-reason">{lanRateUnavailableReason || ''}</div>
       <button type="button" onClick={() => onLanRateChange(!lanRateEnabled)}>Toggle 99k</button>
     </div>
   ),

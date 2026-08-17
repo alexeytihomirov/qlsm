@@ -1,5 +1,5 @@
 import { Listbox, Transition } from '@headlessui/react';
-import { Check, ChevronsUpDown, Zap } from 'lucide-react';
+import { Check, ChevronsUpDown } from 'lucide-react';
 import InfoTooltip from '../common/InfoTooltip';
 
 function InstanceBasicInfoForm({
@@ -8,9 +8,6 @@ function InstanceBasicInfoForm({
   port, onPortChange, availablePorts, loadingPorts,
   redisDb, onRedisDbChange, redisDbOptions = [],
   hostname, onHostnameChange,
-  lanRateEnabled, onLanRateChange,
-  lanRateDisabled = false,
-  lanRateUnavailableReason = null,
 }) {
   const listboxBtnClass = 'relative w-full cursor-default rounded py-2 pl-3 pr-10 text-left text-sm border bg-[var(--surface-raised)] border-[var(--surface-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors';
   const listboxOptionsClass = 'absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] py-1 text-sm shadow-xl focus:outline-none scrollbar-thin';
@@ -216,29 +213,6 @@ function InstanceBasicInfoForm({
             {hostname.length} / 64
           </p>
         </div>
-      </div>
-
-      {/* LAN Rate Toggle */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => onLanRateChange(!lanRateEnabled)}
-          className="neu-toggle"
-          aria-pressed={lanRateEnabled}
-          disabled={lanRateDisabled}
-        >
-          <span className="sr-only">Toggle 99k LAN Rate</span>
-          <span className={`neu-toggle__track ${lanRateEnabled ? 'neu-toggle__track--on' : 'neu-toggle__track--off'}`}>
-            <span className={`neu-toggle__knob ${lanRateEnabled ? 'neu-toggle__knob--on' : 'neu-toggle__knob--off'}`} />
-          </span>
-        </button>
-        <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--text-primary)]">
-          <Zap size={16} className={`mr-1 ${lanRateEnabled ? 'text-[var(--accent-warning)]' : 'text-[var(--text-muted)]'}`} />
-          <span>99k LAN Rate</span>
-          {lanRateUnavailableReason && (
-            <InfoTooltip text={lanRateUnavailableReason} variant="danger" size={14} />
-          )}
-        </span>
       </div>
     </>
   );

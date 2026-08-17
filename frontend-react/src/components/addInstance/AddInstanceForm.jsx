@@ -5,6 +5,7 @@ import { python } from '@codemirror/lang-python';
 import { getAvailablePortsForHost, getFactoryContent, getFactoryTree, getPresetById, getPresets, savePreset, updatePreset } from '../../services/api';
 import { getBinaryMeta, saveBinaryMeta, uploadDraftHook, deleteDraftHook } from '../../services/draftApi';
 import InstanceBasicInfoForm from './InstanceBasicInfoForm';
+import InstanceOptionsRow from './InstanceOptionsRow';
 import { buildRedisDbOptions, nextFreeRedisDb } from './redisDbOptions';
 import HooksTab from '../instances/HooksTab';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
@@ -968,7 +969,8 @@ function AddInstanceForm({
   return (
     <form onSubmit={localHandleSubmit} className="flex flex-col flex-grow min-h-0 pt-4">
       <div className="flex-shrink-0 mb-6">
-        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} lanRateEnabled={lanRateEnabled} onLanRateChange={setLanRateEnabled} lanRateDisabled={!lanRateSupported} lanRateUnavailableReason={lanRateUnavailableReason} />
+        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} />
+        <InstanceOptionsRow lanRateEnabled={lanRateEnabled} onLanRateChange={setLanRateEnabled} lanRateDisabled={!lanRateSupported} lanRateUnavailableReason={lanRateUnavailableReason} />
       </div>
       <div className="flex flex-col flex-grow min-h-0 mb-2">
         {/* Show loaded preset indicator */}
