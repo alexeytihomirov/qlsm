@@ -302,6 +302,8 @@ Example success response:
   "hostname": "My Duel Server",
   "lan_rate_enabled": false,
   "redis_db": 3,
+  "zmq_stats_password": "Kp3-xR_9vT=2wQ",
+  "zmq_rcon_password": "aB7_zQ2-mN4kLp",
   "configs": {
     "server.cfg": "...",
     "mappool.txt": "...",
@@ -329,6 +331,8 @@ Example success response:
 `enabled_hooks` is an optional list of `.so` filenames (typically a preset's `enabled_hooks`) to enable in LD_PRELOAD order. QLSM filters it to hook files that actually exist in the instance's `user-hooks/` directory after the draft copy step and fully replaces `ld_preload_hooks` with the filtered list — filenames that don't correspond to a copied hook file are silently dropped, never surfaced as an error.
 
 `redis_db` is an optional integer, range 1-8 (`MAX_INSTANCES_PER_HOST`). Omitted means the instance's Redis DB is derived from its port at read time (`resolve_redis_db()`), matching every instance created before this field existed. Out-of-range or non-integer values are rejected with 400. Duplicates on the same host are allowed — there is no uniqueness check, since sharing a DB across instances is a deliberate, supported choice. Selection happens only at creation; there is no path to change it afterward.
+
+`zmq_stats_password` and `zmq_rcon_password` are optional. When both are omitted or blank, QLSM generates them at deploy time, which is the behavior of every instance created before these fields existed. When supplied they are stored on the instance at creation and the deploy-time generator leaves them untouched. Both must be supplied together — sending only one is rejected with 400. Each must be 8 to 64 characters drawn from letters, digits, `-`, `_`, and `=`; that is the same alphabet QLSM's generator uses, chosen because a wider set gets mangled by the shell, Ansible extra-vars, or Quake argument parsing on the way to the systemd unit. The two values are allowed to be identical.
 
 ### Update LAN Rate Request
 ```json

@@ -18,6 +18,7 @@ from ui.database import (
 )
 from ui.tasks import deploy_instance, apply_instance_config, restart_instance, stop_instance, start_instance, delete_instance as delete_instance_task, reconfigure_instance_lan_rate, enqueue_task
 from ui.task_logic.job_failure_handlers import instance_job_failure_handler
+from ui.task_logic.zmq_utils import validate_zmq_password
 from ui.task_lock import acquire_lock, release_lock
 from ui.config_path_utils import (
     RESERVED_CONFIG_FOLDER_NAMES,
@@ -308,6 +309,26 @@ def add_instance_api():
     if redis_db_err:
         return jsonify({"error": {"message": redis_db_err}}), 400
 
+    zmq_stats_password, stats_pwd_err = validate_zmq_password(
+        data.get('zmq_stats_password'), 'ZMQ Stats Password'
+    )
+    if stats_pwd_err:
+        return jsonify({"error": {"message": stats_pwd_err}}), 400
+
+    zmq_rcon_password, rcon_pwd_err = validate_zmq_password(
+        data.get('zmq_rcon_password'), 'ZMQ RCON Password'
+    )
+    if rcon_pwd_err:
+        return jsonify({"error": {"message": rcon_pwd_err}}), 400
+
+    # Both or neither -- a half-manual pair would silently auto-generate the
+    # other half, which is not what the operator asked for.
+    if bool(zmq_stats_password) != bool(zmq_rcon_password):
+        missing = 'ZMQ RCON Password' if zmq_stats_password else 'ZMQ Stats Password'
+        return jsonify({"error": {"message": (
+            f"{missing} is required when the other ZMQ password is set manually."
+        )}}), 400
+
     # Basic validation
     if not name or not host_id or not port or not hostname:
         return jsonify({"error": {"message": "Name, Host ID, Port, and Server Hostname are required."}}), 400
@@ -374,7 +395,8 @@ def add_instance_api():
         instance = create_instance(
             name=name, host_id=host_id_int, port=port_int, hostname=hostname,
             lan_rate_enabled=bool(lan_rate_enabled), qlx_plugins=qlx_plugins,
-            redis_db=redis_db
+            redis_db=redis_db, zmq_stats_password=zmq_stats_password,
+            zmq_rcon_password=zmq_rcon_password
         )
 
         # --- Save submitted config content to files ---

@@ -162,11 +162,7 @@ vi.mock('../../fileManager', () => ({
 
 vi.mock('../InstanceBasicInfoForm', () => ({
   default: ({
-    lanRateDisabled,
-    lanRateEnabled,
-    lanRateUnavailableReason,
     onHostChange,
-    onLanRateChange,
     onPortChange,
     onRedisDbChange,
     port,
@@ -178,16 +174,43 @@ vi.mock('../InstanceBasicInfoForm', () => ({
       <div data-testid="selected-host">{selectedHostId || 'none'}</div>
       <div data-testid="port">{port || 'none'}</div>
       <div data-testid="redis-db">{redisDb ?? 'none'}</div>
-      <div data-testid="lan-rate-enabled">{String(lanRateEnabled)}</div>
-      <div data-testid="lan-rate-disabled">{String(lanRateDisabled)}</div>
-      <div data-testid="lan-rate-reason">{lanRateUnavailableReason || ''}</div>
       <button type="button" onClick={() => onHostChange('1')}>Select Host 1</button>
       <button type="button" onClick={() => onHostChange('2')}>Select Host 2</button>
       <button type="button" onClick={() => onPortChange('27963')}>Set Port 27963</button>
       <button type="button" onClick={() => onPortChange('27965')}>Set Port 27965</button>
       <button type="button" onClick={() => onRedisDbChange(1)}>Pick Redis DB 1</button>
       <button type="button" onClick={() => onRedisDbChange(7)}>Pick Redis DB 7</button>
+    </div>
+  ),
+}));
+
+vi.mock('../InstanceOptionsRow', () => ({
+  default: ({
+    autoGeneratePasswords,
+    lanRateDisabled,
+    lanRateEnabled,
+    lanRateUnavailableReason,
+    onAutoGeneratePasswordsChange,
+    onLanRateChange,
+    onZmqRconPasswordChange,
+    onZmqStatsPasswordChange,
+    passwordErrors,
+    zmqRconPassword,
+    zmqStatsPassword,
+  }) => (
+    <div>
+      <div data-testid="lan-rate-enabled">{String(lanRateEnabled)}</div>
+      <div data-testid="lan-rate-disabled">{String(lanRateDisabled)}</div>
+      <div data-testid="lan-rate-reason">{lanRateUnavailableReason || ''}</div>
+      <div data-testid="auto-generate-passwords">{String(autoGeneratePasswords)}</div>
+      <div data-testid="stats-password">{zmqStatsPassword}</div>
+      <div data-testid="rcon-password">{zmqRconPassword}</div>
+      <div data-testid="password-errors">{JSON.stringify(passwordErrors || {})}</div>
       <button type="button" onClick={() => onLanRateChange(!lanRateEnabled)}>Toggle 99k</button>
+      <button type="button" onClick={() => onAutoGeneratePasswordsChange(!autoGeneratePasswords)}>Toggle Auto Passwords</button>
+      <button type="button" onClick={() => onZmqStatsPasswordChange('Kp3-xR_9vT=2wQ')}>Set Valid Stats Password</button>
+      <button type="button" onClick={() => onZmqRconPasswordChange('aB7_zQ2-mN4kLp')}>Set Valid Rcon Password</button>
+      <button type="button" onClick={() => onZmqStatsPasswordChange('bad pass!')}>Set Invalid Stats Password</button>
     </div>
   ),
 }));
@@ -1203,6 +1226,274 @@ describe('AddInstanceForm draft lifecycle', () => {
 
       await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
       expect(screen.getByTestId('redis-db')).toHaveTextContent('1');
+    });
+  });
+
+  describe('ZMQ password entry', () => {
+    it('defaults to auto generate and omits both passwords from the payload', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      mocks.getAvailablePortsForHost.mockResolvedValue({ available_ports: [27963] });
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [{ id: 1, name: 'host-one', os_type: 'debian' }],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      expect(screen.getByTestId('auto-generate-passwords')).toHaveTextContent('true');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Select Host 1' }));
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: 'Set Port 27963' }));
+      await waitFor(() => expect(screen.getByTestId('port')).toHaveTextContent('27963'));
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0];
+      expect(submitted).not.toHaveProperty('zmq_stats_password');
+      expect(submitted).not.toHaveProperty('zmq_rcon_password');
+    });
+
+    it('includes both passwords in the payload when auto generate is off', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+      fireEvent.click(screen.getByText('Set Valid Stats Password'));
+      fireEvent.click(screen.getByText('Set Valid Rcon Password'));
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0];
+      expect(submitted.zmq_stats_password).toBe('Kp3-xR_9vT=2wQ');
+      expect(submitted.zmq_rcon_password).toBe('aB7_zQ2-mN4kLp');
+    });
+
+    it('blocks submit and surfaces an error when a manual password is invalid', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+      fireEvent.click(screen.getByText('Set Invalid Stats Password'));
+      fireEvent.click(screen.getByText('Set Valid Rcon Password'));
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(screen.getAllByText(/may only contain/).length).toBeGreaterThan(0);
+      });
+      expect(screen.getByTestId('password-errors')).toHaveTextContent('may only contain');
+    });
+
+    it('blocks submit when auto generate is off and the fields are empty', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(screen.getAllByText(/is required when Auto Generate Passwords is off/).length).toBeGreaterThan(0);
+      });
+    });
+
+    it('clears password errors when auto generate is switched back on', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('password-errors')).toHaveTextContent('is required');
+      });
+
+      // Re-enabling auto generate disables the inputs, so their errors must go
+      // with them -- otherwise the red borders stick to fields nobody can edit.
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+
+      expect(screen.getByTestId('password-errors')).toHaveTextContent('{}');
+    });
+
+    it('does not send typed passwords after auto generate is switched back on', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+      fireEvent.click(screen.getByText('Set Valid Stats Password'));
+      fireEvent.click(screen.getByText('Set Valid Rcon Password'));
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+
+      expect(screen.getByTestId('stats-password')).toHaveTextContent('Kp3-xR_9vT=2wQ');
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0];
+      expect(submitted).not.toHaveProperty('zmq_stats_password');
+    });
+
+    it('does not write passwords into a saved preset', async () => {
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [{ id: 1, name: 'deb-host', os_type: 'debian' }],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+          }}
+          initialHostId={1}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+
+      fireEvent.click(screen.getByText('Toggle Auto Passwords'));
+      fireEvent.click(screen.getByText('Set Valid Stats Password'));
+
+      fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+
+      await waitFor(() => expect(mocks.savePreset).toHaveBeenCalledTimes(1));
+      const savedPreset = mocks.savePreset.mock.calls[0][0];
+      expect(savedPreset).not.toHaveProperty('zmq_stats_password');
+      expect(savedPreset).not.toHaveProperty('zmq_rcon_password');
+      expect(savedPreset).not.toHaveProperty('auto_generate_passwords');
     });
   });
 });

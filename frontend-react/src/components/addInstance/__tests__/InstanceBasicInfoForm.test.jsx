@@ -27,10 +27,10 @@ vi.mock('../../common/InfoTooltip', () => ({
 }));
 
 describe('InstanceBasicInfoForm', () => {
-  it('renders the Ubuntu lan rate reason in the shared tooltip slot', () => {
+  it('renders the instance name field and the host selector', () => {
     render(
       <InstanceBasicInfoForm
-        name=""
+        name="my-server"
         onNameChange={vi.fn()}
         selectedHostId="2"
         onHostChange={vi.fn()}
@@ -41,14 +41,13 @@ describe('InstanceBasicInfoForm', () => {
         loadingPorts={false}
         hostname=""
         onHostnameChange={vi.fn()}
-        lanRateEnabled={false}
-        onLanRateChange={vi.fn()}
-        lanRateDisabled={true}
-        lanRateUnavailableReason="99k LAN rate is not compatible with Ubuntu."
       />
     );
 
-    expect(screen.getByText('99k LAN Rate')).toBeInTheDocument();
-    expect(screen.getByTestId('lan-rate-tooltip')).toHaveTextContent('99k LAN rate is not compatible with Ubuntu.');
+    expect(screen.getByDisplayValue('my-server')).toBeInTheDocument();
+    // The mocked Transition always renders Listbox.Options regardless of
+    // open state, so the host name appears both in the selected-value
+    // display and in the options list -- assert on the first match.
+    expect(screen.getAllByText('ubu-host')[0]).toBeInTheDocument();
   });
 });
