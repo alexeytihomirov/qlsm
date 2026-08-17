@@ -33,6 +33,7 @@ import {
   getLanRateUnsupportedMessage,
   isLanRateSupported,
 } from '../../utils/lanRateCompatibility';
+import { validateZmqPassword } from '../../utils/zmqPassword';
 
 const CONFIG_FILES = ['server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt'];
 const NET_PORT_REGEX = /^(set\s+net_port\s+").*(".*)/m;
@@ -135,6 +136,10 @@ function AddInstanceForm({
   const [redisDb, setRedisDb] = useState(1);
   const [hostname, setHostname] = useState('');
   const [lanRateEnabled, setLanRateEnabled] = useState(false);
+  const [autoGeneratePasswords, setAutoGeneratePasswords] = useState(true);
+  const [zmqStatsPassword, setZmqStatsPassword] = useState('');
+  const [zmqRconPassword, setZmqRconPassword] = useState('');
+  const [passwordErrors, setPasswordErrors] = useState({});
   const [configContents, setConfigContents] = useState(() => normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap()));
   const [availablePorts, setAvailablePorts] = useState([]);
   const [loadingPorts, setLoadingPorts] = useState(false);
@@ -472,6 +477,9 @@ function AddInstanceForm({
       port !== initialPortRef.current ||
       hostname !== initialHostnameRef.current ||
       lanRateEnabled !== initialLanRateEnabledRef.current ||
+      !autoGeneratePasswords ||
+      zmqStatsPassword !== '' ||
+      zmqRconPassword !== '' ||
       JSON.stringify(configContents) !== JSON.stringify(initialConfigContentsRef.current) ||
       configsHaveChanges ||
       factoriesHaveChanges ||
@@ -480,6 +488,7 @@ function AddInstanceForm({
       hooksChanged;
     if (onDirtyStateChange) onDirtyStateChange(isDirty);
   }, [
+    autoGeneratePasswords,
     checkedPlugins,
     configContents,
     configsHaveChanges,
@@ -492,6 +501,8 @@ function AddInstanceForm({
     pluginsHaveChanges,
     port,
     selectedHostId,
+    zmqRconPassword,
+    zmqStatsPassword,
   ]);
 
   // Track if loaded preset has been modified
@@ -908,6 +919,17 @@ function AddInstanceForm({
     if (serverCfgHasLintErrors) { setInternalFormError("Please fix errors in server.cfg before submitting."); return; }
     setInternalFormError(null);
 
+    if (!autoGeneratePasswords) {
+      const statsError = validateZmqPassword(zmqStatsPassword, 'ZMQ Stats Password');
+      const rconError = validateZmqPassword(zmqRconPassword, 'ZMQ RCON Password');
+      if (statsError || rconError) {
+        setPasswordErrors({ stats: statsError, rcon: rconError });
+        setInternalFormError(statsError || rconError);
+        return;
+      }
+    }
+    setPasswordErrors({});
+
     if (pluginsManagerRef.current?.flushEdits) {
       await pluginsManagerRef.current.flushEdits();
     }
@@ -925,6 +947,11 @@ function AddInstanceForm({
       checked_plugins: checkedPluginNames,
       qlx_plugins: checkedPluginNames.join(', '),
     };
+
+    if (!autoGeneratePasswords) {
+      submitData.zmq_stats_password = zmqStatsPassword.trim();
+      submitData.zmq_rcon_password = zmqRconPassword.trim();
+    }
 
     if (pluginDraftId) {
       submitData.draft_id = pluginDraftId;
@@ -970,7 +997,19 @@ function AddInstanceForm({
     <form onSubmit={localHandleSubmit} className="flex flex-col flex-grow min-h-0 pt-4">
       <div className="flex-shrink-0 mb-6">
         <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} />
-        <InstanceOptionsRow lanRateEnabled={lanRateEnabled} onLanRateChange={setLanRateEnabled} lanRateDisabled={!lanRateSupported} lanRateUnavailableReason={lanRateUnavailableReason} />
+        <InstanceOptionsRow
+          lanRateEnabled={lanRateEnabled}
+          onLanRateChange={setLanRateEnabled}
+          lanRateDisabled={!lanRateSupported}
+          lanRateUnavailableReason={lanRateUnavailableReason}
+          autoGeneratePasswords={autoGeneratePasswords}
+          onAutoGeneratePasswordsChange={setAutoGeneratePasswords}
+          zmqStatsPassword={zmqStatsPassword}
+          onZmqStatsPasswordChange={setZmqStatsPassword}
+          zmqRconPassword={zmqRconPassword}
+          onZmqRconPasswordChange={setZmqRconPassword}
+          passwordErrors={passwordErrors}
+        />
       </div>
       <div className="flex flex-col flex-grow min-h-0 mb-2">
         {/* Show loaded preset indicator */}
