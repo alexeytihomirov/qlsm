@@ -36,12 +36,15 @@ Optional fields:
 
 - [**99k LAN Rate**](../features/99k-lan-rate.md) (toggle)
 - **Redis DB** (dropdown)
+- **Auto Generate Passwords** (checkbox, on by default)
 
 `99k LAN Rate` controls LAN-rate profile for the instance.
 Changing this later from the actions menu triggers reconfigure/restart.
 Reference: [Instance Actions Menu](../operations/instance-actions-menu.md)
 
 `Redis DB` is a dropdown listing every DB from 1 to 8 for the selected host. An info icon next to a DB number means another instance on the host already uses it. Picking it anyway is fine if you want the two instances to share plugin state.
+
+`Auto Generate Passwords` is on by default and means QLSM picks the instance's ZMQ stats and RCON passwords for you when it deploys. Turn it off to type your own — useful when an external stats collector or RCON client already expects a known password. Both fields are then required, and each must be 8 to 64 characters using only letters, digits, `-`, `_`, and `=`. Other characters are rejected because they get mangled on the way to the game server's launch arguments. You can read either password back at any time from the instance details panel.
 
 ## Main Tabs In Deploy Form
 
