@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 import string
 
@@ -18,6 +19,39 @@ def generate_zmq_rcon_password(length=14):
     safe_punctuation = '-_='
     alphabet = string.ascii_letters + string.digits + safe_punctuation
     return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
+ZMQ_PASSWORD_MIN_LENGTH = 8
+ZMQ_PASSWORD_MAX_LENGTH = 64
+# Mirrors the generator's alphabet above. Anything wider risks being mangled by
+# the shell, Ansible extra-vars, or Quake arg parsing on the way to ExecStart.
+ZMQ_PASSWORD_PATTERN = re.compile(r'^[A-Za-z0-9\-_=]+$')
+ZMQ_PASSWORD_ALLOWED_DESCRIPTION = 'letters, digits, and - _ ='
+
+
+def validate_zmq_password(raw, label):
+    """Validate a user-supplied ZMQ password.
+
+    Returns (value, error). A missing or blank value returns (None, None),
+    meaning "generate one at deploy time" -- the behavior of every instance
+    created before this field existed.
+    """
+    if raw is None:
+        return None, None
+    if not isinstance(raw, str):
+        return None, f"{label} must be a string."
+    value = raw.strip()
+    if not value:
+        return None, None
+    if len(value) < ZMQ_PASSWORD_MIN_LENGTH or len(value) > ZMQ_PASSWORD_MAX_LENGTH:
+        return None, (
+            f"{label} must be between {ZMQ_PASSWORD_MIN_LENGTH} and "
+            f"{ZMQ_PASSWORD_MAX_LENGTH} characters."
+        )
+    if not ZMQ_PASSWORD_PATTERN.match(value):
+        return None, f"{label} may only contain {ZMQ_PASSWORD_ALLOWED_DESCRIPTION}."
+    return value, None
+
 
 def ensure_zmq_rcon_setup(instance):
     """
