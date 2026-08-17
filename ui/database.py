@@ -47,7 +47,8 @@ def get_instance_by_name(name):
 
 # Update create_instance to accept host_id, hostname, and lan_rate_enabled
 def create_instance(name, host_id, port, hostname, lan_rate_enabled=False, config=None,
-                    qlx_plugins=None, redis_db=None):
+                    qlx_plugins=None, redis_db=None, zmq_stats_password=None,
+                    zmq_rcon_password=None):
     """Create a new QL instance."""
     # Ensure host_id is an integer
     host_id_int = int(host_id)
@@ -59,7 +60,9 @@ def create_instance(name, host_id, port, hostname, lan_rate_enabled=False, confi
         lan_rate_enabled=lan_rate_enabled,
         config=config,
         qlx_plugins=qlx_plugins,
-        redis_db=redis_db
+        redis_db=redis_db,
+        zmq_stats_password=zmq_stats_password,
+        zmq_rcon_password=zmq_rcon_password
     )
     db.session.add(instance)
     db.session.commit()
