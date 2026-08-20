@@ -238,7 +238,7 @@ SOUND_PACKS = ["Default Quake Live Sounds", "Prestige Worldwide Soundhonks", "Fu
 ADDITIONAL_SOUNDPACKS = ['doompack.pk3', 'doompack2.pk3']
 
 
-SOUND_PATH_ALLOWED = re.compile(r"^[A-Za-z0-9_./-]+$")
+SOUND_PATH_ALLOWED = re.compile(r"^[A-Za-z0-9_./-]+\Z")
 
 
 def is_safe_sound_path(value):
@@ -248,6 +248,8 @@ def is_safe_sound_path(value):
     reaching console_command() lets the caller append arbitrary commands. Callers of
     !sound are permission-gated, but a moderator should not be silently handed the
     whole console, and a path is a path: letters, digits, dot, slash, dash, underscore.
+
+    Anchored with \\Z rather than $, which also matches just before a trailing newline.
     """
     return bool(value) and bool(SOUND_PATH_ALLOWED.match(value))
 
