@@ -5,6 +5,7 @@ Provides endpoints for browsing, reading, editing, validating, and uploading
 Python scripts used by QLDS instances.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -22,6 +23,33 @@ ALLOWED_EXTENSIONS = {'.py'}
 MAX_FILE_SIZE = 256 * 1024  # 256KB
 CONFIGS_BASE = 'configs'
 SCRIPTS_DIR = 'scripts'
+
+# Per-plugin manifest: <plugin_basename>.ql-plugin.json next to <plugin_basename>.py.
+# Purely optional metadata (label/description/cvars/settings) the Plugins tab
+# uses to enrich a checkbox — never a separate tree row, never required.
+PLUGIN_MANIFEST_SUFFIX = '.ql-plugin.json'
+PLUGIN_MANIFEST_MAX_SIZE = 16 * 1024  # 16KB — metadata only, not a data file
+
+
+def _read_plugin_manifest(script_full_path):
+    """Read+parse the sibling manifest for a plugin .py file, if present and
+    well-formed. Never raises — a bad manifest just means no enrichment,
+    the plugin itself still works as a plain checkbox."""
+    manifest_path = os.path.splitext(script_full_path)[0] + PLUGIN_MANIFEST_SUFFIX
+    if not os.path.isfile(manifest_path):
+        return None
+    try:
+        if os.path.getsize(manifest_path) > PLUGIN_MANIFEST_MAX_SIZE:
+            current_app.logger.warning(f"Plugin manifest too large, ignoring: {manifest_path}")
+            return None
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except (OSError, ValueError) as e:
+        current_app.logger.warning(f"Failed to read plugin manifest {manifest_path}: {e}")
+        return None
 
 
 def _get_scripts_base_path(preset=None, host=None, instance_id=None):
@@ -94,11 +122,15 @@ def _build_file_tree(path, base_path=None, filter_py=True):
         elif os.path.isfile(full_path):
             if filter_py:
                 if entry.endswith('.py'):
-                    items.append({
+                    item = {
                         'name': entry,
                         'type': 'file',
                         'path': relative_path
-                    })
+                    }
+                    manifest = _read_plugin_manifest(full_path)
+                    if manifest is not None:
+                        item['plugin_manifest'] = manifest
+                    items.append(item)
             else:
                 items.append({
                     'name': entry,

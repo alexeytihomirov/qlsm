@@ -10,6 +10,7 @@ import {
   isEnableablePluginPath,
   PLUGIN_HINT_TEXT,
 } from './pluginSelection';
+import { getPluginDescription, getPluginDisplayLabel } from './pluginManifest';
 
 const FILE_TYPE_ICONS = {
   python: Code,
@@ -70,6 +71,10 @@ function TreeItem({
   const hintReason = !isFolder && rootOnly && !showCheckbox
     ? getPluginHintReason(item.path)
     : null;
+  // rootOnlyCheckable is plugin-tab-exclusive (see capabilities.js PLUGIN_CAPS) —
+  // safe signal to only enrich rows there, never Config/Factories tabs.
+  const displayLabel = !isFolder && rootOnly ? getPluginDisplayLabel(item) : item.name;
+  const manifestDescription = !isFolder && rootOnly ? getPluginDescription(item) : null;
   // One hint per open folder, next to its name, instead of one per child row.
   const showFolderHint = isFolder && rootOnly && foldersEnabled && expanded
     && folderHasPluginFiles(item);
@@ -142,7 +147,15 @@ function TreeItem({
             />
           )}
           <Icon className={`w-4 h-4 flex-shrink-0 ${iconColor}`} />
-          <span className={`truncate min-w-0 ${showFolderHint ? '' : 'flex-1'}`}>{item.name}</span>
+          <span className={`truncate min-w-0 ${showFolderHint ? '' : 'flex-1'}`}>{displayLabel}</span>
+          {manifestDescription && (
+            <InfoTooltip
+              text={manifestDescription}
+              size={13}
+              testId={`plugin-manifest-${item.path}`}
+              className="flex-shrink-0"
+            />
+          )}
           {/* Swallowing the click keeps a reach for the hint from collapsing the folder. */}
           {showFolderHint && (
             <span

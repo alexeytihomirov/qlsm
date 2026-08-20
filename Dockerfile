@@ -8,22 +8,18 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Install dependencies (cached layer)
 COPY frontend-react/package.json frontend-react/pnpm-lock.yaml frontend-react/pnpm-workspace.yaml ./
-# pnpm 10+ installs everything but exits non-zero and skips native postinstall
-# scripts (@tailwindcss/oxide, esbuild) unless explicitly approved — the
-# pnpm-workspace.yaml onlyBuiltDependencies allowlist alone does not run them
-# under --frozen-lockfile. `approve-builds --all` runs the pending scripts
-# against the node_modules --frozen-lockfile already populated.
-RUN pnpm install --frozen-lockfile; pnpm approve-builds --all
+# pnpm 10+ blocks native postinstall scripts (@tailwindcss/oxide, esbuild)
+# unless explicitly allowed. onlyBuiltDependencies alone lists which packages
+# *may* run scripts; allowBuilds is what actually grants it non-interactively
+# — both live in pnpm-workspace.yaml (see https://pnpm.io/settings).
+RUN pnpm install --frozen-lockfile
 
 # Build
 COPY VERSION /VERSION
 COPY frontend-react/ .
 # Resolve the public/docs symlink (-> ../../docs/user) at its expected absolute path
 COPY docs/user/ /docs/user/
-# `pnpm build`/`pnpm run` re-verify deps before running any script, re-hitting
-# the same native-postinstall approval gate every time regardless of prior
-# approval. Invoke vite directly (already installed) to skip that preflight.
-RUN pnpm approve-builds --all; node_modules/.bin/vite build
+RUN pnpm build
 
 # ── Stage 2: Application ───────────────────────────────────────────────────────
 FROM python:3.12-slim AS app
