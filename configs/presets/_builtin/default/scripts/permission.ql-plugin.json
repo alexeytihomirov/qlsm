@@ -1,0 +1,4 @@
+{
+  "label": "Permission",
+  "description": "Database-backed !setperm / !getperm / !myperm commands for assigning per-player permission levels (0-5)."
+}

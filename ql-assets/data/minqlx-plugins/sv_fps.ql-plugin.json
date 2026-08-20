@@ -1,0 +1,4 @@
+{
+  "label": "sv_fps Override",
+  "description": "Lets referees change the sv_fps cvar mid-match (it's normally CVAR_ROM and can't be set after the engine boots)."
+}

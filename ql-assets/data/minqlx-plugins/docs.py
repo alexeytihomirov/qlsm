@@ -1,31 +1,32 @@
-# minqlx - A Quake Live server administrator bot.
+# minqlxtended - Extends Quake Live's dedicated server with extra functionality and scripting.
 # Copyright (C) 2015 Mino <mino@minomino.org>
+# Copyright (C) 2024-2026 Thomas Jones <me@thomasjones.id.au>
 
-# This file is part of minqlx.
+# This file is part of minqlxtended.
 
-# minqlx is free software: you can redistribute it and/or modify
+# minqlxtended is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-# minqlx is distributed in the hope that it will be useful,
+# minqlxtended is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
 # You should have received a copy of the GNU General Public License
-# along with minqlx. If not, see <http://www.gnu.org/licenses/>.
+# along with minqlxtended. If not, see <http://www.gnu.org/licenses/>.
 
-import minqlx
+import minqlxtended
 import os.path
+from os import linesep
+from datetime import datetime
+from html import escape
 
-class docs(minqlx.Plugin):
-    def __init__(self):
-        super().__init__()
-        self.add_command("gencmd", self.cmd_gencmd, permission=5, usage="[excluded_plugins]")
-
-    def cmd_gencmd(self, players, msg, channel):
-        """Generate a command list based on currently loaded plugins in markdown."""
+class docs(minqlxtended.Plugin):
+    @minqlxtended.command("gendocs", permission=5, usage="[excluded_plugins]")
+    def cmd_gendocs(self, players, msg, channel):
+        """Generate a command list based on currently loaded plugins in HTML with Twig filtering."""
         if len(msg) > 1:
             excluded = [s.lower() for s in msg[1:]]
         else:
@@ -33,49 +34,59 @@ class docs(minqlx.Plugin):
 
         prefix = self.get_cvar("qlx_commandPrefix")
         cmds = {}
-        for cmd in minqlx.COMMANDS.commands:
+        for cmd in minqlxtended.COMMANDS.commands:
             if cmd.plugin.__class__.__name__ in excluded:  # Skip excluded plugins.
                 continue
 
-            if cmd.permission not in cmds:
-                cmds[cmd.permission] = [cmd]
-            else:
-                cmds[cmd.permission].append(cmd)
+            # The invoker substitutes qlx_perm_<name> for the registered level, keyed on
+            # the primary name, so the published list has to bucket by the same value.
+            permission = cmd.permission
+            override = minqlxtended.get_cvar("qlx_perm_" + cmd.name)
+            if override:
+                permission = cmd._permission_cvar("qlx_perm_" + cmd.name, override, cmd.permission)
 
-        out = (
-            "### Commands\n"
-            "The command system is based on permission levels. A player will have a permission level\n"
-            "of **0** by default. A player with level **1** can execute commands for level **1** and\n"
-            "below. A level **2** player can execute level **2**, **1** and **0** commands, and so on.\n"
-            "\n\n"
-            )
-        
+            if permission not in cmds:
+                cmds[permission] = [cmd]
+            else:
+                cmds[permission].append(cmd)
+
+        out = '{% from "macros.tmpl" import permissionBadge %}\n'
+        out += f"<p><small><em>Last updated:</em> {datetime.now().replace(microsecond=0)}</small></p>\n"
         for perm in sorted(cmds.keys()):
-            out += "*   Permission level **{}**\n\n".format(perm)
+            if perm:
+                out += f"{{% if permissionLevel >= {perm} %}}\n"
+
+            out += f"<h3>Permission level <strong>{perm}</strong>: {{{{ permissionBadge({perm}) }}}}</h3>\n"
+            out += "<ul>\n"
             for cmd in sorted(cmds[perm], key=lambda x: x.plugin.__class__.__name__):
-                name = prefix + cmd.name[0] if cmd.prefix else cmd.name[0]
-                out += "    *   **`{}`**".format(name)
-                if len(cmd.name) > 1:  # Aliases?
+                out += "  <li>\n"
+                name = prefix + cmd.name if cmd.prefix else cmd.name
+                out += f"    <code>{name}</code>"
+                if cmd.aliases:
                     out += " (alternatively "
-                    for alias in cmd.name[1:]:
+                    for alias in cmd.aliases:
                         name_alias = prefix + alias if cmd.prefix else alias
-                        out += "`{}`, ".format(name_alias)
+                        out += f"<code>{name_alias}</code>, "
                     out = out[:-2] + ")"
-                out += " from *{}*\n\n".format(cmd.plugin.__class__.__name__)
-                
+                out += f" from plug-in <em>{cmd.plugin.__class__.__name__}</em>.\n"
+
                 # Docstring.
                 if cmd.handler.__doc__:
-                    out += "        {}\n\n".format(cmd.handler.__doc__)
+                    out += f'    <p class="font-monospace">{escape(cmd.handler.__doc__.strip()).replace(linesep, "<br>")}</p>\n'
 
                 # Usage
                 if cmd.usage:
-                    out += "        *Usage*: `{} {}`\n\n" \
-                        .format(name, cmd.usage)
-        
-        out += "*Automatically generated by [minqlx {} (with plugins {})](https://github.com/MinoMino/minqlx)*" \
-            .format(minqlx.__version__, minqlx.__plugins_version__)
+                    out += f"    <p><em>Usage</em>: <code>{name} {escape(cmd.usage.strip())}</code></p>\n"
 
-        with open(os.path.join(self.get_cvar("fs_homepath"), "command_list.md"), "w") as f:
+                out += "  </li>\n"
+            out += "</ul>\n"
+
+            if perm:
+                out += "{% endif %}\n"
+
+        out += f'<em>Automatically generated by <a href="https://github.com/tjone270/minqlxtended">minqlxtended {minqlxtended.__version__} (with plug-ins {minqlxtended.plugins_version()}.)</a></em>'
+
+        with open(os.path.join(self.get_cvar("fs_basepath"), "command_list.twig"), "w") as f:
             f.write(out)
 
         channel.reply("^7Command list generated!")
