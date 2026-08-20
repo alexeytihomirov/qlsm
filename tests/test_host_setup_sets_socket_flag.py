@@ -26,6 +26,9 @@ def test_cloud_setup_sets_redis_unix_socket(
     host.provider = 'vultr'
     host.status = HostStatus.PROVISIONED_PENDING_SETUP
     host.timezone = None
+    host.engine_flavor = 'minqlx'
+    host.engine_source = 'build'
+    host.engine_artifact_url = None
     mock_session.get.return_value = host
 
     proc = MagicMock()

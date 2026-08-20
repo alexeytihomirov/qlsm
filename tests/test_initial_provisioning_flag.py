@@ -28,6 +28,9 @@ def test_successful_initial_setup_sets_lan_rate_uses_hook_true(
     host.status = HostStatus.PROVISIONED_PENDING_SETUP
     host.timezone = None
     host.lan_rate_uses_hook = False
+    host.engine_flavor = 'minqlx'
+    host.engine_source = 'build'
+    host.engine_artifact_url = None
     mock_session.get.return_value = host
 
     proc = MagicMock()
@@ -63,6 +66,9 @@ def test_failed_initial_setup_leaves_flag_false(
     host.status = HostStatus.PROVISIONED_PENDING_SETUP
     host.timezone = None
     host.lan_rate_uses_hook = False
+    host.engine_flavor = 'minqlx'
+    host.engine_source = 'build'
+    host.engine_artifact_url = None
     mock_session.get.return_value = host
 
     proc = MagicMock()
