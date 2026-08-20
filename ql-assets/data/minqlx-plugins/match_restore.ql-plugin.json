@@ -1,4 +1,16 @@
 {
   "label": "Match Restore",
-  "description": "Checkpoint / restorecp — saves and restores full match state (player positions, health, armor, items, score, clock) at referee-triggered checkpoints."
+  "description": "Checkpoint / restorecp — saves and restores full match state (player positions, health, armor, items, score, clock) at referee-triggered checkpoints.",
+  "commands": [
+    { "name": "spawnsec", "usage": "<alias|list|scan|reset> <seconds> [entity_id]", "permission": 5, "description": "Manages item-spawn timer overrides for the current map." },
+    { "name": "spawnitem", "usage": "<alias|list|scan|reset> <seconds> [entity_id]", "permission": 5, "description": "Alias for !spawnsec." },
+    { "name": "restorecp", "usage": "export | test [name] | quiet | loud | clear | time | map | player | item | apply | verify | show | players [slot:cid...]", "permission": 5, "description": "Checkpoint draft workflow — build, verify and apply a saved match-state snapshot." },
+    { "name": "restorecheckpoint", "usage": "export | test [name] | quiet | loud | clear | time | map | player | item | apply | verify | show | players [slot:cid...]", "permission": 5, "description": "Alias for !restorecp." },
+    { "name": "restoreplayer", "usage": "<client_id|me> <json_or_base64>", "permission": 5, "description": "Restores a single player's state from an exported snapshot." },
+    { "name": "restorepl", "usage": "<client_id|me> <json_or_base64>", "permission": 5, "description": "Alias for !restoreplayer." },
+    { "name": "matchtime", "usage": "show | <seconds> | <mm:ss> | ms <milliseconds>", "permission": 5, "description": "Shows or sets the current match clock." },
+    { "name": "setmatchtime", "usage": "show | <seconds> | <mm:ss> | ms <milliseconds>", "permission": 5, "description": "Alias for !matchtime." },
+    { "name": "itemlab", "usage": "touch <eid> [cid] | respawn <eid> <sec> | stat <eid>", "permission": 5, "description": "Low-level item-entity tools used while building a checkpoint (touch/respawn/inspect)." },
+    { "name": "itemslot", "usage": "touch <eid> [cid] | respawn <eid> <sec> | stat <eid>", "permission": 5, "description": "Alias for !itemlab." }
+  ]
 }

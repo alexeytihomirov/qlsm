@@ -1,4 +1,10 @@
 {
   "label": "Permission",
-  "description": "Database-backed !setperm / !getperm / !myperm commands for assigning per-player permission levels (0-5)."
+  "description": "Database-backed permission levels (0-5) per player.",
+  "commands": [
+    { "name": "setperm", "usage": "<id> <level>", "permission": 5, "description": "Sets the specified player's permission level." },
+    { "name": "getperm", "usage": "<id>", "permission": 5, "description": "Shows the specified player's permission level." },
+    { "name": "listperms", "permission": 5, "description": "Lists all players with a permission level greater than 0." },
+    { "name": "myperm", "permission": 0, "description": "Shows your own permission level." }
+  ]
 }

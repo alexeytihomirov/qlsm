@@ -1,4 +1,8 @@
 {
   "label": "IPs",
-  "description": "Shows the list of IP addresses a player has connected from (reads from Redis)."
+  "description": "Shows the list of IP addresses a player has connected from (reads from Redis).",
+  "commands": [
+    { "name": "ip", "usage": "<id>", "permission": 2, "description": "Shows the IP history for the given player." },
+    { "name": "tomtec_versions", "permission": 0, "description": "Shows this plugin's version." }
+  ]
 }

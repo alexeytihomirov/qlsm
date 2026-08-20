@@ -1,4 +1,7 @@
 {
   "label": "Chat RCON",
-  "description": "!rcon in chat — tiered ACL console passthrough for referees/admins (permission-gated command allow/deny lists). Pair with chat_rcon_acl.py."
+  "description": "!rcon in chat — tiered ACL console passthrough for referees/admins. Pair with chat_rcon_acl.py. Registered at permission 0 but the handler enforces its own ref/admin tiers internally (qlx_chatRconRefPerm / qlx_chatRconAdminPerm).",
+  "commands": [
+    { "name": "rcon", "usage": "<command> [args...]", "permission": 0, "description": "Runs an allow-listed RCON command from chat (tier depends on the caller's own permission level, checked internally)." }
+  ]
 }

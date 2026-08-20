@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  formatPluginCommandsText,
+  getPluginCommands,
   getPluginDescription,
   getPluginDisplayLabel,
   getPluginManifest,
@@ -54,5 +56,58 @@ describe('getPluginDescription', () => {
   it('returns null with no manifest or blank description', () => {
     expect(getPluginDescription({})).toBeNull();
     expect(getPluginDescription({ plugin_manifest: { description: '' } })).toBeNull();
+  });
+});
+
+describe('getPluginCommands', () => {
+  it('normalizes a full command entry', () => {
+    const item = {
+      plugin_manifest: {
+        commands: [{ name: 'setperm', usage: '<id> <level>', permission: 5, description: "Sets a player's permission level." }],
+      },
+    };
+    expect(getPluginCommands(item)).toEqual([
+      { name: 'setperm', usage: '<id> <level>', permission: 5, description: "Sets a player's permission level." },
+    ]);
+  });
+
+  it('defaults missing usage/permission/description to null', () => {
+    const item = { plugin_manifest: { commands: [{ name: 'myperm' }] } };
+    expect(getPluginCommands(item)).toEqual([{ name: 'myperm', usage: null, permission: null, description: null }]);
+  });
+
+  it('drops entries with no name', () => {
+    const item = { plugin_manifest: { commands: [{ description: 'no name' }, { name: '' }, { name: 'ok' }] } };
+    expect(getPluginCommands(item)).toEqual([{ name: 'ok', usage: null, permission: null, description: null }]);
+  });
+
+  it('returns an empty array when commands is missing or not an array', () => {
+    expect(getPluginCommands({})).toEqual([]);
+    expect(getPluginCommands({ plugin_manifest: { commands: 'setperm' } })).toEqual([]);
+  });
+});
+
+describe('formatPluginCommandsText', () => {
+  it('formats name, usage, description, and permission', () => {
+    const item = {
+      plugin_manifest: {
+        commands: [{ name: 'setperm', usage: '<id> <level>', permission: 5, description: "Sets a player's permission level." }],
+      },
+    };
+    expect(formatPluginCommandsText(item)).toBe("!setperm <id> <level> — Sets a player's permission level. (perm 5)");
+  });
+
+  it('joins multiple commands with a separator', () => {
+    const item = { plugin_manifest: { commands: [{ name: 'a' }, { name: 'b' }] } };
+    expect(formatPluginCommandsText(item)).toBe('!a  ·  !b');
+  });
+
+  it('omits missing usage/description/permission cleanly', () => {
+    const item = { plugin_manifest: { commands: [{ name: 'myperm' }] } };
+    expect(formatPluginCommandsText(item)).toBe('!myperm');
+  });
+
+  it('returns an empty string with no commands', () => {
+    expect(formatPluginCommandsText({})).toBe('');
   });
 });

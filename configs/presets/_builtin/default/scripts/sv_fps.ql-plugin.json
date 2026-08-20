@@ -1,4 +1,8 @@
 {
   "label": "sv_fps Override",
-  "description": "Lets referees change the sv_fps cvar mid-match (it's normally CVAR_ROM and can't be set after the engine boots)."
+  "description": "Lets referees change the sv_fps cvar mid-match (it's normally CVAR_ROM and can't be set after the engine boots).",
+  "commands": [
+    { "name": "sv_fps", "usage": "<integer>", "permission": 5, "description": "Sets sv_fps to the given value." },
+    { "name": "svfps", "usage": "<integer>", "permission": 5, "description": "Alias for !sv_fps." }
+  ]
 }

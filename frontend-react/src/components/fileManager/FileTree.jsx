@@ -10,7 +10,7 @@ import {
   isEnableablePluginPath,
   PLUGIN_HINT_TEXT,
 } from './pluginSelection';
-import { getPluginDescription, getPluginDisplayLabel } from './pluginManifest';
+import { formatPluginCommandsText, getPluginDescription, getPluginDisplayLabel } from './pluginManifest';
 
 const FILE_TYPE_ICONS = {
   python: Code,
@@ -74,7 +74,15 @@ function TreeItem({
   // rootOnlyCheckable is plugin-tab-exclusive (see capabilities.js PLUGIN_CAPS) —
   // safe signal to only enrich rows there, never Config/Factories tabs.
   const displayLabel = !isFolder && rootOnly ? getPluginDisplayLabel(item) : item.name;
-  const manifestDescription = !isFolder && rootOnly ? getPluginDescription(item) : null;
+  const manifestDescription = !isFolder && rootOnly ? (() => {
+    // InfoTooltip's bubble is white-space: normal (shared component, other
+    // callers rely on that), so a literal \n here would just collapse to a
+    // space — join with punctuation instead of relying on a line break.
+    const description = getPluginDescription(item);
+    const commandsText = formatPluginCommandsText(item);
+    if (description && commandsText) return `${description} Commands: ${commandsText}`;
+    return description || (commandsText ? `Commands: ${commandsText}` : null);
+  })() : null;
   // One hint per open folder, next to its name, instead of one per child row.
   const showFolderHint = isFolder && rootOnly && foldersEnabled && expanded
     && folderHasPluginFiles(item);
