@@ -113,6 +113,38 @@ class TestGetScriptTree:
         response = client.get('/api/scripts/tree')
         assert response.status_code == 401
 
+    def test_tree_attaches_plugin_manifest(self, client, app, scripts_dir, auth_headers, monkeypatch):
+        """A <plugin>.ql-plugin.json sibling is parsed and attached to the
+        .py node, not exposed as its own tree entry."""
+        monkeypatch.setattr('ui.routes.script_routes.CONFIGS_BASE', scripts_dir)
+        preset_scripts = os.path.join(scripts_dir, 'presets', 'default', 'scripts')
+        with open(os.path.join(preset_scripts, 'test_plugin.ql-plugin.json'), 'w') as f:
+            f.write('{"label": "Test Plugin", "description": "Does a thing."}')
+
+        response = client.get('/api/scripts/tree?preset=default', headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json['data']
+        names = [item['name'] for item in data]
+        assert 'test_plugin.ql-plugin.json' not in names  # never its own row
+        test_plugin = next(item for item in data if item['name'] == 'test_plugin.py')
+        assert test_plugin['plugin_manifest'] == {'label': 'Test Plugin', 'description': 'Does a thing.'}
+        another = next(item for item in data if item['name'] == 'another.py')
+        assert 'plugin_manifest' not in another  # no sibling file — no key at all
+
+    def test_tree_ignores_malformed_manifest(self, client, app, scripts_dir, auth_headers, monkeypatch):
+        """A broken manifest degrades to a plain checkbox, not a 500."""
+        monkeypatch.setattr('ui.routes.script_routes.CONFIGS_BASE', scripts_dir)
+        preset_scripts = os.path.join(scripts_dir, 'presets', 'default', 'scripts')
+        with open(os.path.join(preset_scripts, 'test_plugin.ql-plugin.json'), 'w') as f:
+            f.write('{not valid json')
+
+        response = client.get('/api/scripts/tree?preset=default', headers=auth_headers)
+
+        assert response.status_code == 200
+        test_plugin = next(item for item in response.json['data'] if item['name'] == 'test_plugin.py')
+        assert 'plugin_manifest' not in test_plugin
+
 
 class TestGetScriptContent:
     """Tests for GET /api/scripts/content endpoint."""
