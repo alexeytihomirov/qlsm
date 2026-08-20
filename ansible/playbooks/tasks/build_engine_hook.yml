@@ -1,0 +1,163 @@
+---
+# Shared task: build or fetch the minqlx/minqlxtended engine hook (.so +
+# wrapper script + python package) into the host's shared location, then
+# canonicalize the wrapper script to a fixed name so qlds@.service.j2 never
+# needs to know which flavor is in use.
+#
+# Requires: minqlx_build_dir, minqlx_shared_dir (set by the including playbook)
+# Reads: qlds_engine_flavor ('minqlx' | 'minqlxtended', default 'minqlx')
+#        qlds_engine_source ('build' | 'artifact', default 'build')
+#        qlds_engine_artifact_url (required when source == 'artifact')
+#
+# 'minqlxtended' patches note: the local patches under ql-assets/patches/
+# (minqlx-reset-accuracy.patch, minqlx-damage-event.patch) are written
+# against MinoMino/minqlx's source tree. They are NOT applied for the
+# minqlxtended flavor — that's a separate, actively-maintained fork and the
+# patches were never verified against it. Add a minqlxtended-specific patch
+# dir here if/when needed.
+
+- name: Set engine hook flavor facts
+  set_fact:
+    _engine_flavor: "{{ qlds_engine_flavor | default('minqlx') }}"
+    _engine_source: "{{ qlds_engine_source | default('build') }}"
+
+- name: Set per-flavor build facts (minqlx)
+  set_fact:
+    _engine_repo: "https://github.com/MinoMino/minqlx.git"
+    _engine_git_version: "fbdd915185337791d8e209dc4b686a1ee60d3721"
+    _engine_apply_local_patches: true
+    _engine_so_name: "minqlx.x64.so"
+    _engine_wrapper_name: "run_server_x64_minqlx.sh"
+    _engine_python_pkg: "minqlx"
+  when: _engine_flavor == 'minqlx'
+
+- name: Set per-flavor build facts (minqlxtended)
+  set_fact:
+    _engine_repo: "https://github.com/tjone270/minqlxtended.git"
+    _engine_git_version: "{{ qlds_engine_git_version | default('HEAD') }}"
+    _engine_apply_local_patches: false
+    _engine_so_name: "minqlxtended.x64.so"
+    _engine_wrapper_name: "run_server_x64_minqlxtended.sh"
+    _engine_python_pkg: "minqlxtended"
+  when: _engine_flavor == 'minqlxtended'
+
+- name: Clean up old engine build directory
+  file:
+    path: "{{ minqlx_build_dir }}"
+    state: absent
+
+- name: Create fresh engine build directory
+  file:
+    path: "{{ minqlx_build_dir }}"
+    state: directory
+    owner: ql
+    group: ql
+    mode: '0755'
+
+#######################################################################
+# Source: build from git + patches + make
+#######################################################################
+- block:
+    - name: Clone engine repo as ql user
+      become: yes
+      become_user: ql
+      git:
+        repo: "{{ _engine_repo }}"
+        dest: "{{ minqlx_build_dir }}"
+        version: "{{ _engine_git_version }}"
+        depth: 1
+
+    - name: Copy local patches to build host
+      copy:
+        src: "{{ playbook_dir }}/../../ql-assets/patches/"
+        dest: "/tmp/minqlx-patches/"
+        mode: '0644'
+      when: _engine_apply_local_patches
+
+    - name: Apply local patches
+      become: yes
+      become_user: ql
+      shell: |
+        set -e
+        for patch in /tmp/minqlx-patches/*.patch; do
+          [ -f "$patch" ] || continue
+          patch -p1 --forward --reject-file=- < "$patch"
+        done
+      args:
+        chdir: "{{ minqlx_build_dir }}"
+        executable: /bin/bash
+      when: _engine_apply_local_patches
+
+    - name: Compile engine (make) as ql user
+      become: yes
+      become_user: ql
+      make:
+        chdir: "{{ minqlx_build_dir }}"
+
+    - name: Clean up patch staging directory
+      file:
+        path: "/tmp/minqlx-patches"
+        state: absent
+      when: _engine_apply_local_patches
+  when: _engine_source == 'build'
+
+#######################################################################
+# Source: prebuilt artifact tarball (same bin/ + python/<pkg>/ layout)
+#######################################################################
+- block:
+    - name: Verify engine_artifact_url is set
+      assert:
+        that: qlds_engine_artifact_url is defined and qlds_engine_artifact_url | length > 0
+        fail_msg: "engine_source=artifact but no engine_artifact_url configured on this Host"
+
+    - name: Download and extract engine artifact
+      become: yes
+      become_user: ql
+      ansible.builtin.unarchive:
+        src: "{{ qlds_engine_artifact_url }}"
+        dest: "{{ minqlx_build_dir }}"
+        remote_src: yes
+  when: _engine_source == 'artifact'
+
+#######################################################################
+# Common: install into the shared location, canonicalize wrapper name
+#######################################################################
+- name: Copy engine files to shared location
+  copy:
+    src: "{{ minqlx_build_dir }}/{{ item.src }}"
+    dest: "{{ minqlx_shared_dir }}/{{ item.dest }}"
+    remote_src: yes
+    owner: ql
+    group: ql
+    mode: '0755'
+  loop:
+    - { src: "bin/{{ _engine_so_name }}", dest: "{{ _engine_so_name }}" }
+    - { src: "bin/{{ _engine_wrapper_name }}", dest: "{{ _engine_wrapper_name }}" }
+    - { src: "python/{{ _engine_python_pkg }}/", dest: "{{ _engine_python_pkg }}/" }
+
+- name: Copy optional helper scripts to shared location if present
+  become: yes
+  shell: |
+    for h in minqlx-cmd quake_live.sh; do
+      if [ -f "{{ minqlx_build_dir }}/$h" ]; then
+        cp "{{ minqlx_build_dir }}/$h" "{{ minqlx_shared_dir }}/$h"
+        chown ql:ql "{{ minqlx_shared_dir }}/$h"
+        chmod 0755 "{{ minqlx_shared_dir }}/$h"
+      fi
+    done
+  args:
+    executable: /bin/bash
+
+- name: Canonicalize wrapper script name (qlds@.service.j2 always execs run_server_x64.sh)
+  copy:
+    src: "{{ minqlx_shared_dir }}/{{ _engine_wrapper_name }}"
+    dest: "{{ minqlx_shared_dir }}/run_server_x64.sh"
+    remote_src: yes
+    owner: ql
+    group: ql
+    mode: '0755'
+
+- name: Clean up engine build directory
+  file:
+    path: "{{ minqlx_build_dir }}"
+    state: absent

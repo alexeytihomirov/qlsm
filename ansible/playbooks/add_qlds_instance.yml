@@ -141,7 +141,8 @@
         mode: preserve
         remote_src: yes
       # This single task replaces the previous two separate tasks for minqlx files and package.
-      # It will copy minqlx.x64.so, run_server_x64_minqlx.sh, the minqlx/ dir,
+      # It will copy the engine .so, its flavor-named wrapper script, the canonical
+      # run_server_x64.sh (see tasks/build_engine_hook.yml), the python package dir,
       # and optional scripts if they exist in the source, directly into the instance dir.
 
     - name: Create minqlx-plugins directory

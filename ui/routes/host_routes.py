@@ -39,6 +39,42 @@ HOST_NAME_MAX_LENGTH = 20
 HOST_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$')
 SSH_USER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]{0,63}$')
 
+# Engine hook (minqlx.x64.so / minqlxtended.x64.so) build source — see
+# ansible/playbooks/tasks/build_engine_hook.yml for what each value does.
+ENGINE_FLAVORS = {'minqlx', 'minqlxtended'}
+ENGINE_SOURCES = {'build', 'artifact'}
+
+
+def _validate_engine_settings(data, defaults=True):
+    """Extract+validate engine_flavor/engine_source/engine_artifact_url from a
+    request body. With defaults=True (host creation), missing fields fall back
+    to QLSM's historical behavior (minqlx/build). With defaults=False (the
+    dedicated update route), a field is only included in the result if present
+    in `data`, so update_host() only touches what was actually sent."""
+    result = {}
+
+    if defaults or 'engine_flavor' in data:
+        flavor = data.get('engine_flavor', 'minqlx')
+        if flavor not in ENGINE_FLAVORS:
+            return None, {"message": f"engine_flavor must be one of {sorted(ENGINE_FLAVORS)}", "status_code": 400}
+        result['engine_flavor'] = flavor
+
+    if defaults or 'engine_source' in data:
+        source = data.get('engine_source', 'build')
+        if source not in ENGINE_SOURCES:
+            return None, {"message": f"engine_source must be one of {sorted(ENGINE_SOURCES)}", "status_code": 400}
+        result['engine_source'] = source
+
+    if defaults or 'engine_artifact_url' in data:
+        artifact_url = data.get('engine_artifact_url') or None
+        result['engine_artifact_url'] = artifact_url
+
+    effective_source = result.get('engine_source', data.get('engine_source', 'build'))
+    if effective_source == 'artifact' and not result.get('engine_artifact_url', data.get('engine_artifact_url')):
+        return None, {"message": "engine_artifact_url is required when engine_source is 'artifact'", "status_code": 400}
+
+    return result, None
+
 # Systemd OnCalendar validation (matches formats produced by the frontend)
 SYSTEMD_CALENDAR_RE = re.compile(
     r'^(?:'
@@ -181,6 +217,10 @@ def _handle_cloud_host_creation(name, provider, data):
         if timezone not in VALID_TIMEZONES:
             return jsonify({"error": {"message": f"Invalid timezone. Must be a valid IANA timezone."}}), 400
 
+    engine_settings, error = _validate_engine_settings(data)
+    if error:
+        return jsonify({"error": {"message": error["message"]}}), error["status_code"]
+
     try:
         host = create_host(
             name=name,
@@ -190,7 +230,8 @@ def _handle_cloud_host_creation(name, provider, data):
             timezone=timezone,
             os_type='debian',
             is_standalone=False,
-            status=HostStatus.PENDING
+            status=HostStatus.PENDING,
+            **engine_settings
         )
         if host:
             lock_token = str(uuid.uuid4())
@@ -494,6 +535,16 @@ def _handle_standalone_host_creation(name, data):
                 _cleanup_local_key_material(ssh_key_path, public_key_path)
             return jsonify({"error": {"message": remote_os_message}}), 400
 
+        engine_settings, engine_error = _validate_engine_settings(data)
+        if engine_error:
+            if ssh_auth_method == 'password':
+                _cleanup_password_bootstrap_artifacts(
+                    validated_ip, ssh_port, ssh_user, ssh_key_path, public_key_path, managed_key_installed,
+                )
+            else:
+                _cleanup_local_key_material(ssh_key_path, public_key_path)
+            return jsonify({"error": {"message": engine_error["message"]}}), engine_error["status_code"]
+
         # Create host record
         host = create_host(
             name=name,
@@ -505,7 +556,8 @@ def _handle_standalone_host_creation(name, data):
             os_type=detected_os['os_type'],
             timezone=timezone,
             is_standalone=True,
-            status=HostStatus.PENDING
+            status=HostStatus.PENDING,
+            **engine_settings
         )
 
         if host:
@@ -665,6 +717,10 @@ def _handle_self_host_creation(name, data):
     lock_token = None
     local_os_info = detect_local_os()
     local_os_type = local_os_info.get('os_type') if local_os_info else None
+    engine_settings, engine_error = _validate_engine_settings(data)
+    if engine_error:
+        return jsonify({"error": {"message": engine_error["message"]}}), engine_error["status_code"]
+
     try:
         key_path, public_key = generate_self_host_keys(name)
         host = create_host(
@@ -678,6 +734,7 @@ def _handle_self_host_creation(name, data):
             is_standalone=True,
             timezone=timezone,
             status=HostStatus.PENDING,
+            **engine_settings
         )
 
         lock_token = str(uuid.uuid4())
@@ -848,6 +905,37 @@ def update_host_api(host_id):
             return jsonify({"error": {"message": "Failed to update host"}}), 500
 
     return jsonify({"error": {"message": "No valid fields to update"}}), 400
+
+
+@host_api_bp.route('/<int:host_id>/engine', methods=['PUT'], endpoint='update_host_engine_api')
+@jwt_required()
+def update_host_engine_api(host_id):
+    """Change which engine hook flavor/source this host builds (minqlx vs
+    minqlxtended, build-from-source vs prebuilt artifact). Takes effect on the
+    next host setup/rebuild run — this endpoint only updates the stored
+    setting, it does not trigger a rebuild itself."""
+    host = get_host(host_id)
+    if not host:
+        return jsonify({"error": {"message": "Host not found"}}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": {"message": "No data provided"}}), 400
+
+    engine_settings, error = _validate_engine_settings(data, defaults=False)
+    if error:
+        return jsonify({"error": {"message": error["message"]}}), error["status_code"]
+    if not engine_settings:
+        return jsonify({"error": {"message": "No valid fields to update"}}), 400
+
+    updated_host = update_host(host_id, **engine_settings)
+    if not updated_host:
+        return jsonify({"error": {"message": "Failed to update host"}}), 500
+
+    return jsonify({
+        "message": "Engine hook settings updated. Re-run host setup or rebuild_minqlx.yml to apply.",
+        "data": updated_host.to_dict()
+    }), 200
 
 
 @host_api_bp.route('/<int:host_id>/logs', methods=['GET'], endpoint='view_host_logs_api') # Added methods=['GET']

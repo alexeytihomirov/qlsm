@@ -60,6 +60,12 @@ class Host(db.Model):
     redis_unix_socket = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
     lan_rate_uses_hook = db.Column(db.Boolean, default=False, nullable=False, server_default='0') # True = LD_PRELOAD hook mechanism; False = legacy iptables/sysctl path
     firewall_pool_v2 = db.Column(db.Boolean, default=False, nullable=False, server_default='0') # True = firewall rendered with the current game/RCON port pool; False = narrower legacy allow-list
+    # Engine hook (minqlx.x64.so / minqlxtended.x64.so) build source for this host's shared build.
+    # flavor: 'minqlx' (MinoMino/minqlx, upstream QLSM default) | 'minqlxtended' (tjone270/minqlxtended)
+    # source: 'build' (clone+patch+make on host, see rebuild_minqlx.yml) | 'artifact' (download a prebuilt tarball)
+    engine_flavor = db.Column(db.String(20), default='minqlx', nullable=False, server_default='minqlx')
+    engine_source = db.Column(db.String(20), default='build', nullable=False, server_default='build')
+    engine_artifact_url = db.Column(db.String(500), nullable=True) # Used when engine_source == 'artifact'
     status = db.Column(db.Enum(HostStatus), default=HostStatus.PENDING, nullable=False)
     qlfilter_status = db.Column(db.Enum(QLFilterStatus), default=QLFilterStatus.UNKNOWN, nullable=True) # New field for QLFilter
     auto_restart_schedule = db.Column(db.String(100), nullable=True) # Cron expression for auto-restart
@@ -97,6 +103,9 @@ class Host(db.Model):
             'redis_unix_socket': bool(self.redis_unix_socket),
             'lan_rate_uses_hook': bool(self.lan_rate_uses_hook),
             'firewall_pool_v2': bool(self.firewall_pool_v2),
+            'engine_flavor': self.engine_flavor,
+            'engine_source': self.engine_source,
+            'engine_artifact_url': self.engine_artifact_url,
             'status': self.status.value if self.status else None,
             'qlfilter_status': self.qlfilter_status.value if self.qlfilter_status else QLFilterStatus.UNKNOWN.value, # Include QLFilter status
             'auto_restart_schedule': self.auto_restart_schedule,

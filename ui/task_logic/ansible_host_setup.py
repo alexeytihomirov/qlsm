@@ -158,6 +158,9 @@ def setup_host_ansible_logic(host_id, rerun=False):
         ansible_command_args += ['-e', json.dumps({
             'game_udp_ports': GAME_UDP_PORTS,
             'rcon_tcp_ports': RCON_TCP_PORTS,
+            'qlds_engine_flavor': host.engine_flavor,
+            'qlds_engine_source': host.engine_source,
+            'qlds_engine_artifact_url': host.engine_artifact_url or '',
         })]
         ansible_command_args.append(ansible_playbook_path)
 
