@@ -1,0 +1,4 @@
+{
+  "label": "Chat RCON",
+  "description": "!rcon in chat — tiered ACL console passthrough for referees/admins (permission-gated command allow/deny lists). Pair with chat_rcon_acl.py."
+}

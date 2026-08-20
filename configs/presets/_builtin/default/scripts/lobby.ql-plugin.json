@@ -1,0 +1,4 @@
+{
+  "label": "Lobby",
+  "description": "Lobby instance plugin — auto-redirects players from a lobby server to the right destination match server."
+}

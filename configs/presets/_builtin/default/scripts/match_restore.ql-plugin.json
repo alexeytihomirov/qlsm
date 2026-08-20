@@ -1,0 +1,4 @@
+{
+  "label": "Match Restore",
+  "description": "Checkpoint / restorecp — saves and restores full match state (player positions, health, armor, items, score, clock) at referee-triggered checkpoints."
+}

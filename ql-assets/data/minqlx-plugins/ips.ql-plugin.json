@@ -1,0 +1,4 @@
+{
+  "label": "IPs",
+  "description": "Shows the list of IP addresses a player has connected from (reads from Redis)."
+}

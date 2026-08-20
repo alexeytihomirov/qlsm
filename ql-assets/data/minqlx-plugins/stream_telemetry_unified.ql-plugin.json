@@ -1,0 +1,4 @@
+{
+  "label": "Telemetry (Unified)",
+  "description": "Sends live match/player/pickup telemetry to a local relay for stats-hub ingestion. Low-priority frame hook — designed not to cost sv_fps. Requires the telemetry-relay sidecar service running on the host; not something QLSM installs by itself yet."
+}

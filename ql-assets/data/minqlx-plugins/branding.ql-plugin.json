@@ -1,0 +1,4 @@
+{
+  "label": "Branding",
+  "description": "Personalizes the server via cvars (qlx_serverBrandName and related) — replaces map-name/other display text with custom branding. Native minqlxtended-plugins version (Thomas Jones)."
+}
