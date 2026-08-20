@@ -48,6 +48,7 @@ frontend-react/*
 !frontend-react/index.html
 !frontend-react/package.json
 !frontend-react/pnpm-lock.yaml
+!frontend-react/pnpm-workspace.yaml
 !frontend-react/eslint.config.js
 !frontend-react/postcss.config.js
 !frontend-react/tailwind.config.js
