@@ -4,7 +4,6 @@ import {
   getPluginDescription,
   getPluginDisplayLabel,
   getPluginManifest,
-  getPluginRequires,
 } from '../pluginManifest';
 
 describe('getPluginManifest', () => {
@@ -55,22 +54,5 @@ describe('getPluginDescription', () => {
   it('returns null with no manifest or blank description', () => {
     expect(getPluginDescription({})).toBeNull();
     expect(getPluginDescription({ plugin_manifest: { description: '' } })).toBeNull();
-  });
-});
-
-describe('getPluginRequires', () => {
-  it('returns the requires list, trimmed', () => {
-    const item = { plugin_manifest: { requires: ['balance.py', ' permission.py '] } };
-    expect(getPluginRequires(item)).toEqual(['balance.py', 'permission.py']);
-  });
-
-  it('drops non-string / blank entries', () => {
-    const item = { plugin_manifest: { requires: ['balance.py', '', 42, null] } };
-    expect(getPluginRequires(item)).toEqual(['balance.py']);
-  });
-
-  it('returns an empty array when requires is missing or not an array', () => {
-    expect(getPluginRequires({})).toEqual([]);
-    expect(getPluginRequires({ plugin_manifest: { requires: 'balance.py' } })).toEqual([]);
   });
 });

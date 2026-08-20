@@ -5,9 +5,13 @@
 // a plugin with no manifest still works exactly as a plain checkbox.
 //
 // Schema (all fields optional):
-//   { id, label, description, requires: [pluginBasename, ...],
+//   { id, label, description,
 //     cvars: { CVAR_NAME: "default value", ... },
 //     settings: [{ key, cvar, type: "number"|"string"|"bool", default, min, max }] }
+// No plugin-to-plugin dependency graph — deliberately dropped, real-world
+// plugins (minqlxtended-plugins included) essentially never need one, and
+// modeling it was the main source of complexity in ql-server-core's
+// addon-manifest system this replaces.
 
 export function getPluginManifest(item) {
   return item?.plugin_manifest && typeof item.plugin_manifest === 'object'
@@ -25,14 +29,4 @@ export function getPluginDescription(item) {
   const manifest = getPluginManifest(item);
   const description = manifest?.description;
   return typeof description === 'string' && description.trim() ? description.trim() : null;
-}
-
-// Basenames (without .py) this plugin's manifest declares it needs enabled
-// alongside it. Best-effort — malformed entries are dropped rather than
-// thrown, since this only ever powers an advisory UI hint.
-export function getPluginRequires(item) {
-  const manifest = getPluginManifest(item);
-  const requires = manifest?.requires;
-  if (!Array.isArray(requires)) return [];
-  return requires.filter(name => typeof name === 'string' && name.trim()).map(name => name.trim());
 }
