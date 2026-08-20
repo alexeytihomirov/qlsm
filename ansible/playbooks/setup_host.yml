@@ -539,8 +539,17 @@
       pip:
         requirements: "/root/minqlx-requirements.txt"
         executable: pip3
-        extra_args: "{{ '--break-system-packages' if (pip3_version_output.stdout.split()[1] is version('22.1', '>=')) else '' }}"
+        # --ignore-installed avoids "Cannot uninstall X, RECORD file not found" when a
+        # dependency (e.g. pyzmq) was preinstalled via apt/debian packaging, not pip.
+        extra_args: "{{ '--break-system-packages --ignore-installed' if (pip3_version_output.stdout.split()[1] is version('22.1', '>=')) else '--ignore-installed' }}"
       when: minqlx_reqs_stat.stat.exists
+      ignore_errors: yes
+      register: minqlx_core_pip_result
+
+    - name: Warn if core minqlx pip install failed
+      debug:
+        msg: "QLSM_PIP_WARN: pip install failed: {{ minqlx_core_pip_result.stderr | default(minqlx_core_pip_result.stdout | default('unknown error')) | truncate(200) }}"
+      when: minqlx_core_pip_result is defined and minqlx_core_pip_result.failed | default(false)
 
   #######################################################################
   # 6a. Configure Redis Unix Socket
