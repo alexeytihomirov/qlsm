@@ -12,6 +12,7 @@ import UserManagementPage from './pages/UserManagementPage';
 import SettingsPage from './pages/SettingsPage';
 import ServersPage from './pages/ServersPage';
 import GlobalRconPage from './pages/GlobalRconPage';
+import HostLogsPage from './pages/HostLogsPage';
 import DocsPage from './pages/DocsPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import BackupRestorePage from './pages/BackupRestorePage';
@@ -33,6 +34,8 @@ function App() {
                   <Route path="/change-password" element={<ChangePasswordPage />} />
                   <Route path="/servers" element={<ServersPage />} />
                   <Route path="/global-rcon" element={<GlobalRconPage />} />
+                  <Route path="/host-logs" element={<HostLogsPage />} />
+                  <Route path="/host-logs/:hostId" element={<HostLogsPage />} />
                   <Route path="/presets" element={<PresetsPage />} />
                   <Route path="/presets/add" element={<AddPresetPage />} />
                   <Route path="/presets/edit/:presetId" element={<EditPresetPage />} />

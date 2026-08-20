@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import ThemeToggleButton from './ThemeToggleButton';
 import { useAuth } from '../contexts/AuthContext';
-import { Settings, Users, ChevronDown, Terminal, LogOut, Server, SlidersHorizontal, Menu as MenuIcon, BookOpen, Archive } from 'lucide-react';
+import { Settings, Users, ChevronDown, Terminal, LogOut, Server, SlidersHorizontal, Menu as MenuIcon, BookOpen, Archive, FileText } from 'lucide-react';
 
 function Navbar() {
   const navigate = useNavigate();
@@ -130,6 +130,17 @@ function Navbar() {
                         </Link>
                       )}
                     </Menu.Item>
+                    <Menu.Item>
+                      {({ active }) => (
+                        <Link
+                          to="/host-logs"
+                          className={`navbar-dropdown-item ${active ? 'navbar-dropdown-item-active' : ''}`}
+                        >
+                          <FileText size={16} strokeWidth={2} />
+                          <span>Host Logs</span>
+                        </Link>
+                      )}
+                    </Menu.Item>
                   </div>
                 </Menu.Items>
               </Transition>
@@ -220,6 +231,17 @@ function Navbar() {
                         >
                           <Archive size={16} strokeWidth={2} />
                           <span>Backup &amp; Restore</span>
+                        </Link>
+                      )}
+                    </Menu.Item>
+                    <Menu.Item>
+                      {({ active }) => (
+                        <Link
+                          to="/host-logs"
+                          className={`navbar-dropdown-item ${active || isActive('host-logs') ? 'navbar-dropdown-item-active' : ''}`}
+                        >
+                          <FileText size={16} strokeWidth={2} />
+                          <span>Host Logs</span>
                         </Link>
                       )}
                     </Menu.Item>
