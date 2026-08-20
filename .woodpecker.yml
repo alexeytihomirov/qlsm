@@ -1,0 +1,30 @@
+# Manual "Run pipeline" button in Woodpecker (http://192.168.100.100:8010) —
+# rebuilds qlsm:latest from this checkout and redeploys the home-docker
+# Portainer stack. See deploy/home-redeploy.sh + deploy/portainer-stack.home.yml.
+#
+# Secrets (Woodpecker repo secrets, set via API — see ql-local/sync-woodpecker-secrets.sh
+# in the QuakeLiveData/QL Server monorepo, or paste manually in the Woodpecker UI):
+#   qlsm_stack_env            ← REDIS_PASSWORD/SECRET_KEY/etc, filtered .env
+#   portainer_user/password   ← Portainer admin creds
+#
+# alexeytihomirov/qlsm is a public repo — default clone (anonymous HTTPS) needs
+# no deploy key or token at all. No SSH key is registered anywhere for this.
+
+steps:
+  build-and-deploy:
+    image: docker:cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/home/qlsm/deploy:/hostdeploy
+    environment:
+      PORTAINER_USER:
+        from_secret: portainer_user
+      PORTAINER_PASSWORD:
+        from_secret: portainer_password
+      QLSM_STACK_ENV:
+        from_secret: qlsm_stack_env
+    commands:
+      - docker build -t qlsm:latest .
+      - sh deploy/home-redeploy.sh
+    when:
+      event: manual

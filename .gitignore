@@ -10,12 +10,18 @@
 !.gitignore
 !.env.example
 !.dockerignore
+!.woodpecker.yml
 !setup-worktree.sh
 !qlsm-install.sh
 !qlsm-uninstall.sh
 !vultr-startup.sh
 !.github/
 !.github/**
+
+# ── CI / home-docker deploy ──────────────────────────────────────────────────
+!deploy/
+!deploy/portainer-stack.home.yml
+!deploy/home-redeploy.sh
 !README.md
 !requirements.txt
 !VERSION

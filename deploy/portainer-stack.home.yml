@@ -1,0 +1,148 @@
+# QLSM — Portainer stack (name: qlsm) on home-docker (192.168.100.100).
+# Host dir: /home/home/qlsm/ (bootstrap via home-infra/scripts/qlsm-bootstrap.sh)
+# LAN UI: http://192.168.100.100:8090  (admin/admin, change on first login)
+#
+# Canonical copy — lives in this repo so both deploy paths read the same file:
+#   operator push: home-infra/scripts/qlsm-sync.sh copies this into
+#                   /home/home/qlsm/portainer-stack.yml after syncing source
+#   CI:             .woodpecker.yml / deploy/home-redeploy.sh (this checkout)
+#
+# self-host (host-init, privileged/pid:host sshd bootstrap) intentionally
+# omitted — this deployment only manages remote VPS by SSH key, never the
+# home-docker host itself.
+
+x-app: &app
+  image: qlsm:latest
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment:
+    FLASK_ENV: docker-production
+    DATABASE_URL: sqlite:////app/data/qlds_ui.db
+    REDIS_URL: redis://redis:6379/0
+    LOG_FORMAT: json
+    REDIS_PASSWORD: ${REDIS_PASSWORD}
+    SECRET_KEY: ${SECRET_KEY:-}
+    DEFAULT_ADMIN_USER: ${DEFAULT_ADMIN_USER:-admin}
+    QLSM_HOST_USER: ${QLSM_HOST_USER:-home}
+    QLSM_HOST_IP: ${QLSM_HOST_IP:-192.168.100.100}
+    VULTR_API_KEY: ${VULTR_API_KEY:-}
+  volumes: &app-volumes
+    - /home/home/qlsm/data:/app/data
+    - /home/home/qlsm/terraform/ssh-keys:/app/terraform/ssh-keys
+    - /home/home/qlsm/terraform/vultr-root/terraform.tfstate.d:/app/terraform/vultr-root/terraform.tfstate.d
+    - /home/home/qlsm/ansible/inventory:/app/ansible/inventory
+    - /home/home/qlsm/configs:/app/configs
+    - /home/home/qlsm/logs:/app/logs
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6380:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - qlsm_redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  web:
+    <<: *app
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      FLASK_ENV: docker-production
+      DATABASE_URL: sqlite:////app/data/qlds_ui.db
+      REDIS_URL: redis://redis:6379/0
+      LOG_FORMAT: json
+      RUN_MIGRATIONS: "true"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      QLSM_HOST_USER: ${QLSM_HOST_USER:-home}
+      QLSM_HOST_IP: ${QLSM_HOST_IP:-192.168.100.100}
+    volumes:
+      - /home/home/qlsm/data:/app/data
+      - /home/home/qlsm/terraform/ssh-keys:/app/terraform/ssh-keys
+      - /home/home/qlsm/terraform/vultr-root/terraform.tfstate.d:/app/terraform/vultr-root/terraform.tfstate.d
+      - /home/home/qlsm/ansible/inventory:/app/ansible/inventory
+      - /home/home/qlsm/configs:/app/configs
+      - /home/home/qlsm/logs:/app/logs
+    command:
+      - gunicorn
+      - --config=gunicorn.conf.py
+      - --workers=1
+      - --threads=12
+      - --bind=0.0.0.0:5001
+      - --timeout=120
+      - --capture-output
+      - --log-level=debug
+      - ui:create_app()
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:5001/api/instances/ping')"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    <<: *app
+    depends_on:
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    command: flask rq worker
+    volumes:
+      - /home/home/qlsm/data:/app/data
+      - /home/home/qlsm/terraform/ssh-keys:/app/terraform/ssh-keys
+      - /home/home/qlsm/terraform/vultr-root/terraform.tfstate.d:/app/terraform/vultr-root/terraform.tfstate.d
+      - /home/home/qlsm/ansible/inventory:/app/ansible/inventory
+      - /home/home/qlsm/configs:/app/configs
+      - /home/home/qlsm/logs:/app/logs
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+
+  rcon:
+    <<: *app
+    command: python -m rcon_service
+
+  poller:
+    <<: *app
+    depends_on:
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    command: flask run-status-poller
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "8090:80"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - /home/home/qlsm/Caddyfile:/etc/caddy/Caddyfile:ro
+      - qlsm_caddy_data:/data
+      - qlsm_caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  qlsm_redis_data:
+  qlsm_caddy_data:
+  qlsm_caddy_config:
