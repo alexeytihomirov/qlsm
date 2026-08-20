@@ -1,5 +1,4 @@
 import React, { Fragment, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Menu, Transition, Portal } from '@headlessui/react';
 import { useFloating, shift, offset, autoUpdate, flip } from '@floating-ui/react-dom';
 import { Trash2, RefreshCw, ShieldCheck, ShieldOff, Loader2, Eye, PowerIcon, ArrowUpCircle, RotateCcw, FileText } from 'lucide-react';
@@ -16,9 +15,9 @@ function HostActionsMenu({
   onOpenUpdateWorkshop,
   onOpenAutoRestart,
   onOpenResize,
-  onRerunSetup
+  onRerunSetup,
+  onOpenViewLogs
 }) {
-  const navigate = useNavigate();
   const [isInstallQlFilterModalOpen, setIsInstallQlFilterModalOpen] = useState(false);
   const [isUninstallQlFilterModalOpen, setIsUninstallQlFilterModalOpen] = useState(false);
   const [isRerunSetupModalOpen, setIsRerunSetupModalOpen] = useState(false);
@@ -148,7 +147,10 @@ function HostActionsMenu({
                     {({ active }) => (
                       <button
                         type="button"
-                        onClick={() => { navigate(`/host-logs/${host.id}`); closeMenu(); }}
+                        onClick={() => {
+                          if (typeof onOpenViewLogs === 'function') onOpenViewLogs(host);
+                          closeMenu();
+                        }}
                         className={`group flex rounded-md items-center w-full px-3 py-2 text-sm transition-colors ${active ? 'bg-black/[0.04] dark:bg-white/[0.06] text-theme-primary' : 'text-theme-secondary'}`}
                       >
                         <FileText size={15} className="mr-3 flex-shrink-0 text-theme-muted" />

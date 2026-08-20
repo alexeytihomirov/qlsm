@@ -41,6 +41,8 @@ import { rerunHostSetup } from '../services/api';
 import ForceUpdateWorkshopModal from '../components/hosts/ForceUpdateWorkshopModal';
 import HostAutoRestartScheduleModal from '../components/hosts/HostAutoRestartScheduleModal';
 import ResizeHostModal from '../components/hosts/ResizeHostModal';
+import HostLogsModal from '../components/hosts/HostLogsModal';
+import { useHostLogsModal } from '../hooks/useHostLogsModal';
 import { useServerStatus } from '../hooks/useServerStatus';
 import { clearAutoOpenAddHost, shouldAutoOpenAddHost } from '../utils/addHostAutoOpen';
 
@@ -78,6 +80,7 @@ export default function ServersPage() {
     const { isWorkshopModalOpen, hostForWorkshopUpdate, openWorkshopModal, closeWorkshopModal, handleWorkshopUpdateSubmit } = useWorkshopUpdate(showSuccess, showError, () => refreshData(false));
     const { isAutoRestartModalOpen, hostForAutoRestart, openAutoRestartModal, closeAutoRestartModal, handleAutoRestartSubmit } = useHostAutoRestart(showSuccess, showError, () => refreshData(false));
     const { isResizeModalOpen, isResizeSubmitting, resizeError, hostForResize, openResizeModal, closeResizeModal, handleResizeSubmit } = useHostResize(showSuccess, showError, () => refreshData(false));
+    const { isHostLogsModalOpen, hostForLogs, openHostLogs, closeHostLogs } = useHostLogsModal();
     const serverStatusMap = useServerStatus();
 
     const handleRerunSetup = async (hostId) => {
@@ -292,7 +295,7 @@ export default function ServersPage() {
                                     <QLFilterIndicator qlfilterStatus={host.qlfilter_status} />
                                 </div>
                                 <div className="host-actions-cell flex justify-end" onClick={(e) => e.stopPropagation()}>
-                                    <HostActionsMenu host={host} handleDelete={(id, name) => requestDeleteHost(id, name)} onOpenDrawer={handleOpenHostDrawer} onInstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'install')} onUninstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'uninstall')} onRequestRestart={handleRequestHostRestart} onOpenUpdateWorkshop={openWorkshopModal} onOpenAutoRestart={openAutoRestartModal} onOpenResize={openResizeModal} onRerunSetup={handleRerunSetup} />
+                                    <HostActionsMenu host={host} handleDelete={(id, name) => requestDeleteHost(id, name)} onOpenDrawer={handleOpenHostDrawer} onInstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'install')} onUninstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'uninstall')} onRequestRestart={handleRequestHostRestart} onOpenUpdateWorkshop={openWorkshopModal} onOpenAutoRestart={openAutoRestartModal} onOpenResize={openResizeModal} onRerunSetup={handleRerunSetup} onOpenViewLogs={openHostLogs} />
                                 </div>
                             </div>
 
@@ -383,6 +386,7 @@ export default function ServersPage() {
             <ForceUpdateWorkshopModal isOpen={isWorkshopModalOpen} onClose={closeWorkshopModal} onSubmit={handleWorkshopUpdateSubmit} host={hostForWorkshopUpdate} />
             <HostAutoRestartScheduleModal isOpen={isAutoRestartModalOpen} onClose={closeAutoRestartModal} onSubmit={handleAutoRestartSubmit} host={hostForAutoRestart} />
             <ResizeHostModal isOpen={isResizeModalOpen} onClose={closeResizeModal} onSubmit={handleResizeSubmit} host={hostForResize} error={resizeError} isSubmitting={isResizeSubmitting} />
+            <HostLogsModal isOpen={isHostLogsModalOpen} onClose={closeHostLogs} host={hostForLogs} />
             {rconInstance && (
                 <RconConsoleModal isOpen={isRconConsoleOpen} onClose={handleCloseRconConsole} instance={rconInstance} />
             )}
