@@ -15,15 +15,21 @@ function RconCommandInput({
   const inputRef = useRef(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
-    // The retry covers the modal's open animation. The fleet page mounts this
-    // permanently, so only re-focus when the user has not moved on themselves.
-    const timer = setTimeout(() => {
+    // Both callers pass `disabled` until the field is actually usable (RCON
+    // socket connected / a ready target selected) — a disabled input can't
+    // take focus, so wait for that instead of only trying once on mount.
+    if (disabled) return undefined;
+    const focusIfIdle = () => {
+      // Only claim focus if nothing else has it. The retry covers the
+      // modal's open animation; the fleet page mounts this permanently, so
+      // this also avoids yanking focus back once the user has moved on.
       const active = document.activeElement;
       if (!active || active === document.body) inputRef.current?.focus();
-    }, 350);
+    };
+    focusIfIdle();
+    const timer = setTimeout(focusIfIdle, 350);
     return () => clearTimeout(timer);
-  }, []);
+  }, [disabled]);
 
   const submit = useCallback((event) => {
     event.preventDefault();
