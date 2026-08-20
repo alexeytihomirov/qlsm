@@ -115,6 +115,8 @@ ql-assets/data/*
 !ql-assets/data/minqlx-plugins/**
 !ql-assets/data/system-hooks/
 !ql-assets/data/system-hooks/**
+!ql-assets/data/telemetry-relay/
+!ql-assets/data/telemetry-relay/**
 !ql-assets/qlfilter/
 !ql-assets/qlfilter/**
 !ql-assets/patches/
