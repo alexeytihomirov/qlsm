@@ -102,7 +102,15 @@
   when: _engine_source == 'build'
 
 #######################################################################
-# Source: prebuilt artifact tarball (same bin/ + python/<pkg>/ layout)
+# Source: prebuilt artifact tarball (layout not assumed — the "common"
+# section below locates files by name, since build output and CI artifacts
+# don't agree on a directory structure).
+# Downloaded by the QLSM controller (delegate_to: localhost), never fetched
+# directly by the game VPS — the URL may point at a private GitHub Release
+# (e.g. ql-server-core's own build-minqlxtended pipeline output), and the
+# game VPS must never hold a GitHub token. See ui/task_logic/
+# ansible_host_setup.py for where qlsm_github_token comes from
+# (GITHUB_ARTIFACT_TOKEN env var; empty/unset is fine for a public URL).
 #######################################################################
 - block:
     - name: Verify engine_artifact_url is set
@@ -110,30 +118,121 @@
         that: qlds_engine_artifact_url is defined and qlds_engine_artifact_url | length > 0
         fail_msg: "engine_source=artifact but no engine_artifact_url configured on this Host"
 
-    - name: Download and extract engine artifact
+    - name: Download engine artifact via the QLSM controller
+      delegate_to: localhost
+      become: no
+      ansible.builtin.get_url:
+        url: "{{ qlds_engine_artifact_url }}"
+        dest: "/tmp/qlsm-engine-artifact-{{ inventory_hostname }}.tar.gz"
+        headers: "{{ {'Authorization': 'token ' + qlsm_github_token} if (qlsm_github_token | default('')) | length > 0 else omit }}"
+        force: yes
+      register: _engine_artifact_download
+
+    - name: Copy downloaded artifact to the target host build dir
+      copy:
+        src: "{{ _engine_artifact_download.dest }}"
+        dest: "{{ minqlx_build_dir }}/engine-artifact.tar.gz"
+        owner: ql
+        group: ql
+        mode: '0644'
+
+    - name: Extract engine artifact on the target host
       become: yes
       become_user: ql
       ansible.builtin.unarchive:
-        src: "{{ qlds_engine_artifact_url }}"
+        src: "{{ minqlx_build_dir }}/engine-artifact.tar.gz"
         dest: "{{ minqlx_build_dir }}"
         remote_src: yes
+
+    - name: Remove downloaded artifact from the QLSM controller
+      delegate_to: localhost
+      become: no
+      ansible.builtin.file:
+        path: "{{ _engine_artifact_download.dest }}"
+        state: absent
   when: _engine_source == 'artifact'
 
 #######################################################################
 # Common: install into the shared location, canonicalize wrapper name
+#
+# The build and artifact sources don't agree on directory layout — a local
+# `make` puts output under bin/ and python/<pkg>/ (MinoMino/minqlx's own
+# Makefile layout), but ql-server-core's build-minqlxtended CI packs its
+# tarball flat (so/wrapper/pkg.zip all at the root — verified against the
+# actual runtime-latest asset, 2026-08-20). minqlx_shared_dir itself is
+# always flat either way (add_qlds_instance.yml copies its *contents*
+# straight into each instance dir), so locate source files by name via
+# `find` instead of assuming a fixed source path.
 #######################################################################
-- name: Copy engine files to shared location
+- name: Locate engine .so under the build dir (either layout)
+  become: yes
+  shell: "find {{ minqlx_build_dir }} -maxdepth 3 -name {{ _engine_so_name }} -print -quit"
+  register: _engine_so_find
+  changed_when: false
+
+- name: Locate engine wrapper script under the build dir (either layout)
+  become: yes
+  shell: "find {{ minqlx_build_dir }} -maxdepth 3 -name {{ _engine_wrapper_name }} -print -quit"
+  register: _engine_wrapper_find
+  changed_when: false
+
+# Python package ships either as an extracted <pkg>/ dir (build-from-source)
+# or a <pkg>.zip (ql-server-core's CI artifact — the engine imports it
+# straight off sys.path via zipimport, no need to extract it).
+- name: Locate engine python package dir under the build dir
+  become: yes
+  shell: "find {{ minqlx_build_dir }} -maxdepth 3 -type d -name {{ _engine_python_pkg }} -print -quit"
+  register: _engine_pkgdir_find
+  changed_when: false
+
+- name: Locate engine python package zip under the build dir
+  become: yes
+  shell: "find {{ minqlx_build_dir }} -maxdepth 3 -name '{{ _engine_python_pkg }}.zip' -print -quit"
+  register: _engine_pkgzip_find
+  changed_when: false
+
+- name: Fail if the .so, wrapper, or python package weren't found
+  assert:
+    that:
+      - _engine_so_find.stdout | length > 0
+      - _engine_wrapper_find.stdout | length > 0
+      - (_engine_pkgdir_find.stdout | length > 0) or (_engine_pkgzip_find.stdout | length > 0)
+    fail_msg: >-
+      Couldn't find {{ _engine_so_name }} / {{ _engine_wrapper_name }} /
+      {{ _engine_python_pkg }} (dir or .zip) under {{ minqlx_build_dir }} —
+      unexpected engine source layout.
+
+- name: Copy .so and wrapper script to shared location
   copy:
-    src: "{{ minqlx_build_dir }}/{{ item.src }}"
+    src: "{{ item.src }}"
     dest: "{{ minqlx_shared_dir }}/{{ item.dest }}"
     remote_src: yes
     owner: ql
     group: ql
     mode: '0755'
   loop:
-    - { src: "bin/{{ _engine_so_name }}", dest: "{{ _engine_so_name }}" }
-    - { src: "bin/{{ _engine_wrapper_name }}", dest: "{{ _engine_wrapper_name }}" }
-    - { src: "python/{{ _engine_python_pkg }}/", dest: "{{ _engine_python_pkg }}/" }
+    - { src: "{{ _engine_so_find.stdout }}", dest: "{{ _engine_so_name }}" }
+    - { src: "{{ _engine_wrapper_find.stdout }}", dest: "{{ _engine_wrapper_name }}" }
+
+- name: Copy python package directory to shared location
+  copy:
+    src: "{{ _engine_pkgdir_find.stdout }}/"
+    dest: "{{ minqlx_shared_dir }}/{{ _engine_python_pkg }}/"
+    remote_src: yes
+    owner: ql
+    group: ql
+    mode: preserve
+  when: _engine_pkgdir_find.stdout | length > 0
+
+- name: Copy python package zip to shared location
+  copy:
+    src: "{{ _engine_pkgzip_find.stdout }}"
+    dest: "{{ minqlx_shared_dir }}/{{ _engine_python_pkg }}.zip"
+    remote_src: yes
+    owner: ql
+    group: ql
+    mode: '0644'
+  when: _engine_pkgdir_find.stdout | length == 0 and _engine_pkgzip_find.stdout | length > 0
 
 - name: Copy optional helper scripts to shared location if present
   become: yes

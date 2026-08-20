@@ -161,6 +161,10 @@ def setup_host_ansible_logic(host_id, rerun=False):
             'qlds_engine_flavor': host.engine_flavor,
             'qlds_engine_source': host.engine_source,
             'qlds_engine_artifact_url': host.engine_artifact_url or '',
+            # Only used by tasks/build_engine_hook.yml's engine_source=artifact path, and
+            # only ever read by the QLSM controller itself (delegate_to: localhost) — never
+            # sent to the game VPS. Empty is fine for a public artifact URL.
+            'qlsm_github_token': os.environ.get('GITHUB_ARTIFACT_TOKEN', ''),
         })]
         ansible_command_args.append(ansible_playbook_path)
 
