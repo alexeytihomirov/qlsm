@@ -1,0 +1,8 @@
+{
+  "label": "Infected Mastermind",
+  "description": "Recreates the Infected Mastermind Red Rover game mode variant.",
+  "cvars": [
+    { "cvar": "g_rrInfectedMastermindHealthBonus", "label": "Mastermind Health Bonus", "description": "Extra health given to the Mastermind (infected leader).", "type": "number", "default": 50, "min": 0 },
+    { "cvar": "g_rrInfectedMastermindFragBonus", "label": "Mastermind Frag Bonus", "description": "Frags awarded for the Mastermind role at round end.", "type": "number", "default": 3, "min": 0 }
+  ]
+}

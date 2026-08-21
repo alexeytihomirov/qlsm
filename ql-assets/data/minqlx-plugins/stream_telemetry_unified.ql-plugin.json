@@ -1,4 +1,19 @@
 {
   "label": "Telemetry (Unified)",
-  "description": "Sends live match/player/pickup telemetry to a local relay for stats-hub ingestion. Low-priority frame hook — designed not to cost sv_fps. Requires the telemetry-relay sidecar service running on the host; not something QLSM installs by itself yet."
+  "description": "Sends live match/player/pickup telemetry to a local relay for stats-hub ingestion. Low-priority frame hook — designed not to cost sv_fps. Requires the telemetry-relay sidecar service running on the host; not something QLSM installs by itself yet.",
+  "cvars": [
+    { "cvar": "qlx_statsHubUnifiedEnabled", "label": "Enabled", "description": "Master switch for all telemetry sent by this plugin.", "type": "bool", "default": false },
+    { "cvar": "qlx_streamTelemetryEnabled", "label": "Position Telemetry", "description": "Sends live player position/view-angle telemetry for the stream overlay.", "type": "bool", "default": false },
+    { "cvar": "qlx_pickupTelemetryEnabled", "label": "Pickup Telemetry", "description": "Sends item-pickup events.", "type": "bool", "default": false },
+    { "cvar": "qlx_pickupTelemetryDebug", "label": "Pickup Telemetry Debug", "description": "Logs extra debug output for pickup telemetry.", "type": "bool", "default": false },
+    { "cvar": "qlx_sessionEventsEnabled", "label": "Session Events", "description": "Sends player join/leave session events.", "type": "bool", "default": false },
+    { "cvar": "qlx_statsHubUrl", "label": "Stats Hub URL", "description": "Ingest URL telemetry is POSTed to (either the stats-hub directly, or the local telemetry-relay).", "type": "string", "default": "" },
+    { "cvar": "qlx_statsHubToken", "label": "Stats Hub Token", "description": "Auth token sent with each telemetry POST.", "type": "string", "default": "" },
+    { "cvar": "qlx_statsHubInterval", "label": "Send Interval (s)", "description": "Seconds between telemetry sends during normal play.", "type": "number", "default": 0.1, "min": 0.1 },
+    { "cvar": "qlx_statsHubIdleInterval", "label": "Idle Interval (s)", "description": "Seconds between telemetry sends when the match is idle/warmup.", "type": "number", "default": 1.0, "min": 0.1 },
+    { "cvar": "qlx_statsHubAccuracyInterval", "label": "Accuracy Interval (s)", "description": "Seconds between accuracy-stat telemetry sends.", "type": "number", "default": 2, "min": 0.1 },
+    { "cvar": "qlx_statsHubMatchId", "label": "Match ID Override", "description": "Fixed match ID to tag telemetry with, instead of an auto-generated one.", "type": "string", "default": "" },
+    { "cvar": "qlx_statsHubServerId", "label": "Server ID", "description": "Server ID this instance reports telemetry as (matches a telemetry-relay routes/ key).", "type": "number", "default": 0, "min": 0 },
+    { "cvar": "qlx_statsHubTournamentId", "label": "Tournament ID", "description": "Tournament ID this instance's telemetry is tagged with.", "type": "number", "default": 0, "min": 0 }
+  ]
 }

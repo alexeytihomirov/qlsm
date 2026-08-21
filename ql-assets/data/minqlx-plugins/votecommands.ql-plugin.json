@@ -1,0 +1,7 @@
+{
+  "label": "Vote Commands",
+  "description": "Adds !pass/!veto chat commands so moderators can force through the currently active vote.",
+  "commands": [
+    { "name": "pass", "permission": 3, "description": "Forces the currently active vote to pass." }
+  ]
+}

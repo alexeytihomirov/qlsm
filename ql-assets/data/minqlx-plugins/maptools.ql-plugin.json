@@ -1,0 +1,13 @@
+{
+  "label": "Map Tools",
+  "description": "Player-facing map/factory info from the installed pk3 scan, plus a spawn-point visualiser.",
+  "commands": [
+    { "name": "mapinfo", "usage": "[mapname]", "permission": 0, "description": "Shows a map's .arena details: long name, author, declared gametypes, source." },
+    { "name": "factories", "permission": 0, "description": "Lists every factory the installed .factories files declare." },
+    { "name": "spawnvis", "permission": 2, "description": "Marks every spawn point with a visible item for a few seconds." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_spawnvisDuration", "label": "Spawn-Vis Duration (s)", "description": "How long !spawnvis markers stay visible.", "type": "number", "default": 15, "min": 1 },
+    { "cvar": "qlx_spawnvisItem", "label": "Spawn-Vis Item", "description": "Item classname used to mark spawn points for !spawnvis.", "type": "string", "default": "item_health_small" }
+  ]
+}

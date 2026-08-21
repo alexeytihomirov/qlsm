@@ -1,0 +1,10 @@
+{
+  "label": "Vote Stats",
+  "description": "Shows who voted yes/no in chat after a vote resolves.",
+  "commands": [
+    { "name": "votes", "permission": 0, "description": "Toggles private voting for the calling player (hides their vote from 'x voted y' messages)." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_privatiseVotes", "label": "Private Votes By Default", "description": "Hide 'x voted y' messages for all players by default.", "type": "bool", "default": false }
+  ]
+}

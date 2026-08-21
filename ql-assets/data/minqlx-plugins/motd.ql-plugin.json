@@ -1,0 +1,17 @@
+{
+  "label": "MOTD",
+  "description": "Message of the day management, shown to players on connect.",
+  "commands": [
+    { "name": "setmotd", "usage": "<motd>", "permission": 4, "description": "Sets the message of the day for this server." },
+    { "name": "setmotdall", "usage": "<motd>", "permission": 4, "description": "Sets the message of the day for all servers." },
+    { "name": "getmotd", "permission": 0, "description": "Shows the current message of the day for this server." },
+    { "name": "clearmotd", "permission": 4, "description": "Clears the message of the day on this server." },
+    { "name": "clearmotdall", "permission": 4, "description": "Clears the message of the day on all servers." },
+    { "name": "addmotd", "usage": "<more_motd>", "permission": 4, "description": "Appends text to the existing message of the day on this server." },
+    { "name": "addmotdall", "usage": "<more_motd>", "permission": 4, "description": "Appends text to the existing message of the day on all servers." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_motdSound", "label": "MOTD Sound", "description": "Sound file played when the MOTD is shown.", "type": "string", "default": "sound/vo/crash_new/37b_07_alt.wav" },
+    { "cvar": "qlx_motdHeader", "label": "MOTD Header", "description": "Header text shown above the message of the day.", "type": "string", "default": "^6======= ^7Message of the Day ^6=======^7" }
+  ]
+}

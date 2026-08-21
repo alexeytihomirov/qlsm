@@ -1,0 +1,7 @@
+{
+  "label": "Pummel",
+  "description": "Tracks and reports gauntlet ('pummel') kills between connected players.",
+  "commands": [
+    { "name": "pummel", "permission": 0, "description": "Shows all the currently-connected players the caller has pummeled." }
+  ]
+}

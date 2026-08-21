@@ -1,0 +1,4 @@
+{
+  "label": "Solo Race",
+  "description": "Disables warmup countdown requirements for solo/race-style play (temporarily forces g_doWarmup off, restores it after). No chat commands or owned cvars."
+}

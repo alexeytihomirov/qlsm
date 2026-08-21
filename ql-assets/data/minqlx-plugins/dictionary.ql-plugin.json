@@ -1,0 +1,7 @@
+{
+  "label": "Dictionary",
+  "description": "Looks up Urban Dictionary definitions in-game.",
+  "commands": [
+    { "name": "define", "usage": "<term>", "permission": 0, "description": "Provides the Urban Dictionary definition for the term provided." }
+  ]
+}

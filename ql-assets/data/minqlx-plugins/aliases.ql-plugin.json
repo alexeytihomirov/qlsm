@@ -1,0 +1,12 @@
+{
+  "label": "Aliases",
+  "description": "Tracks and shows player aliases (past names) seen on the server.",
+  "commands": [
+    { "name": "alias", "usage": "<id>", "permission": 0, "description": "Provides a list of aliases the server is aware of for the player ID/Steam ID provided." },
+    { "name": "setnoaliases", "usage": "<id>", "permission": 4, "description": "Set/unset the 'noaliases' flag for a player, preventing that player's aliases from being listed by !alias." },
+    { "name": "clearaliases", "permission": 5, "description": "Clears all alias records from the server database." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_aliasLimitOutputLines", "label": "Output Line Limit", "description": "Max number of lines !alias prints before truncating.", "type": "number", "default": 15, "min": 1 }
+  ]
+}

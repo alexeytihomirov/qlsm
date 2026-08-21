@@ -1,0 +1,8 @@
+{
+  "label": "Clan",
+  "description": "Persistent clan tags shown next to a player's name. Owns the cn/xcn configstring keys.",
+  "commands": [
+    { "name": "clan", "usage": "<clan_tag>", "permission": 0, "description": "Sets the player's clan tag, or clears it if nothing specified." },
+    { "name": "setnoclan", "usage": "<id>", "permission": 4, "description": "Prevents the specified player from using clan tags." }
+  ]
+}

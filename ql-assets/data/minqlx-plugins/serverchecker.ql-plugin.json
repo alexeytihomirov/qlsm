@@ -1,0 +1,4 @@
+{
+  "label": "Server Checker",
+  "description": "Writes live server status (player counts, map, game state, player details) to Redis every 10 seconds for external monitoring; also used by the packet-fragmentation collector for per-player UDP port mapping. Hook-only, no chat commands or owned cvars."
+}

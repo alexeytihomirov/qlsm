@@ -1,0 +1,12 @@
+{
+  "label": "VPN Block",
+  "description": "Blocks connections from known VPN/datacentre IP ranges.",
+  "commands": [
+    { "name": "vpn", "usage": "<id>", "permission": 1, "description": "Checks whether the specified player is playing from a known VPN/datacentre IP." },
+    { "name": "bypassvpn", "usage": "<id>", "permission": 4, "description": "Allows the specified player to connect while using a VPN, bypassing the block." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_blockVpnConnections", "label": "Enabled", "description": "Turns VPN/datacentre IP blocking on or off.", "type": "bool", "default": true },
+    { "cvar": "qlx_vpnBlockRefreshHours", "label": "IP List Refresh (hours)", "description": "How often the known VPN/datacentre IP range list is refreshed.", "type": "number", "default": 12, "min": 1 }
+  ]
+}

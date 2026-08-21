@@ -4,5 +4,8 @@
   "commands": [
     { "name": "sv_fps", "usage": "<integer>", "permission": 5, "description": "Sets sv_fps to the given value." },
     { "name": "svfps", "usage": "<integer>", "permission": 5, "description": "Alias for !sv_fps." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_svfps", "label": "sv_fps Override", "description": "The sv_fps value this plugin enforces (must be a multiple of 40).", "type": "number", "default": 40, "min": 40 }
   ]
 }

@@ -1,0 +1,4 @@
+{
+  "label": "Stats",
+  "description": "Collects per-round player gameplay statistics (hook-only, no chat commands or cvars)."
+}

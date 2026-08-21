@@ -1,0 +1,10 @@
+{
+  "label": "Names",
+  "description": "In-game player name colour override, with optional enforcement of the player's Steam name.",
+  "commands": [
+    { "name": "name", "usage": "<name>", "permission": 0, "description": "Re-colours the player's name, or clears custom colouring if nothing specified." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_enforceSteamName", "label": "Enforce Steam Name", "description": "Requires the in-game name to match (allowing colour codes) the player's Steam name.", "type": "bool", "default": true }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "label": "Leaver Ban",
+  "description": "Automatic timed bans for players who repeatedly leave matches early. Owns the leaves/games_left/games_completed tracking keys and the qlx_leaverBan* cvars (separate from manual bans in ban.py).",
+  "commands": [
+    { "name": "forgive", "usage": "<id> [leaves_to_forgive]", "permission": 4, "description": "Removes leaves from a player, starting with the oldest (optionally a specific count)." },
+    { "name": "gamestats", "usage": "<id>", "permission": 0, "description": "Returns a player's game leave/completion statistics." },
+    { "name": "tracked", "permission": 3, "description": "Lists all players currently being tracked for leaver bans." },
+    { "name": "checkleaver", "usage": "<id>", "permission": 0, "description": "Checks a player's leaver-ban status: current leave count and, if banned, expiry/time remaining." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_leaverBan", "label": "Enabled", "description": "Turns leaver auto-ban tracking on or off.", "type": "bool", "default": false },
+    { "cvar": "qlx_leaverBanRollingWindowDays", "label": "Rolling Window (days)", "description": "Number of days over which leaves are counted before rolling off.", "type": "number", "default": 30, "min": 1 },
+    { "cvar": "qlx_leaverBanMaxLeaves", "label": "Max Leaves", "description": "Number of leaves within the rolling window before a ban is issued.", "type": "number", "default": 3, "min": 1 },
+    { "cvar": "qlx_statOtherPlayersPermission", "label": "View-Others Permission", "description": "Minimum permission level required to check another player's leave stats.", "type": "number", "default": 1, "min": 0, "max": 5 },
+    { "cvar": "qlx_leaverBanDiscordWebhook", "label": "Discord Webhook", "description": "Optional Discord webhook URL notified when a leaver ban is issued.", "type": "string", "default": "" }
+  ]
+}

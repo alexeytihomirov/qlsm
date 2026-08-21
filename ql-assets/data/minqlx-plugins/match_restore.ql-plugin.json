@@ -12,5 +12,10 @@
     { "name": "setmatchtime", "usage": "show | <seconds> | <mm:ss> | ms <milliseconds>", "permission": 5, "description": "Alias for !matchtime." },
     { "name": "itemlab", "usage": "touch <eid> [cid] | respawn <eid> <sec> | stat <eid>", "permission": 5, "description": "Low-level item-entity tools used while building a checkpoint (touch/respawn/inspect)." },
     { "name": "itemslot", "usage": "touch <eid> [cid] | respawn <eid> <sec> | stat <eid>", "permission": 5, "description": "Alias for !itemlab." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_matchRestoreLabEnabled", "label": "Enabled", "description": "Turns the checkpoint/restore command set on or off.", "type": "bool", "default": true },
+    { "cvar": "qlx_matchRestoreNativeClock", "label": "Native Clock", "description": "Use the engine's own match clock instead of the plugin's tracked clock.", "type": "bool", "default": false },
+    { "cvar": "qlx_matchRestoreUnfreezeDelaySec", "label": "Unfreeze Delay (s)", "description": "Seconds to wait after applying a checkpoint before unfreezing play.", "type": "number", "default": 4, "min": 0 }
   ]
 }

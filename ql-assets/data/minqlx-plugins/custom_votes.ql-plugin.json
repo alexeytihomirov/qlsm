@@ -1,0 +1,18 @@
+{
+  "label": "Custom Votes",
+  "description": "Adds extra /cv vote types (ruleset, excessive weapons, force-connect) and admin commands.",
+  "commands": [
+    { "name": "listcv", "permission": 0, "description": "Lists the available custom vote types." },
+    { "name": "quit", "permission": 5, "description": "Shuts down the server process." },
+    { "name": "forceconnect", "usage": "<player_id> <server_port>", "permission": 5, "description": "Forces a connected player to reconnect to a different local server port." },
+    { "name": "forceconnect_all", "usage": "<server_port>", "permission": 5, "description": "Forces all connected players to reconnect to a different local server port." },
+    { "name": "excessiveweaps", "usage": "<on/off>", "permission": 5, "description": "Toggles the excessive-weapons ruleset variant." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_disablePlayerRemoval", "label": "Disable Player-Removal Votes", "description": "Blocks /cv votes that would kick/remove a player.", "type": "bool", "default": false },
+    { "cvar": "qlx_disableCvarVoting", "label": "Disable Cvar Votes", "description": "Blocks /cv votes that change server cvars.", "type": "bool", "default": true },
+    { "cvar": "qlx_disableServerRebootVote", "label": "Disable Reboot Vote", "description": "Blocks the /cv vote type that restarts the server.", "type": "bool", "default": false },
+    { "cvar": "qlx_cvarVotePermissionRequired", "label": "Cvar-Vote Call Permission", "description": "Minimum permission level required to call a cvar-changing /cv vote.", "type": "number", "default": 4, "min": 0, "max": 5 },
+    { "cvar": "qlx_glasshouse", "label": "Glasshouse Ruleset", "description": "Enables the glasshouse ruleset variant.", "type": "bool", "default": true }
+  ]
+}

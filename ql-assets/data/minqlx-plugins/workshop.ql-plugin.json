@@ -1,0 +1,7 @@
+{
+  "label": "Workshop",
+  "description": "Forces clients to download Steam Workshop PK3s referenced by this server on map load (hook-only, no chat commands).",
+  "cvars": [
+    { "cvar": "qlx_workshopReferences", "label": "Workshop References", "description": "Comma-separated list of Steam Workshop item IDs to force-download.", "type": "string", "default": "" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "label": "Plugin Manager",
+  "description": "Runtime load/unload/reload of other plugins without restarting the server.",
+  "commands": [
+    { "name": "load", "usage": "<plug-in>", "permission": 5, "description": "Loads the specified plug-in (omitting the file extension)." },
+    { "name": "unload", "usage": "<plug-in>", "permission": 5, "description": "Unloads the specified plug-in." },
+    { "name": "reload", "usage": "<plug-in>", "permission": 5, "description": "Reloads the specified plug-in." },
+    { "name": "loadall", "permission": 5, "description": "Loads all plug-ins specified in the qlx_plugins cvar." },
+    { "name": "unloadall", "permission": 5, "description": "Unloads all currently loaded plug-ins (except plugin_manager itself)." },
+    { "name": "reloadall", "permission": 5, "description": "Reloads all currently loaded plug-ins (except plugin_manager itself)." }
+  ]
+}
