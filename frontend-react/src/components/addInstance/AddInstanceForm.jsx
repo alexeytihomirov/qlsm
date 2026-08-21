@@ -16,7 +16,9 @@ import {
   CONFIG_CAPS,
   FACTORY_CAPS,
   FileManager,
+  getPluginDisplayLabel,
   PLUGIN_CAPS,
+  PluginCvarsModal,
   useDraftAdapter,
   useStateAdapter,
 } from '../fileManager';
@@ -202,6 +204,7 @@ function AddInstanceForm({
   const [checkedPlugins, setCheckedPlugins] = useState(initialPluginSeed.selectable);
   const [droppedPluginCount, setDroppedPluginCount] = useState(initialPluginSeed.dropped.length);
   const [pluginNoticeDismissed, setPluginNoticeDismissed] = useState(false);
+  const [cvarsModalTarget, setCvarsModalTarget] = useState(null); // { label, cvars } | null
   const pluginsManagerRef = useRef(null);
   const [draftPreset, setDraftPreset] = useState(defaultPresetNameForRuntime(initialHostRuntime));
   // Bare filenames the operator accepted a runtime replacement for, from the
@@ -385,6 +388,15 @@ function AddInstanceForm({
   const handleAccessTxtChange = useCallback((nextAccessTxt) => {
     syncConfigFile('access.txt', nextAccessTxt);
   }, [syncConfigFile]);
+
+  const handleEditPluginCvars = useCallback((item, cvars) => {
+    setCvarsModalTarget({ label: getPluginDisplayLabel(item), cvars });
+  }, []);
+
+  const handleSavePluginCvars = useCallback((nextConfig) => {
+    syncConfigFile('server.cfg', nextConfig);
+  }, [syncConfigFile]);
+
 
   const handleHostChange = useCallback(async (hostId, isInitialLoad = false) => {
     setSelectedHostId(hostId);
@@ -1315,6 +1327,7 @@ function AddInstanceForm({
                     contextType: 'preset',
                     contextKey: draftPreset || 'default',
                   }}
+                  onEditCvars={handleEditPluginCvars}
                 />
               </div>
             </div>
@@ -1458,6 +1471,15 @@ function AddInstanceForm({
       />
 
       <FullScreenConfigEditorModal isOpen={isFullScreenEditorOpen} onClose={handleCloseFullScreenEditor} onSave={handleSaveFullScreenEditor} fileName={editingFileDetails.name} initialContent={editingFileDetails.content} language={editingFileDetails.language} linterSource={editingFileDetails.linterSource} />
+
+      <PluginCvarsModal
+        isOpen={!!cvarsModalTarget}
+        onClose={() => setCvarsModalTarget(null)}
+        onSave={handleSavePluginCvars}
+        pluginLabel={cvarsModalTarget?.label || ''}
+        cvars={cvarsModalTarget?.cvars || []}
+        configText={configContents['server.cfg'] || ''}
+      />
     </form>
   );
 }
