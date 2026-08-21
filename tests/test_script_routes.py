@@ -145,6 +145,41 @@ class TestGetScriptTree:
         test_plugin = next(item for item in response.json['data'] if item['name'] == 'test_plugin.py')
         assert 'plugin_manifest' not in test_plugin
 
+    def test_tree_falls_back_to_pool_manifest_when_no_local_sidecar(self, client, app, scripts_dir, auth_headers, monkeypatch, tmp_path):
+        """A preset/instance copy of a plugin with no sidecar of its own
+        still gets enriched from the central ql-assets pool, matched by
+        filename — this is what lets an already-deployed instance pick up a
+        manifest added after it was created, without re-syncing every copy."""
+        monkeypatch.setattr('ui.routes.script_routes.CONFIGS_BASE', scripts_dir)
+        pool_dir = tmp_path / 'pool'
+        pool_dir.mkdir()
+        (pool_dir / 'another.ql-plugin.json').write_text('{"label": "Another (from pool)", "cvars": [{"cvar": "qlx_x", "type": "bool"}]}')
+        monkeypatch.setattr('ui.routes.script_routes.MINQLX_PLUGINS_POOL_DIR', str(pool_dir))
+
+        response = client.get('/api/scripts/tree?preset=default', headers=auth_headers)
+
+        assert response.status_code == 200
+        another = next(item for item in response.json['data'] if item['name'] == 'another.py')
+        assert another['plugin_manifest'] == {'label': 'Another (from pool)', 'cvars': [{'cvar': 'qlx_x', 'type': 'bool'}]}
+
+    def test_tree_prefers_local_sidecar_over_pool_manifest(self, client, app, scripts_dir, auth_headers, monkeypatch, tmp_path):
+        """A local sidecar overrides the pool entry for the same filename,
+        so a preset/instance can still customize its own copy's metadata."""
+        monkeypatch.setattr('ui.routes.script_routes.CONFIGS_BASE', scripts_dir)
+        preset_scripts = os.path.join(scripts_dir, 'presets', 'default', 'scripts')
+        with open(os.path.join(preset_scripts, 'another.ql-plugin.json'), 'w') as f:
+            f.write('{"label": "Local override"}')
+        pool_dir = tmp_path / 'pool'
+        pool_dir.mkdir()
+        (pool_dir / 'another.ql-plugin.json').write_text('{"label": "From pool"}')
+        monkeypatch.setattr('ui.routes.script_routes.MINQLX_PLUGINS_POOL_DIR', str(pool_dir))
+
+        response = client.get('/api/scripts/tree?preset=default', headers=auth_headers)
+
+        assert response.status_code == 200
+        another = next(item for item in response.json['data'] if item['name'] == 'another.py')
+        assert another['plugin_manifest'] == {'label': 'Local override'}
+
 
 class TestGetScriptContent:
     """Tests for GET /api/scripts/content endpoint."""

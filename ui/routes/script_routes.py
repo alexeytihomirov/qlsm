@@ -30,12 +30,18 @@ SCRIPTS_DIR = 'scripts'
 PLUGIN_MANIFEST_SUFFIX = '.ql-plugin.json'
 PLUGIN_MANIFEST_MAX_SIZE = 16 * 1024  # 16KB — metadata only, not a data file
 
+# Central plugin pool, same one ansible/backup use (see
+# ui/task_logic/backup_files.py MINQLX_PLUGINS_DIR). Manifest fallback source:
+# a preset/instance copy of a plugin can predate manifests entirely, or have
+# been uploaded/customized without its own sidecar — falling back to the pool
+# by filename means the manifest still shows up wherever the plugin does,
+# without needing every preset/instance copy kept in sync by hand.
+MINQLX_PLUGINS_POOL_DIR = os.path.join('ql-assets', 'data', 'minqlx-plugins')
 
-def _read_plugin_manifest(script_full_path):
-    """Read+parse the sibling manifest for a plugin .py file, if present and
-    well-formed. Never raises — a bad manifest just means no enrichment,
-    the plugin itself still works as a plain checkbox."""
-    manifest_path = os.path.splitext(script_full_path)[0] + PLUGIN_MANIFEST_SUFFIX
+
+def _load_manifest_file(manifest_path):
+    """Read+parse a single manifest file. Never raises — a bad manifest just
+    means no enrichment, the plugin itself still works as a plain checkbox."""
     if not os.path.isfile(manifest_path):
         return None
     try:
@@ -50,6 +56,24 @@ def _read_plugin_manifest(script_full_path):
     except (OSError, ValueError) as e:
         current_app.logger.warning(f"Failed to read plugin manifest {manifest_path}: {e}")
         return None
+
+
+def _read_plugin_manifest(script_full_path):
+    """Manifest for a plugin .py file: a sidecar next to the file itself
+    wins when present (lets one preset/instance override metadata for its
+    own copy), otherwise fall back to the central pool by filename — same
+    name in the pool means same plugin, so its manifest still applies even
+    to a preset/instance copy that has no sidecar of its own."""
+    local_manifest = os.path.splitext(script_full_path)[0] + PLUGIN_MANIFEST_SUFFIX
+    manifest = _load_manifest_file(local_manifest)
+    if manifest is not None:
+        return manifest
+
+    basename = os.path.splitext(os.path.basename(script_full_path))[0]
+    pool_manifest = os.path.join(os.path.abspath(MINQLX_PLUGINS_POOL_DIR), basename + PLUGIN_MANIFEST_SUFFIX)
+    if os.path.abspath(pool_manifest) == os.path.abspath(local_manifest):
+        return None  # already tried this exact file above
+    return _load_manifest_file(pool_manifest)
 
 
 def _get_scripts_base_path(preset=None, host=None, instance_id=None):
