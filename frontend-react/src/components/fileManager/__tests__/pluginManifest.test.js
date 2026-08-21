@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatPluginCommandsText,
   getPluginCommands,
+  getPluginCvars,
   getPluginDescription,
   getPluginDisplayLabel,
   getPluginManifest,
@@ -84,6 +85,60 @@ describe('getPluginCommands', () => {
   it('returns an empty array when commands is missing or not an array', () => {
     expect(getPluginCommands({})).toEqual([]);
     expect(getPluginCommands({ plugin_manifest: { commands: 'setperm' } })).toEqual([]);
+  });
+});
+
+describe('getPluginCvars', () => {
+  it('normalizes a full cvar entry for each supported type', () => {
+    const item = {
+      plugin_manifest: {
+        cvars: [
+          { cvar: 'qlx_enabled', label: 'Enabled', description: 'Turns it on.', type: 'bool', default: true },
+          { cvar: 'qlx_refPerm', label: 'Ref Perm', type: 'number', default: 3, min: 0, max: 5 },
+          { cvar: 'qlx_deny', type: 'string', default: 'a,b,c' },
+        ],
+      },
+    };
+    expect(getPluginCvars(item)).toEqual([
+      { cvar: 'qlx_enabled', label: 'Enabled', description: 'Turns it on.', type: 'bool', default: true, min: null, max: null },
+      { cvar: 'qlx_refPerm', label: 'Ref Perm', description: null, type: 'number', default: 3, min: 0, max: 5 },
+      { cvar: 'qlx_deny', label: 'qlx_deny', description: null, type: 'string', default: 'a,b,c', min: null, max: null },
+    ]);
+  });
+
+  it('falls back to the cvar name when label is missing', () => {
+    const item = { plugin_manifest: { cvars: [{ cvar: 'qlx_foo', type: 'bool' }] } };
+    expect(getPluginCvars(item)[0].label).toBe('qlx_foo');
+  });
+
+  it('drops entries with no cvar name', () => {
+    const item = { plugin_manifest: { cvars: [{ type: 'bool' }, { cvar: '', type: 'bool' }, { cvar: 'qlx_ok', type: 'bool' }] } };
+    expect(getPluginCvars(item)).toEqual([{ cvar: 'qlx_ok', label: 'qlx_ok', description: null, type: 'bool', default: null, min: null, max: null }]);
+  });
+
+  it('drops entries with an unrecognized type', () => {
+    const item = { plugin_manifest: { cvars: [{ cvar: 'qlx_bad', type: 'array' }, { cvar: 'qlx_missing' }] } };
+    expect(getPluginCvars(item)).toEqual([]);
+  });
+
+  it('ignores min/max on non-number types and a mistyped default', () => {
+    const item = {
+      plugin_manifest: {
+        cvars: [
+          { cvar: 'qlx_str', type: 'string', default: 42, min: 1, max: 9 },
+          { cvar: 'qlx_num', type: 'number', default: 'not-a-number' },
+        ],
+      },
+    };
+    expect(getPluginCvars(item)).toEqual([
+      { cvar: 'qlx_str', label: 'qlx_str', description: null, type: 'string', default: null, min: null, max: null },
+      { cvar: 'qlx_num', label: 'qlx_num', description: null, type: 'number', default: null, min: null, max: null },
+    ]);
+  });
+
+  it('returns an empty array when cvars is missing or not an array', () => {
+    expect(getPluginCvars({})).toEqual([]);
+    expect(getPluginCvars({ plugin_manifest: { cvars: 'nope' } })).toEqual([]);
   });
 });
 

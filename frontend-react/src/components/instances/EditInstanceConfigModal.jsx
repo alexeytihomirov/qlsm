@@ -8,7 +8,7 @@ import { getBinaryMeta, saveBinaryMeta } from '../../services/draftApi';
 import ExpandedEditorModal from '../ExpandedEditorModal';
 import ConfirmationModal from '../ConfirmationModal';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
-import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, useStateAdapter, useDraftAdapter } from '../fileManager';
+import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, PluginCvarsModal, getPluginDisplayLabel, useStateAdapter, useDraftAdapter } from '../fileManager';
 import SubfolderPluginNotice from '../fileManager/SubfolderPluginNotice';
 import { partitionCheckedPaths, resolveRootPluginPaths, toQlxPluginNames } from '../fileManager/pluginSelection';
 import { useNotification } from '../NotificationProvider';
@@ -106,6 +106,9 @@ function EditInstanceConfigModal({
   const isUpdatingFromServerCfg = React.useRef(false);
   const [serverHostname, setServerHostname] = useState('');
   const [originalServerHostname, setOriginalServerHostname] = useState('');
+
+  // Plugin cvars edit form (Plugins tab settings icon)
+  const [cvarsModalTarget, setCvarsModalTarget] = useState(null); // { label, cvars } | null
 
   // State for ExpandedEditorModal
   const [isExpandedEditorOpen, setIsExpandedEditorOpen] = useState(false);
@@ -426,6 +429,17 @@ function EditInstanceConfigModal({
 
     setIsDirty(true);
   };
+
+  const handleEditPluginCvars = useCallback((item, cvars) => {
+    setCvarsModalTarget({ label: getPluginDisplayLabel(item), cvars });
+  }, []);
+
+  const handleSavePluginCvars = useCallback((nextConfig) => {
+    writeConfigContent('server.cfg', nextConfig).catch((err) => {
+      setSaveError(err?.message || 'Failed to update server.cfg with new plugin settings.');
+    });
+    setIsDirty(true);
+  }, [writeConfigContent]);
 
   const lanRateChanged = lanRateEnabled !== originalLanRateEnabled;
   const hostShape = { os_type: hostOsType, lan_rate_uses_hook: hostLanRateUsesHook };
@@ -1073,6 +1087,7 @@ function EditInstanceConfigModal({
                                   contextType: 'instance',
                                   contextKey: String(instanceId),
                                 }}
+                                onEditCvars={handleEditPluginCvars}
                               />
                             </div>
                           </div>
@@ -1199,6 +1214,15 @@ function EditInstanceConfigModal({
         onPresetDeleted={handlePresetDeleted}
         onPresetRenamed={handlePresetRenamed}
         onPresetImported={handlePresetImported}
+      />
+
+      <PluginCvarsModal
+        isOpen={!!cvarsModalTarget}
+        onClose={() => setCvarsModalTarget(null)}
+        onSave={handleSavePluginCvars}
+        pluginLabel={cvarsModalTarget?.label || ''}
+        cvars={cvarsModalTarget?.cvars || []}
+        configText={serverCfgContent}
       />
     </>
   );

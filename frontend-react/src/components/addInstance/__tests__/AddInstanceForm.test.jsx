@@ -56,6 +56,8 @@ vi.mock('../../fileManager', () => ({
     allowedExtensions: ['.factories'],
     protectedFiles: [],
   },
+  getPluginDisplayLabel: (item) => item?.name,
+  PluginCvarsModal: () => null,
   FileManager: React.forwardRef(function MockFileManager(props, ref) {
     mocks.fileManagerProps.push(props);
     React.useImperativeHandle(ref, () => ({

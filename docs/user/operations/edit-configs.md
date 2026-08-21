@@ -147,6 +147,20 @@ When validation fails, QLSM shows line-level errors above the editor. Fix the re
 
 ![Failed plugin validation](../images/validate-failure.png)
 
+### Plugin Settings (Cvars)
+
+A plugin can ship an optional `<plugin>.ql-plugin.json` file next to its `.py` file with metadata QLSM reads and displays — none of this is required for the plugin to work as a plain checkbox.
+
+If that file declares a `cvars` list, a settings (gear) icon appears next to the plugin's row. Click it to edit the plugin's cvars directly, instead of hand-editing `server.cfg`:
+
+- **Toggle** for `bool` cvars.
+- **Number field** (with min/max, when the manifest sets them) for `number` cvars.
+- **Text field** for `string` cvars.
+
+Saving writes each edited cvar as a `set <cvar> "<value>"` line into `server.cfg` — the same mechanism used to sync the **Hostname** field with `sv_hostname`. Values you don't touch keep whatever is already in `server.cfg` (or the manifest's declared default if the line isn't present yet). This is plain text editing under the hood, so it's still visible and editable directly in the **Config** tab afterward.
+
+This is available both when editing an existing instance's config and when deploying a new instance.
+
 
 ## Factories
 
