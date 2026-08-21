@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPreset } from '../services/api';
+import OwnerAdminEditor from '../components/operators/OwnerAdminEditor';
 
 function AddPresetPage() {
   const navigate = useNavigate();
@@ -85,6 +86,13 @@ function AddPresetPage() {
             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 dark:text-gray-300 dark:bg-gray-700 leading-tight focus:outline-none focus:shadow-outline"
           />
         </div>
+
+        <OwnerAdminEditor
+          serverCfgContent={serverCfg}
+          accessTxtContent={access}
+          onServerCfgChange={setServerCfg}
+          onAccessTxtChange={setAccess}
+        />
 
         {configFields.map(field => (
           <div className="mb-6" key={field.label}>

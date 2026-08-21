@@ -1,5 +1,7 @@
 import { StreamLanguage } from '@codemirror/language';
 import { Tag, tags as t } from '@lezer/highlight'; // Import Tag and standard tags
+import { autocompletion } from '@codemirror/autocomplete';
+import { getOperatorsCache } from './utils/operatorsCache';
 
 // Define custom tags for specific keywords
 export const modTag = Tag.define();
@@ -149,6 +151,34 @@ export const qlaccessLanguage = StreamLanguage.define({
     lineComment: '#'
   }
 });
+
+// Suggests operators from the Settings -> Operators directory (via
+// operatorsCache, populated by OwnerAdminEditor) while typing the SteamID
+// field of an access.txt line — matches by SteamID prefix or by name.
+function operatorCompletionSource(context) {
+  const line = context.state.doc.lineAt(context.pos);
+  const textBeforeCursor = line.text.slice(0, context.pos - line.from);
+  if (/^\s*#/.test(textBeforeCursor)) return null;
+  if (textBeforeCursor.includes('|')) return null; // past the SteamID field
+
+  const typed = textBeforeCursor.trim();
+  if (!typed && !context.explicit) return null;
+
+  const typedLower = typed.toLowerCase();
+  const options = getOperatorsCache()
+    .filter((op) => op.steam_id64.startsWith(typed) || op.name.toLowerCase().includes(typedLower))
+    .map((op) => ({
+      label: op.steam_id64,
+      detail: `${op.name} (lvl ${op.default_level})`,
+      apply: `${op.steam_id64}|${op.default_level}`,
+      type: 'variable',
+    }));
+
+  if (options.length === 0) return null;
+  return { from: line.from, to: context.pos, options, filter: false };
+}
+
+export const qlAccessCompletion = autocompletion({ override: [operatorCompletionSource] });
 
 export const qlAccessLinter = (view) => {
   let diagnostics = [];
