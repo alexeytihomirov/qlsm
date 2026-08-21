@@ -138,7 +138,7 @@ function OwnerAdminEditor({ serverCfgContent, accessTxtContent, onServerCfgChang
                     key={entry.steamId}
                     className="flex items-center justify-between gap-2 rounded-md bg-[var(--surface-base)] px-2.5 py-1.5 text-sm"
                   >
-                    <span className="truncate">
+                    <span className="truncate text-[var(--text-primary)]">
                       {operator ? operator.name : <span className="italic text-[var(--text-muted)]">Unknown operator</span>}
                       <span className="ml-2 font-mono text-xs text-[var(--text-muted)]">{entry.steamId}</span>
                       <span className="ml-2 text-xs text-[var(--text-muted)]">lvl {entry.level}</span>
