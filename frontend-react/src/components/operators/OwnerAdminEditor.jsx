@@ -108,15 +108,17 @@ function OwnerAdminEditor({ serverCfgContent, accessTxtContent, onServerCfgChang
                 allowClear={false}
               />
             </div>
-            <select
-              value={pendingLevel}
-              onChange={(e) => setPendingLevel(e.target.value)}
-              className="input-base w-16 flex-shrink-0"
-            >
-              {[0, 1, 2, 3, 4, 5].map((lvl) => (
-                <option key={lvl} value={lvl}>{lvl}</option>
-              ))}
-            </select>
+            <div className="w-16 flex-shrink-0">
+              <select
+                value={pendingLevel}
+                onChange={(e) => setPendingLevel(e.target.value)}
+                className="input-base"
+              >
+                {[0, 1, 2, 3, 4, 5].map((lvl) => (
+                  <option key={lvl} value={lvl}>{lvl}</option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
               onClick={handleAddAdmin}
