@@ -307,7 +307,7 @@ const QLX_PLUGIN_CVARS = {
 // Merge order matters: app-managed notes (MANAGED_CVARS) win over plain engine
 // docs, since setting those cvars by hand has no effect regardless of what
 // they normally do — see stripManagedCvars/the linter above.
-function cvarCompletionOptions(prefix) {
+export function cvarCompletionOptions(prefix) {
   const seen = new Map();
   const add = (cvar, description, type) => {
     const key = cvar.toLowerCase();
@@ -324,13 +324,13 @@ function cvarCompletionOptions(prefix) {
     add(cvar, description, 'engine cvar');
   }
   const lower = prefix.toLowerCase();
-  return [...seen.values()].filter(o => o.label.toLowerCase().startsWith(lower));
+  return [...seen.values()].filter(o => o.label.toLowerCase().includes(lower));
 }
 
-function commandCompletionOptions(prefix) {
+export function commandCompletionOptions(prefix) {
   const lower = prefix.toLowerCase();
   return Object.entries(QL_CFG_COMMANDS)
-    .filter(([name]) => name.toLowerCase().startsWith(lower))
+    .filter(([name]) => name.toLowerCase().includes(lower))
     .map(([name, description]) => ({ label: name, detail: 'command', info: description, type: 'keyword' }));
 }
 
