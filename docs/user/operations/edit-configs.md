@@ -167,6 +167,22 @@ When validation fails, QLSM shows line-level errors above the editor. Fix the re
 
 ![Failed plugin validation](../images/validate-failure.png)
 
+### Plugin Settings (Cvars)
+
+A plugin can ship an optional `<plugin>.ql-plugin.json` file next to its `.py` file with metadata QLSM reads and displays — none of this is required for the plugin to work as a plain checkbox.
+
+The central plugin pool (`ql-assets/data/minqlx-plugins/`) is the source of truth: if it has a manifest for a plugin with that filename, that's what's used everywhere the plugin appears — a preset or instance's own copy is not checked, even if it has its own (possibly outdated) sidecar. A local sidecar only applies as a fallback for a plugin the pool doesn't have at all, e.g. a custom/one-off plugin written directly for one preset or instance. This means metadata for a pool plugin can't drift between presets and instances, and updating the pool's manifest (adding `cvars`, for example) applies everywhere immediately, including already-deployed instances, without re-copying anything by hand.
+
+If that file declares a `cvars` list, a settings (gear) icon appears next to the plugin's row. Click it to edit the plugin's cvars directly, instead of hand-editing `server.cfg`:
+
+- **Toggle** for `bool` cvars.
+- **Number field** (with min/max, when the manifest sets them) for `number` cvars.
+- **Text field** for `string` cvars.
+
+Saving writes each edited cvar as a `set <cvar> "<value>"` line into `server.cfg` — the same mechanism used to sync the **Hostname** field with `sv_hostname`. Values you don't touch keep whatever is already in `server.cfg` (or the manifest's declared default if the line isn't present yet). This is plain text editing under the hood, so it's still visible and editable directly in the **Config** tab afterward.
+
+This is available both when editing an existing instance's config and when deploying a new instance.
+
 
 ## Factories
 
