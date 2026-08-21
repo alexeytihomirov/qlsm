@@ -161,7 +161,7 @@ When validation fails, QLSM shows line-level errors above the editor. Fix the re
 
 A plugin can ship an optional `<plugin>.ql-plugin.json` file next to its `.py` file with metadata QLSM reads and displays — none of this is required for the plugin to work as a plain checkbox.
 
-If a preset or instance's own copy of the plugin has no sidecar of its own (common for instances deployed before the plugin had a manifest, or plugins copied in by hand), QLSM falls back to the same-named manifest in the central plugin pool (`ql-assets/data/minqlx-plugins/`) instead. A local sidecar, when present, always wins over the pool. This means metadata for a given plugin shows up consistently everywhere that plugin appears, without having to re-copy its manifest into every preset and instance by hand.
+The central plugin pool (`ql-assets/data/minqlx-plugins/`) is the source of truth: if it has a manifest for a plugin with that filename, that's what's used everywhere the plugin appears — a preset or instance's own copy is not checked, even if it has its own (possibly outdated) sidecar. A local sidecar only applies as a fallback for a plugin the pool doesn't have at all, e.g. a custom/one-off plugin written directly for one preset or instance. This means metadata for a pool plugin can't drift between presets and instances, and updating the pool's manifest (adding `cvars`, for example) applies everywhere immediately, including already-deployed instances, without re-copying anything by hand.
 
 If that file declares a `cvars` list, a settings (gear) icon appears next to the plugin's row. Click it to edit the plugin's cvars directly, instead of hand-editing `server.cfg`:
 

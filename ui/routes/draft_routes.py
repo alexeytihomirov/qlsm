@@ -17,6 +17,7 @@ from ui import db
 from ui.models import BinaryMetadata
 from ui.preset_support import resolve_preset_subdir
 from ui.font_files import FONT_EXTENSIONS, MAX_FONT_FILE_SIZE, validate_font_content
+from ui.plugin_manifest import read_plugin_manifest
 
 draft_api_bp = Blueprint('draft_api_routes', __name__)
 
@@ -195,14 +196,19 @@ def _build_draft_tree(path, base_path=None):
             ext = os.path.splitext(entry)[1].lower()
             if ext in ALLOWED_EXTENSIONS:
                 stat = os.stat(full_path)
-                items.append({
+                item = {
                     'name': entry,
                     'type': 'file',
                     'path': relative_path,
                     'file_type': FILE_TYPE_MAP.get(ext, 'unknown'),
                     'size': stat.st_size,
                     'last_modified': stat.st_mtime
-                })
+                }
+                if ext == '.py':
+                    manifest = read_plugin_manifest(full_path)
+                    if manifest is not None:
+                        item['plugin_manifest'] = manifest
+                items.append(item)
 
     return items
 
