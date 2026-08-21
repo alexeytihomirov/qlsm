@@ -28,6 +28,7 @@ import {
   qlaccessLanguage,
   qlAccessCompletion,
 } from '../codemirror-lang-qlaccess';
+import { qlcfgLanguage, qlCfgCompletion } from '../codemirror-lang-qlcfg';
 
 import { chatLogLanguage, chatDarkHighlighting, chatLightHighlighting } from '../utils/chatLogLanguage';
 import { minqlxLogLanguage, minqlxDarkHighlighting, minqlxLightHighlighting } from '../utils/minqlxLogLanguage';
@@ -176,6 +177,12 @@ const getExtensions = (currentLanguage, currentLinterSource, onChangeCallback, i
     // Suggest known operators (Settings -> Operators) while typing a SteamID in access.txt
     if (currentLanguage === qlaccessLanguage) {
       baseExtensions.push(qlAccessCompletion);
+    }
+
+    // Suggest engine/plugin cvar names (with descriptions) after `set `, and
+    // console commands at the start of a line, in server.cfg-like files
+    if (currentLanguage === qlcfgLanguage) {
+      baseExtensions.push(qlCfgCompletion);
     }
 
     // Determine the linter function to use
