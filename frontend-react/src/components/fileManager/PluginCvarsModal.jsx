@@ -56,8 +56,8 @@ export default function PluginCvarsModal({
       <DialogBackdrop transition className="modal-backdrop fixed inset-0 transition data-[enter]:ease-out data-[enter]:duration-200 data-[leave]:ease-in data-[leave]:duration-150 data-[closed]:opacity-0" />
       <div className="fixed inset-0 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
-          <Dialog.Panel transition className="modal-panel w-full max-w-md p-6 transition data-[enter]:ease-out data-[enter]:duration-200 data-[leave]:ease-in data-[leave]:duration-150 data-[closed]:opacity-0 data-[closed]:scale-95">
-            <Dialog.Title className="text-lg font-display font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-4 flex items-center justify-between">
+          <Dialog.Panel transition className="modal-panel w-full max-w-md max-h-[85vh] p-6 flex flex-col transition data-[enter]:ease-out data-[enter]:duration-200 data-[leave]:ease-in data-[leave]:duration-150 data-[closed]:opacity-0 data-[closed]:scale-95">
+            <Dialog.Title className="text-lg font-display font-semibold uppercase tracking-wider text-[var(--text-primary)] mb-4 flex items-center justify-between flex-shrink-0">
               <span className="flex items-center gap-2">
                 <Settings className="w-4 h-4" />
                 {pluginLabel} Settings
@@ -66,7 +66,7 @@ export default function PluginCvarsModal({
                 <X size={16} />
               </button>
             </Dialog.Title>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-3 flex-1 min-h-0 overflow-y-auto pb-2">
               {cvars.map(c => (
                 <div key={c.cvar}>
                   <label className="label-tech mb-1.5 flex items-center gap-1.5">
@@ -109,7 +109,7 @@ export default function PluginCvarsModal({
                 <p className="text-sm text-[var(--text-muted)]">No settings declared for this plugin.</p>
               )}
             </div>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex justify-end gap-2 flex-shrink-0">
               <button type="button" onClick={onClose} className="btn btn-secondary">
                 <X className="w-4 h-4 mr-1" />
                 Cancel
