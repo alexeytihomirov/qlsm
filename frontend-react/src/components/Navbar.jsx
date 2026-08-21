@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import ThemeToggleButton from './ThemeToggleButton';
 import { useAuth } from '../contexts/AuthContext';
-import { Settings, Users, ChevronDown, Terminal, LogOut, Server, SlidersHorizontal, Menu as MenuIcon, BookOpen, Archive, FileText } from 'lucide-react';
+import { Settings, Users, ChevronDown, Terminal, LogOut, Server, SlidersHorizontal, Menu as MenuIcon, BookOpen, Archive, FileText, ShieldCheck } from 'lucide-react';
 
 function Navbar() {
   const navigate = useNavigate();
@@ -111,6 +111,17 @@ function Navbar() {
                     <Menu.Item>
                       {({ active }) => (
                         <Link
+                          to="/settings/operators"
+                          className={`navbar-dropdown-item ${active ? 'navbar-dropdown-item-active' : ''}`}
+                        >
+                          <ShieldCheck size={16} strokeWidth={2} />
+                          <span>Operators</span>
+                        </Link>
+                      )}
+                    </Menu.Item>
+                    <Menu.Item>
+                      {({ active }) => (
+                        <Link
                           to="/settings"
                           className={`navbar-dropdown-item ${active ? 'navbar-dropdown-item-active' : ''}`}
                         >
@@ -209,6 +220,17 @@ function Navbar() {
                         >
                           <Users size={16} strokeWidth={2} />
                           <span>User Management</span>
+                        </Link>
+                      )}
+                    </Menu.Item>
+                    <Menu.Item>
+                      {({ active }) => (
+                        <Link
+                          to="/settings/operators"
+                          className={`navbar-dropdown-item ${active || location.pathname === '/settings/operators' ? 'navbar-dropdown-item-active' : ''}`}
+                        >
+                          <ShieldCheck size={16} strokeWidth={2} />
+                          <span>Operators</span>
                         </Link>
                       )}
                     </Menu.Item>

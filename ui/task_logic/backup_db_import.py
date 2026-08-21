@@ -9,7 +9,7 @@ import datetime
 from ui import db
 from ui.models import (
     ApiKey, AppSetting, BinaryMetadata, ConfigPreset, Host, HostStatus,
-    InstanceStatus, QLFilterStatus, QLInstance, User,
+    InstanceStatus, Operator, QLFilterStatus, QLInstance, User,
 )
 from ui.task_logic.backup_db_export import DB_EXPORT_FORMAT_VERSION
 
@@ -40,6 +40,7 @@ def replace_database(data):
     User.query.delete()
     ApiKey.query.delete()
     AppSetting.query.delete()
+    Operator.query.delete()
     db.session.flush()
 
     for row in data['hosts']:
@@ -99,6 +100,15 @@ def replace_database(data):
         db.session.add(BinaryMetadata(
             id=row['id'], context_type=row['context_type'], context_key=row['context_key'],
             file_path=row['file_path'], description=row.get('description', ''),
+            created_at=_parse_dt(row.get('created_at')), updated_at=_parse_dt(row.get('updated_at')),
+        ))
+
+    # 'operators' is intentionally not in _REQUIRED_KEYS: older backups predate
+    # this table and simply have none to restore.
+    for row in data.get('operators') or []:
+        db.session.add(Operator(
+            id=row['id'], name=row['name'], steam_id64=row['steam_id64'],
+            default_level=row.get('default_level', 5),
             created_at=_parse_dt(row.get('created_at')), updated_at=_parse_dt(row.get('updated_at')),
         ))
     db.session.flush()

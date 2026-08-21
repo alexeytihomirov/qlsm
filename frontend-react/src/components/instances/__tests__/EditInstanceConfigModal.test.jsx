@@ -80,6 +80,10 @@ vi.mock('../../ConfirmationModal', () => ({
   default: () => null,
 }));
 
+vi.mock('../../operators/OwnerAdminEditor', () => ({
+  default: () => null,
+}));
+
 vi.mock('../../presetManager/PresetManagerModal', () => ({
   default: ({ isOpen, onSavePreset, onLoadPreset, savedPreset }) => (
     isOpen ? (

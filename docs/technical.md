@@ -115,6 +115,7 @@ The Flask application follows the application factory pattern, which provides se
     *   `server_status_routes.py`: Handles live status retrieval (`GET /api/server-status`) and workshop preview lookup (`GET /api/server-status/workshop-preview/<workshop_id>`).
     *   `settings_routes.py`: Handles application settings management (API keys, rate limit config).
     *   `user_routes.py`: Handles user management endpoints.
+    *   `operator_routes.py`: CRUD for the Operator directory (name + SteamID64 + default admin level) at `/api/operators`.
     *   `draft_routes.py`: Handles server-side plugin draft workspaces for preset and instance editing, including tree/content reads, upload, delete, rename, touch, and commit.
     *   `binary_meta_routes.py`: Handles `.so` plugin descriptions for draft file manager sessions.
     *   `script_routes.py`: Handles script management endpoints.
@@ -123,7 +124,7 @@ The Flask application follows the application factory pattern, which provides se
 
 ### Database Models
 
-The application has six database models: `User`, `Host`, `QLInstance`, `ConfigPreset`, `ApiKey`, and `AppSetting`.
+The application has database models including `User`, `Host`, `QLInstance`, `ConfigPreset`, `ApiKey`, `AppSetting`, `BinaryMetadata`, and `Operator`.
 
 **Host Model:** Represents a target server where Quake Live instances can be deployed. These hosts are provisioned via Terraform triggered by the UI.
 
@@ -232,6 +233,8 @@ class ConfigPreset(db.Model):
 **ApiKey Model:** Stores API keys for external service authentication. Used by `external_api_routes.py` to validate `Authorization: Bearer <key>` headers.
 
 **AppSetting Model:** Generic key-value store for application settings (e.g., rate limit values). Accessed via `settings_routes.py`.
+
+**Operator Model:** Directory of named operators (`name`, `steam_id64` unique, `default_level` 0-5) assignable as Owner (`qlx_owner` in `server.cfg`) or Admin (`steamid|level` line in `access.txt`) from the Owner & Admins panel on the instance/preset config editors. Managed via `operator_routes.py` at `/api/operators`.
 
 ## Testing Framework
 

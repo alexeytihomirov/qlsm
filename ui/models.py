@@ -293,6 +293,32 @@ class AppSetting(db.Model):
         return {'key': self.key, 'value': self.value}
 
 
+class Operator(db.Model):
+    """Directory of named operators (SteamID64) assignable as owner/admin in server configs."""
+    __tablename__ = 'operator'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False)
+    steam_id64 = db.Column(db.String(20), nullable=False, unique=True)
+    default_level = db.Column(db.Integer, nullable=False, default=5, server_default='5')
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.datetime.utcnow,
+        onupdate=datetime.datetime.utcnow,
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'steam_id64': self.steam_id64,
+            'default_level': self.default_level,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class BinaryMetadata(db.Model):
     """Stores user-provided description labels for .so binary plugin files."""
     __tablename__ = 'binary_metadata'

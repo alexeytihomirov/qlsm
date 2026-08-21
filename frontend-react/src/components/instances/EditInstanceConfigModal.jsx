@@ -19,6 +19,7 @@ import { qlaccessLanguage } from '../../codemirror-lang-qlaccess';
 import { qlworkshopLanguage } from '../../codemirror-lang-qlworkshop';
 import { qlentLanguage, qlentLinter } from '../../codemirror-lang-qlent';
 import HooksTab from './HooksTab';
+import OwnerAdminEditor from '../operators/OwnerAdminEditor';
 import {
   canEnableLanRate,
   getLanRateUnsupportedMessage,
@@ -201,6 +202,21 @@ function EditInstanceConfigModal({
   } = pluginsAdapter;
   const { files: serializedConfigFiles } = serializeConfigs();
   const serverCfgContent = serializedConfigFiles['server.cfg'] || '';
+  const accessTxtContent = serializedConfigFiles['access.txt'] || '';
+
+  const handleServerCfgOwnerChange = useCallback((nextConfig) => {
+    writeConfigContent('server.cfg', nextConfig).catch((err) => {
+      setSaveError(err?.message || 'Failed to update server.cfg with new owner.');
+    });
+    setIsDirty(true);
+  }, [writeConfigContent]);
+
+  const handleAccessTxtChange = useCallback((nextAccessTxt) => {
+    writeConfigContent('access.txt', nextAccessTxt).catch((err) => {
+      setSaveError(err?.message || 'Failed to update access.txt.');
+    });
+    setIsDirty(true);
+  }, [writeConfigContent]);
 
   // Resolve raw qlx_plugins names to full tree paths once on initial load.
   // Only root-level files can match — a name that resolves solely to a
@@ -1056,15 +1072,23 @@ function EditInstanceConfigModal({
 
                         {/* Content area */}
                         <div className="flex-grow min-h-0 bg-[var(--surface-base)] border-x border-b border-[var(--surface-border)] rounded-b-xl p-4 flex flex-col">
-                          <div className={activeMainTab === 'config' ? 'flex-1 min-h-0' : 'hidden'}>
-                            <FileManager
-                              adapter={configsAdapter}
-                              capabilities={CONFIG_CAPS}
-                              defaultSelectedPath="server.cfg"
-                              onExpandEditor={handleExpandEditor}
-                              getLanguageForFile={getLanguageForFile}
-                              getLinterSourceForFile={getLinterSource}
+                          <div className={activeMainTab === 'config' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+                            <OwnerAdminEditor
+                              serverCfgContent={serverCfgContent}
+                              accessTxtContent={accessTxtContent}
+                              onServerCfgChange={handleServerCfgOwnerChange}
+                              onAccessTxtChange={handleAccessTxtChange}
                             />
+                            <div className="flex-1 min-h-0">
+                              <FileManager
+                                adapter={configsAdapter}
+                                capabilities={CONFIG_CAPS}
+                                defaultSelectedPath="server.cfg"
+                                onExpandEditor={handleExpandEditor}
+                                getLanguageForFile={getLanguageForFile}
+                                getLinterSourceForFile={getLinterSource}
+                              />
+                            </div>
                           </div>
                           <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
                             <SubfolderPluginNotice

@@ -1,5 +1,5 @@
 """Serialize every backed-up DB table to a JSON-safe snapshot."""
-from ui.models import ApiKey, AppSetting, BinaryMetadata, ConfigPreset, Host, QLInstance, User
+from ui.models import ApiKey, AppSetting, BinaryMetadata, ConfigPreset, Host, Operator, QLInstance, User
 
 DB_EXPORT_FORMAT_VERSION = 1
 
@@ -77,6 +77,14 @@ def _binary_meta_row(row):
     }
 
 
+def _operator_row(row):
+    return {
+        'id': row.id, 'name': row.name, 'steam_id64': row.steam_id64,
+        'default_level': row.default_level,
+        'created_at': _iso(row.created_at), 'updated_at': _iso(row.updated_at),
+    }
+
+
 def serialize_database():
     """Return a JSON-serializable snapshot of every backed-up table."""
     return {
@@ -88,4 +96,5 @@ def serialize_database():
         'api_keys': [_api_key_row(k) for k in ApiKey.query.order_by(ApiKey.id).all()],
         'app_settings': [_app_setting_row(s) for s in AppSetting.query.order_by(AppSetting.key).all()],
         'binary_metadata': [_binary_meta_row(r) for r in BinaryMetadata.query.order_by(BinaryMetadata.id).all()],
+        'operators': [_operator_row(r) for r in Operator.query.order_by(Operator.id).all()],
     }

@@ -247,6 +247,9 @@ def create_app(test_config=None):
     from ui.routes.server_status_routes import server_status_bp
     api_bp.register_blueprint(server_status_bp, url_prefix='/server-status')
 
+    from ui.routes.operator_routes import operator_api_bp
+    api_bp.register_blueprint(operator_api_bp, url_prefix='/operators')
+
     app.register_blueprint(api_bp)
     app.register_blueprint(index_bp) # Register index_bp
 

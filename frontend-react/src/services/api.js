@@ -746,6 +746,47 @@ export const deleteUser = async (userId) => {
   }
 };
 
+// Operator Directory APIs
+export const getOperators = async () => {
+  try {
+    const response = await apiClient.get('/operators/');
+    return response.data.data;
+  } catch (error) {
+    console.error('Failed to fetch operators:', error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error('Failed to fetch operators');
+  }
+};
+
+export const createOperator = async (operatorData) => {
+  try {
+    const response = await apiClient.post('/operators/', operatorData);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to create operator:', error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error('Failed to create operator');
+  }
+};
+
+export const updateOperator = async (operatorId, operatorData) => {
+  try {
+    const response = await apiClient.patch(`/operators/${operatorId}`, operatorData);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to update operator ${operatorId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to update operator ${operatorId}`);
+  }
+};
+
+export const deleteOperator = async (operatorId) => {
+  try {
+    const response = await apiClient.delete(`/operators/${operatorId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to delete operator ${operatorId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to delete operator ${operatorId}`);
+  }
+};
+
 // Script Management APIs
 export const getScriptTree = async ({ preset, host, instanceId } = {}) => {
   try {

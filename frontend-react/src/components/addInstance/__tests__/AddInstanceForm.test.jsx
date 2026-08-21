@@ -26,6 +26,10 @@ vi.mock('../../../hooks/useDraftWorkspace', () => ({
   useDraftWorkspace: mocks.useDraftWorkspace,
 }));
 
+vi.mock('../../operators/OwnerAdminEditor', () => ({
+  default: () => null,
+}));
+
 vi.mock('../../../services/api', () => ({
   getAvailablePortsForHost: mocks.getAvailablePortsForHost,
   getFactoryContent: mocks.getFactoryContent,

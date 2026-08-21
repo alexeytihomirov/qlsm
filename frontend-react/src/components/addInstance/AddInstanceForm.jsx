@@ -36,6 +36,7 @@ import {
   isLanRateSupported,
 } from '../../utils/lanRateCompatibility';
 import { validateZmqPassword } from '../../utils/zmqPassword';
+import OwnerAdminEditor from '../operators/OwnerAdminEditor';
 
 const CONFIG_FILES = ['server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt'];
 const NET_PORT_REGEX = /^(set\s+net_port\s+").*(".*)/m;
@@ -318,6 +319,14 @@ function AddInstanceForm({
 
   const handleSavePluginCvars = useCallback((nextConfig) => {
     syncConfigFile('server.cfg', nextConfig);
+  }, [syncConfigFile]);
+
+  const handleOwnerChange = useCallback((nextConfig) => {
+    syncConfigFile('server.cfg', nextConfig);
+  }, [syncConfigFile]);
+
+  const handleAccessTxtChange = useCallback((nextAccessTxt) => {
+    syncConfigFile('access.txt', nextAccessTxt);
   }, [syncConfigFile]);
 
   const handleHostChange = useCallback(async (hostId, isInitialLoad = false) => {
@@ -1070,15 +1079,23 @@ function AddInstanceForm({
           <div
             className="flex-grow min-h-0 bg-[var(--surface-base)] border-x border-b border-[var(--surface-border)] rounded-b-xl p-4 flex flex-col"
           >
-            <div className={activeMainTab === 'config' ? 'flex-1 min-h-0' : 'hidden'}>
-              <FileManager
-                adapter={configsAdapter}
-                capabilities={CONFIG_CAPS}
-                defaultSelectedPath="server.cfg"
-                onExpandEditor={handleExpandEditor}
-                getLanguageForFile={getConfigLanguage}
-                getLinterSourceForFile={getLinterSourceForFile}
+            <div className={activeMainTab === 'config' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+              <OwnerAdminEditor
+                serverCfgContent={configContents['server.cfg'] || ''}
+                accessTxtContent={configContents['access.txt'] || ''}
+                onServerCfgChange={handleOwnerChange}
+                onAccessTxtChange={handleAccessTxtChange}
               />
+              <div className="flex-1 min-h-0">
+                <FileManager
+                  adapter={configsAdapter}
+                  capabilities={CONFIG_CAPS}
+                  defaultSelectedPath="server.cfg"
+                  onExpandEditor={handleExpandEditor}
+                  getLanguageForFile={getConfigLanguage}
+                  getLinterSourceForFile={getLinterSourceForFile}
+                />
+              </div>
             </div>
             <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
               <SubfolderPluginNotice
