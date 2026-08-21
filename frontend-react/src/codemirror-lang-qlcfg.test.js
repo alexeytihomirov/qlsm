@@ -1,7 +1,12 @@
 import { EditorState } from '@codemirror/state';
 import { describe, expect, it, vi } from 'vitest';
 
-import { createQlCfgLinter, stripManagedCvars } from './codemirror-lang-qlcfg';
+import {
+  commandCompletionOptions,
+  createQlCfgLinter,
+  cvarCompletionOptions,
+  stripManagedCvars,
+} from './codemirror-lang-qlcfg';
 
 function lint(doc) {
   const onLintResults = vi.fn();
@@ -29,6 +34,30 @@ describe('createQlCfgLinter', () => {
         message: 'This cvar will be ignored. Forced to "" by the app (binds all interfaces, required for 99k LAN rate).',
       }),
     ]);
+  });
+});
+
+describe('commandCompletionOptions', () => {
+  it('matches a substring anywhere in the command name, not just the prefix', () => {
+    const labels = commandCompletionOptions('dump').map((o) => o.label);
+    expect(labels).toContain('condump');
+  });
+
+  it('matches regardless of the case of the typed text or the command name', () => {
+    const labels = commandCompletionOptions('RESTART').map((o) => o.label);
+    expect(labels).toContain('cvar_restart');
+  });
+});
+
+describe('cvarCompletionOptions', () => {
+  it('matches a substring anywhere in the cvar name, not just the prefix', () => {
+    const labels = cvarCompletionOptions('rate').map((o) => o.label);
+    expect(labels).toContain('sv_lanforcerate');
+  });
+
+  it('matches regardless of the case of the typed text or the cvar name', () => {
+    const labels = cvarCompletionOptions('LAN').map((o) => o.label);
+    expect(labels).toContain('sv_lanforcerate');
   });
 });
 
