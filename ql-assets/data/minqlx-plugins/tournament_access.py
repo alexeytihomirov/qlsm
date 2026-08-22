@@ -166,7 +166,7 @@ class tournament_access(minqlx.Plugin):
                 sid_int = int(sid)
             except ValueError:
                 continue
-            if steam_int == sid_int or abs(steam_int - sid_int) <= 1:
+            if steam_int == sid_int:
                 return True
         return False
 
