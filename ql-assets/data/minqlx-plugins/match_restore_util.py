@@ -149,6 +149,14 @@ import json
 import os
 import re
 
+try:
+    import minqlxtended as minqlx
+except ImportError:
+    try:
+        import minqlx
+    except ImportError:
+        minqlx = None
+
 ITEM_ALIASES = {
     "mega": "item_health_mega",
     "mh": "item_health_mega",
@@ -227,22 +235,61 @@ def _alias_for_classname(classname):
     return None
 
 
-def load_map_spawns(map_key):
-    """Return {alias: {entity_id, x, y, z, classname}} for restorable spawns."""
+def _native_map_entities(map_name):
+    """Live entity lump via minqlxtended.map_entities(); None if unavailable/failed.
+
+    Native entities carry no persistent id (BSP has none) — the enumerate index
+    below is only a stable per-load slot key, not a re-derivation of the old
+    bundled JSON's "id" field.
+    """
+    if minqlx is None or not hasattr(minqlx, "map_entities"):
+        return None
+    name = str(map_name or "").strip()
+    if not name:
+        return None
+    try:
+        raw_entities = minqlx.map_entities(name)
+    except Exception:
+        return None
+    if not isinstance(raw_entities, list):
+        return None
+    rows = []
+    for idx, ent in enumerate(raw_entities):
+        classname = getattr(ent, "classname", None)
+        origin = getattr(ent, "origin", None)
+        if not classname or not origin:
+            continue
+        try:
+            x, y, z = origin
+        except (TypeError, ValueError):
+            continue
+        rows.append({"id": idx, "classname": classname, "x": x, "y": y, "z": z})
+    return rows
+
+
+def load_map_spawns(map_key, raw_map_name=None):
+    """Return {alias: {entity_id, x, y, z, classname}} for restorable spawns.
+
+    Reads live from minqlxtended.map_entities() (BSP entity lump) when the
+    native build exposes it; falls back to the bundled
+    data/map_entities/<map>.json snapshot otherwise.
+    """
     key = normalize_map_key(map_key)
     if not key:
         return {}
-    path = os.path.join(_data_dir(), key + ".json")
-    if not os.path.isfile(path):
-        return {}
-    try:
-        with open(path, encoding="utf-8") as handle:
-            raw = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return {}
-    entities = raw.get("entities") if isinstance(raw, dict) else raw
-    if not isinstance(entities, list):
-        return {}
+    entities = _native_map_entities(raw_map_name if raw_map_name else map_key)
+    if entities is None:
+        path = os.path.join(_data_dir(), key + ".json")
+        if not os.path.isfile(path):
+            return {}
+        try:
+            with open(path, encoding="utf-8") as handle:
+                raw = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        entities = raw.get("entities") if isinstance(raw, dict) else raw
+        if not isinstance(entities, list):
+            return {}
     restorable = []
     by_class = {}
     for row in entities:

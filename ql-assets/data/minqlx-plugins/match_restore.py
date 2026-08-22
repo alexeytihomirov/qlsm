@@ -309,7 +309,7 @@ class match_restore(minqlx.Plugin):
         existing = self._map_spawns.get(map_key)
         loaded = {}
         if restore_util is not None:
-            loaded = restore_util.load_map_spawns(map_key) or {}
+            loaded = restore_util.load_map_spawns(map_key, self._raw_map_name()) or {}
         if loaded:
             merged = dict(existing or {})
             merged.update(loaded)
@@ -1276,6 +1276,16 @@ class match_restore(minqlx.Plugin):
                 name = str(val)
                 break
         return normalize_map_key(name or getattr(game, "map_title", None))
+
+    @staticmethod
+    def _raw_map_name():
+        """Unnormalized map name (matches the .bsp/.pk3 filename) for map_entities()."""
+        game = minqlx.Game()
+        for attr in ("map", "map_name"):
+            val = getattr(game, attr, None)
+            if val:
+                return str(val)
+        return None
 
     def _resolve_alias(self, alias):
         key = str(alias or "").strip().lower()
