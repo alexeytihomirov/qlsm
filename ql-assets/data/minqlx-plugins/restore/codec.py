@@ -100,7 +100,12 @@ def mask_weapon_keys(mask):
 
 
 def normalize_powerups(raw):
-    """Return {alias: remaining_sec} for known powerups; drop zeros."""
+    """Return {alias: remaining_seconds} for known powerups; drop zeros.
+
+    `pw` values are always whole seconds, never milliseconds -- match_restore.py's
+    `_export_powerups` converts `Player.powerups` (ms) down to seconds before this
+    ever sees it, and `_apply_powerups` converts back up (`sec * 1000`) on apply.
+    """
     if not isinstance(raw, dict):
         return {}
     out = {}

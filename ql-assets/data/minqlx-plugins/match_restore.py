@@ -2455,14 +2455,13 @@ class match_restore(minqlx.Plugin):
 
     @staticmethod
     def _export_powerups(player):
-        """Remaining powerup MILLISECONDS (minqlx `Player.powerups` is ms, not seconds).
+        """Remaining powerup SECONDS for the checkpoint `pw` field.
 
-        No unit conversion happens here -- the raw ms values go straight into the
-        checkpoint's `pw` field. codec.py still names that field `remaining_sec`; that
-        name predates this port and is misleading, and the operator `!restorecp <player>
-        <slot> powerup quad 30` path really does write seconds, so the two producers of
-        `pw` disagree by 1000x. Pre-existing bug, out of scope here, tracked separately --
-        do not "fix" it by changing units in this function alone.
+        `Player.powerups` (v1.0.0 property) reads milliseconds, but `pw` is a seconds
+        field everywhere else: codec.py's `normalize_powerups` treats it as seconds,
+        and the operator `!restorecp <player> <slot> powerup quad 30` draft path writes
+        seconds directly. Convert ms -> sec here so both producers of `pw` agree; see
+        `_apply_powerups` which converts back to ms (`sec * 1000`) on the way in.
         """
         try:
             pu = player.powerups
@@ -2479,11 +2478,12 @@ class match_restore(minqlx.Plugin):
         out = {}
         for attr, alias in mapping:
             try:
-                remaining = int(getattr(pu, attr, 0) or 0)
+                remaining_ms = int(getattr(pu, attr, 0) or 0)
             except (TypeError, ValueError, AttributeError):
-                remaining = 0
-            if remaining > 0:
-                out[alias] = remaining
+                remaining_ms = 0
+            remaining_sec = remaining_ms // 1000
+            if remaining_sec > 0:
+                out[alias] = remaining_sec
         return out or None
 
     def _resolve_player_from_row(self, row, allow_cid_live=True):
