@@ -66,7 +66,7 @@ export default function PluginCvarsModal({
                 <X size={16} />
               </button>
             </Dialog.Title>
-            <div className="space-y-3 flex-1 min-h-0 overflow-y-auto pb-2">
+            <div className="space-y-3 flex-1 min-h-0 overflow-y-auto scrollbar-thin pr-2 pb-2">
               {cvars.map(c => (
                 <div key={c.cvar}>
                   <label className="label-tech mb-1.5 flex items-center gap-1.5">
