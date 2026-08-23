@@ -6,10 +6,6 @@
 # Cfg draft lines only (no binary blob / paste / fetch transport).
 #
 # Commands (perm 5):
-#   !spawnsec <alias> <seconds> [entity_id]
-#       Hide runtime entity (hide_map_item), show after N seconds (show_map_item).
-#   !spawnsec list
-#       Known entity ids for current map (bundled lookup).
 #   !restorecp clear|time|map|player|item|apply|verify|show — cfg-style draft
 #   !restorecp players [0:3 1:2|clear] — slot→client_id remap (survives clear)
 #   !restorecp export — current state as checkpoint JSON (summary tell, JSON to log)
@@ -17,18 +13,17 @@
 #   Items: touch + vanilla nextthink (game clock). touch_map_item resets entity;
 #       set_item_respawn_delay only bumps nextthink (no hide/show). Legacy wall-clock
 #       show if set_item_respawn_delay missing.
-#   !restoreplayer <id|me> <payload>  — single player debug (JSON or base64 JSON)
-#   !matchtime show|<sec|mm:ss|ms N>  — set/show match elapsed clock (lab test)
-#       mm:ss = elapsed time (9:00 = 9th minute). HUD countdown = timelimit - elapsed.
-#   !itemlab touch <entity_id> [client_id]  — vanilla Touch_Item (real pickup)
-#   !itemlab respawn <entity_id> <delay_sec> — hide + show same runtime entity
-#   !itemlab touchat <entity_id> <delay_sec> [client_id] — wall-clock Touch_Item
+#
+# Lab/debug commands (!spawnsec, !itemlab, !matchtime, !restoreplayer) live in the
+# optional match_restore_lab.py plugin (gated by qlx_matchRestoreLabEnabled), which
+# reaches back into this plugin via self.plugins["match_restore"] for the shared
+# item-runtime cache (_runtime_entity_by_alias/_slot_runtime_ids/_itemlab_engine_runtime_ids)
+# and player-apply engine (_apply_player_snapshot, clock helpers, etc).
 #
 # pause/unpause text commands drive the match clock only when issued by perm>=5
 # (or console/RCON); real sv_paused transitions are tracked via the frame poll.
 # View angles not required for cfg restore.
 
-import base64
 import json
 import os
 import re
@@ -208,8 +203,6 @@ class match_restore(minqlx.Plugin):
         self._runtime_entity_by_alias = {}
         self._slot_runtime_ids = {}
         self._itemlab_engine_runtime_ids = set()
-        self._itemlab_pending_respawns = {}
-        self._itemlab_pending_touches = {}
         self._restore_apply_active = False
         self._restore_session_active = False
         self._restore_apply_used_runtime_eids = set()
@@ -223,38 +216,10 @@ class match_restore(minqlx.Plugin):
         self.set_cvar_once("qlx_matchRestoreNativeClock", "0")
         self.set_cvar_once("qlx_matchRestoreUnfreezeDelaySec", "4")
         self.add_command(
-            ("spawnsec", "spawnitem"),
-            self.cmd_spawnsec,
-            5,
-            usage="<alias|list|scan|reset> <seconds> [entity_id]",
-            client_cmd_pass=False,
-        )
-        self.add_command(
             ("restorecp", "restorecheckpoint"),
             self.cmd_restorecp,
             5,
             usage="export | test [name] | quiet | loud | clear | time | map | player | item | apply | verify | show | players [slot:cid...]",
-            client_cmd_pass=False,
-        )
-        self.add_command(
-            ("restoreplayer", "restorepl"),
-            self.cmd_restoreplayer,
-            5,
-            usage="<client_id|me> <json_or_base64>",
-            client_cmd_pass=False,
-        )
-        self.add_command(
-            ("matchtime", "setmatchtime"),
-            self.cmd_matchtime,
-            5,
-            usage="show | <seconds> | <mm:ss> | ms <milliseconds>",
-            client_cmd_pass=False,
-        )
-        self.add_command(
-            ("itemlab", "itemslot"),
-            self.cmd_itemlab,
-            5,
-            usage="touch <eid> [cid] | respawn <eid> <sec> | stat <eid>",
             client_cmd_pass=False,
         )
         self.add_hook("map", self._on_map)
@@ -289,8 +254,6 @@ class match_restore(minqlx.Plugin):
         self._clock_source = "none"
         self._reset_restore_runtime_cache()
         self._itemlab_engine_runtime_ids.clear()
-        self._itemlab_pending_respawns.clear()
-        self._itemlab_pending_touches.clear()
         self._restore_apply_active = False
         self._end_restore_session()
         self._map_spawns = dict(MAP_ITEM_SPAWNS)
@@ -624,8 +587,6 @@ class match_restore(minqlx.Plugin):
         self._latch_match_start_from_map_time("zmq")
         self._reset_restore_runtime_cache()
         self._itemlab_engine_runtime_ids.clear()
-        self._itemlab_pending_respawns.clear()
-        self._itemlab_pending_touches.clear()
         self._restore_apply_active = False
         return minqlx.Return.NONE
 
@@ -934,8 +895,6 @@ class match_restore(minqlx.Plugin):
                 and not self._restore_apply_active
             ):
                 self._end_restore_session()
-            self._poll_itemlab_engine_respawns()
-            self._poll_itemlab_pending_touches()
             if not self._sv_paused_active():
                 self._track_match_clock()
             self._was_paused = paused
@@ -1311,393 +1270,6 @@ class match_restore(minqlx.Plugin):
                 except (TypeError, ValueError):
                     continue
         return None
-
-    def _resolve_itemlab_eid(self, token):
-        text = str(token or "").strip()
-        if text.startswith("e") and text[1:].isdigit():
-            return int(text[1:])
-        if text.isdigit():
-            return int(text)
-        return None
-
-    def _itemlab_arm_engine_entity(self, runtime_eid):
-        try:
-            rid = int(runtime_eid)
-        except (TypeError, ValueError):
-            return
-        if rid > 0:
-            self._itemlab_engine_runtime_ids.add(rid)
-
-    def _poll_itemlab_engine_respawns(self):
-        if not self._itemlab_pending_respawns:
-            return
-        if not hasattr(minqlx, "show_map_item"):
-            return
-        now_wall = time.time()
-        done = []
-        for eid, job in list(self._itemlab_pending_respawns.items()):
-            due_at = float(job.get("due_at_wall", 0) or 0)
-            if now_wall < due_at:
-                continue
-            try:
-                ok = minqlx.show_map_item(int(eid))
-            except (AttributeError, TypeError, ValueError) as exc:
-                self.logger.warning("itemlab show e%s failed: %s", eid, exc)
-                continue
-            if ok is False:
-                self.logger.warning("itemlab show e%s returned false", eid)
-                continue
-            self.logger.info(
-                "match_restore: itemlab show e%s due=%.3f now=%.3f",
-                eid,
-                due_at,
-                now_wall,
-            )
-            done.append(int(eid))
-        for eid in done:
-            self._itemlab_pending_respawns.pop(int(eid), None)
-
-    def _poll_itemlab_pending_touches(self):
-        if not self._itemlab_pending_touches:
-            return
-        if not hasattr(minqlx, "touch_map_item"):
-            return
-        now_wall = time.time()
-        done = []
-        for eid, job in list(self._itemlab_pending_touches.items()):
-            due_at = float(job.get("due_at_wall", 0) or 0)
-            if now_wall < due_at:
-                continue
-            cid = int(job.get("client_id", 0) or 0)
-            if not self._engine_item_pickable(int(eid)):
-                self.logger.warning(
-                    "match_restore: itemlab touchat e%s skipped (not pickable)",
-                    eid,
-                )
-                done.append(int(eid))
-                continue
-            try:
-                ok = minqlx.touch_map_item(int(eid), cid)
-            except (AttributeError, TypeError, ValueError) as exc:
-                self.logger.warning("itemlab touchat e%s failed: %s", eid, exc)
-                continue
-            if ok is False:
-                self.logger.warning("itemlab touchat e%s returned false", eid)
-                continue
-            self._itemlab_arm_engine_entity(eid)
-            self.logger.info(
-                "match_restore: itemlab touchat e%s cid=%s due=%.3f now=%.3f",
-                eid,
-                cid,
-                due_at,
-                now_wall,
-            )
-            done.append(int(eid))
-        for eid in done:
-            self._itemlab_pending_touches.pop(int(eid), None)
-
-    def cmd_itemlab(self, player, msg, channel):
-        if not self._enabled():
-            self._reply(player, channel,"^1match_restore disabled.^7")
-            return minqlx.Return.STOP
-        if len(msg) < 2:
-            return minqlx.Return.USAGE
-        sub = str(msg[1]).strip().lower()
-        if sub in ("help", "?"):
-            self._reply(player, channel,
-                "^2itemlab^7: ^3touch^7 <eid> [cid] — vanilla Touch_Item; "
-                "^3touchat^7 <eid> <sec> [cid] — wall-clock touch; "
-                "^3respawn^7 <eid> <sec> — hide + show same runtime entity; "
-                "^3stat^7 <eid> — use runtime id from ^3!spawnsec scan^7"
-            )
-            return minqlx.Return.STOP
-        if sub == "stat":
-            if len(msg) < 3:
-                return minqlx.Return.USAGE
-            eid = self._resolve_itemlab_eid(msg[2])
-            if eid is None:
-                self._reply(player, channel,"^1bad entity^7 — runtime id only (see ^3!spawnsec scan^7)")
-                return minqlx.Return.STOP
-            if not hasattr(minqlx, "get_map_item_state"):
-                self._reply(player, channel,"^1get_map_item_state missing^7 — rebuild minqlx (item-respawn patch)")
-                return minqlx.Return.STOP
-            try:
-                row = minqlx.get_map_item_state(int(eid))
-            except (AttributeError, TypeError, ValueError) as exc:
-                self._reply(player, channel,"^1stat failed^7: {}".format(exc))
-                return minqlx.Return.STOP
-            inuse, etype, eflags, contents, nextthink, has_think, level_time, classname = row
-            nodraw = bool(int(eflags) & 0x80)
-            self._reply(player, channel,
-                "^2itemlab stat^7 e{} inuse={} type={} cn={} nodraw={} contents={} nextthink={} think={} level.time={}".format(
-                    eid,
-                    inuse,
-                    etype,
-                    classname,
-                    int(nodraw),
-                    contents,
-                    nextthink,
-                    has_think,
-                    level_time,
-                )
-            )
-            return minqlx.Return.STOP
-        if sub == "touch":
-            if len(msg) < 3:
-                return minqlx.Return.USAGE
-            eid = self._resolve_itemlab_eid(msg[2])
-            if eid is None:
-                self._reply(player, channel,"^1bad entity^7 — runtime id only (see ^3!spawnsec scan^7)")
-                return minqlx.Return.STOP
-            cid = getattr(player, "id", 0)
-            if len(msg) >= 4 and str(msg[3]).strip().isdigit():
-                cid = int(msg[3])
-            if not hasattr(minqlx, "touch_map_item"):
-                self._reply(player, channel,"^1touch_map_item missing^7 — rebuild minqlx (item-respawn patch)")
-                return minqlx.Return.STOP
-            try:
-                ok = minqlx.touch_map_item(int(eid), int(cid))
-            except (AttributeError, TypeError, ValueError) as exc:
-                self._reply(player, channel,"^1touch failed^7: {}".format(exc))
-                return minqlx.Return.STOP
-            if ok is False:
-                self._reply(player, channel,"^1touch_map_item returned false^7")
-                return minqlx.Return.STOP
-            self._itemlab_arm_engine_entity(eid)
-            self._reply(player, channel,
-                "^2itemlab touch^7 e{} by cid {} — watch vanilla respawn / ^3!itemlab stat^7".format(
-                    eid, cid
-                )
-            )
-            return minqlx.Return.STOP
-        if sub == "touchat":
-            if len(msg) < 4:
-                return minqlx.Return.USAGE
-            eid = self._resolve_itemlab_eid(msg[2])
-            if eid is None:
-                self._reply(player, channel,"^1bad entity^7 — runtime id only (see ^3!spawnsec scan^7)")
-                return minqlx.Return.STOP
-            try:
-                delay_sec = float(msg[3])
-            except (TypeError, ValueError):
-                self._reply(player, channel,"^1bad delay^7")
-                return minqlx.Return.STOP
-            if delay_sec < 0:
-                self._reply(player, channel,"^1bad delay^7")
-                return minqlx.Return.STOP
-            cid = getattr(player, "id", 0)
-            if len(msg) >= 5 and str(msg[4]).strip().isdigit():
-                cid = int(msg[4])
-            if not hasattr(minqlx, "touch_map_item"):
-                self._reply(player, channel,"^1touch_map_item missing^7 — rebuild minqlx (item-respawn patch)")
-                return minqlx.Return.STOP
-            rescheduled = int(eid) in self._itemlab_pending_touches
-            self._itemlab_pending_touches[int(eid)] = {
-                "due_at_wall": time.time() + float(delay_sec),
-                "client_id": int(cid),
-            }
-            self._itemlab_arm_engine_entity(eid)
-            note = " (rescheduled)" if rescheduled else ""
-            self._reply(player, channel,
-                "^2itemlab touchat^7 e{} in ^6{}^7s by cid {}{} — pickable required at fire".format(
-                    eid, delay_sec, cid, note
-                )
-            )
-            return minqlx.Return.STOP
-        if sub == "respawn":
-            if len(msg) < 4:
-                return minqlx.Return.USAGE
-            eid = self._resolve_itemlab_eid(msg[2])
-            if eid is None:
-                self._reply(player, channel,"^1bad entity^7 — runtime id only (see ^3!spawnsec scan^7)")
-                return minqlx.Return.STOP
-            try:
-                delay_sec = float(msg[3])
-            except (TypeError, ValueError):
-                self._reply(player, channel,"^1bad delay^7")
-                return minqlx.Return.STOP
-            if delay_sec < 0:
-                self._reply(player, channel,"^1bad delay^7")
-                return minqlx.Return.STOP
-            if not hasattr(minqlx, "hide_map_item"):
-                self._reply(player, channel,"^1hide_map_item missing^7 — rebuild minqlx (item-respawn patch)")
-                return minqlx.Return.STOP
-            rescheduled = int(eid) in self._itemlab_pending_respawns
-            try:
-                ok = minqlx.hide_map_item(int(eid))
-            except (AttributeError, TypeError, ValueError) as exc:
-                self._reply(player, channel,"^1respawn failed^7: {}".format(exc))
-                return minqlx.Return.STOP
-            if ok is False:
-                self._reply(player, channel,"^1hide_map_item returned false^7")
-                return minqlx.Return.STOP
-            self._itemlab_pending_respawns[int(eid)] = {
-                "due_at_wall": time.time() + float(delay_sec),
-            }
-            self._itemlab_arm_engine_entity(eid)
-            note = " (rescheduled)" if rescheduled else ""
-            self._reply(player, channel,
-                "^2itemlab respawn^7 e{} in ^6{}^7s{} — ^3!itemlab stat {}^7".format(
-                    eid, delay_sec, note, eid
-                )
-            )
-            return minqlx.Return.STOP
-        return minqlx.Return.USAGE
-
-    def cmd_spawnsec(self, player, msg, channel):
-        if not self._enabled():
-            self._reply(player, channel,"^1match_restore disabled.^7")
-            return minqlx.Return.STOP
-
-        if len(msg) < 2:
-            return minqlx.Return.USAGE
-
-        sub = str(msg[1]).strip().lower()
-        if sub in ("list", "ls", "help"):
-            return self._cmd_spawnsec_list(player, channel)
-        if sub == "scan":
-            return self._cmd_spawnsec_scan(player, channel)
-        if sub in ("reset", "restore"):
-            self._runtime_entity_by_alias.clear()
-            self._slot_runtime_ids.clear()
-            self._itemlab_engine_runtime_ids.clear()
-            self._itemlab_pending_respawns.clear()
-            self._itemlab_pending_touches.clear()
-            self._restore_apply_active = False
-            self._reply(player, channel,
-                "^2spawnsec^7 lab state cleared. Run ^3map_restart^7 to restore map pickups."
-            )
-            return minqlx.Return.STOP
-
-        if len(msg) < 3:
-            return minqlx.Return.USAGE
-
-        classname, alias = self._resolve_alias(sub)
-        if not classname:
-            self._reply(player, channel,"^1Unknown item alias^7: ^3{}^7".format(sub))
-            return minqlx.Return.STOP
-
-        try:
-            delay_sec = float(msg[2])
-        except (TypeError, ValueError):
-            self._reply(player, channel,"^1Invalid seconds^7.")
-            return minqlx.Return.STOP
-        if delay_sec < 0:
-            self._reply(player, channel,"^1Seconds must be >= 0^7.")
-            return minqlx.Return.STOP
-
-        entity_id = None
-        spawn_meta = self._lookup_spawn_meta(alias)
-        if len(msg) >= 4:
-            try:
-                entity_id = int(msg[3])
-            except (TypeError, ValueError):
-                self._reply(player, channel,"^1Invalid entity_id^7.")
-                return minqlx.Return.STOP
-        elif spawn_meta:
-            entity_id = spawn_meta.get("entity_id")
-
-        if entity_id is None:
-            self._reply(player, channel,
-                "^1No entity_id for ^3{}^7 on map ^3{}^7. "
-                "Use ^2!spawnsec {} {} <entity_id>^7.".format(
-                    alias, self._map_key() or "?", alias, int(delay_sec) if delay_sec.is_integer() else delay_sec
-                )
-            )
-            return minqlx.Return.STOP
-
-        if spawn_meta is None:
-            spawn_meta = {"entity_id": entity_id}
-
-        self._hide_item(player, channel, entity_id, alias, classname, delay_sec, spawn_meta)
-        return minqlx.Return.STOP
-
-    def _cmd_spawnsec_list(self, player, channel):
-        map_key = self._map_key() or "?"
-        rows = self._map_spawns_table()
-        if not rows:
-            self._reply(player, channel,"^3spawnsec^7: no bundled spawns for map ^3{}^7.".format(map_key))
-            return minqlx.Return.STOP
-        parts = []
-        seen = set()
-        for alias, row in sorted(rows.items()):
-            eid = row.get("entity_id")
-            if eid in seen:
-                continue
-            seen.add(eid)
-            parts.append(
-                "^3{}^7=#{} @({},{},{})".format(
-                    alias,
-                    eid,
-                    row.get("x"),
-                    row.get("y"),
-                    row.get("z"),
-                )
-            )
-        self._reply(player, channel,"^2spawnsec^7 map ^3{}^7: {}".format(map_key, ", ".join(parts)))
-        return minqlx.Return.STOP
-
-    def _cmd_spawnsec_scan(self, player, channel):
-        if not hasattr(minqlx, "dev_print_items"):
-            self._reply(player, channel,"^1dev_print_items missing in minqlx build.^7")
-            return minqlx.Return.STOP
-        try:
-            minqlx.dev_print_items()
-        except (AttributeError, TypeError, ValueError) as exc:
-            self._reply(player, channel,"^1scan failed^7: {}".format(exc))
-            return minqlx.Return.STOP
-        self._reply(player, channel,
-            "^2Item entity list printed^7 (console + server log). "
-            "Use ^3!spawnsec mega 12 <id>^7 while pickup is ^6on map^7."
-        )
-        return minqlx.Return.STOP
-
-    def _hide_item(self, player, channel, entity_id, alias, classname, delay_sec, spawn_meta):
-        table_id = int(entity_id)
-        if not hasattr(minqlx, "hide_map_item"):
-            self._reply(player, channel,"^1hide_map_item missing^7 — rebuild minqlx (item-respawn patch).")
-            return
-        runtime_eid = self._resolve_runtime_eid(
-            alias, spawn_meta, classname, force_scan=True
-        )
-        if runtime_eid <= 0:
-            self._reply(player, channel,
-                "^1{}^7: no runtime entity — ^3!spawnsec scan^7 while pickup is on map.".format(
-                    alias
-                )
-            )
-            return
-        if not self._hide_engine_item(runtime_eid, alias, classname, spawn_meta):
-            self._reply(player, channel,
-                "^1{}^7 hide failed (e{}). Try ^3!spawnsec scan^7.".format(alias, runtime_eid)
-            )
-            return
-        self._itemlab_arm_engine_entity(runtime_eid)
-        self._runtime_entity_by_alias[str(alias)] = int(runtime_eid)
-        self._runtime_entity_by_alias["e{}".format(table_id)] = int(runtime_eid)
-        self._track_slot_runtime_id(table_id, int(runtime_eid))
-        if delay_sec <= 0:
-            self._reply(player, channel,"^2{}^7 hidden (e{}), no respawn scheduled.".format(alias, runtime_eid))
-            return
-        if not hasattr(minqlx, "show_map_item"):
-            self._reply(player, channel,"^1show_map_item missing^7 — rebuild minqlx.")
-            return
-        self._itemlab_pending_respawns[int(runtime_eid)] = {
-            "due_at_wall": time.time() + float(delay_sec),
-        }
-        self._reply(player, channel,
-            "^2{}^7 hidden e{}; show in ^6{}^7s (^3{}^7). Vanilla respawn after pickup.".format(
-                alias, runtime_eid, delay_sec, classname
-            )
-        )
-        self.logger.info(
-            "match_restore: spawnsec alias=%s table=%s runtime=%s delay=%ss by=%s",
-            alias,
-            table_id,
-            runtime_eid,
-            delay_sec,
-            getattr(player, "steam_id", "?"),
-        )
 
     def _reply(self, player, channel, msg):
         """Reply to the command caller. RCON/console invocation (`qlx restorecp ...`,
@@ -3032,80 +2604,6 @@ class match_restore(minqlx.Plugin):
                 return val
         return 0
 
-    def cmd_matchtime(self, player, msg, channel):
-        if not self._enabled():
-            self._reply(player, channel,"^1match_restore disabled.^7")
-            return minqlx.Return.STOP_ALL
-        try:
-            if len(msg) < 2 or str(msg[1]).strip().lower() in ("show", "?", "get"):
-                ms = self._read_level_time_ms()
-                elapsed_sec = ms / 1000.0
-                tl_sec = self._timelimit_sec()
-                src = self._clock_source or "?"
-                live_state = self._game_state_label()
-                eff_state = self._effective_match_state()
-                map_t = self._native_map_time_ms()
-                paused = self._sv_paused_active()
-                self.logger.info(
-                    "matchtime show: elapsed=%sms src=%s live=%s eff=%s latched=%s "
-                    "paused=%s frozen_ms=%s map_t=%s start_t=%s",
-                    ms,
-                    src,
-                    live_state,
-                    eff_state,
-                    self._last_game_state,
-                    paused,
-                    self._pause_frozen_ms,
-                    map_t,
-                    self._match_start_map_time,
-                )
-                if paused:
-                    self._reply(player, channel,"^3paused^7 — frozen at ^6{:.1f}^7s (^6{}^7 ms)".format(elapsed_sec, ms))
-                if not self._match_clock_live():
-                    self._reply(player, channel,
-                        "^3match time^7: ^6{:.1f}^7s (^6{}^7 ms, ^3{}^7) — warmup".format(
-                            elapsed_sec, ms, src
-                        )
-                    )
-                    return minqlx.Return.STOP_ALL
-                if tl_sec > 0:
-                    remain = max(0, tl_sec * 60 - int(ms // 1000))
-                    self._reply(player, channel,
-                        "^2match time^7: elapsed ^6{:.1f}^7s, remaining ^6{}^7s".format(
-                            elapsed_sec, remain
-                        )
-                    )
-                    self._reply(player, channel,"^7{} ms, timelimit {} min, src={}".format(ms, tl_sec, src))
-                else:
-                    self._reply(player, channel,
-                        "^2match time^7: ^6{:.1f}^7 s (^6{}^7 ms, src={})".format(
-                            elapsed_sec, ms, src
-                        )
-                    )
-                return minqlx.Return.STOP_ALL
-            try:
-                ms = self._parse_match_time_arg(msg[1:])
-            except (TypeError, ValueError) as exc:
-                self._reply(player, channel,
-                    "^1matchtime^7: {} — use ^3show^7, ^312000^7 (ms), ^312s^7, ^32:25^7".format(exc)
-                )
-                return minqlx.Return.STOP_ALL
-            ok, detail = self._apply_match_time(ms, force_hud=True, restore_apply=True)
-            if ok:
-                self._level_time_ms = max(0, int(ms))
-                es = max(0, int(ms) // 1000)
-                self._reply(player, channel,
-                    "^2matchtime^7 set ^6{}:{:02d}^7 ({})".format(
-                        es // 60, es % 60, detail or "ok"
-                    )
-                )
-            else:
-                self._reply(player, channel,"^1matchtime failed^7: {}".format(detail))
-        except Exception as exc:
-            self.logger.exception("match_restore matchtime")
-            self._reply(player, channel,"^1matchtime error^7: {}".format(exc))
-        return minqlx.Return.STOP_ALL
-
     @staticmethod
     def _parse_match_time_arg(parts):
         text = " ".join(str(p) for p in parts).strip().lower()
@@ -3438,67 +2936,6 @@ class match_restore(minqlx.Plugin):
             now_ms,
             touch_cid=int(touch_cid),
         )
-
-    def cmd_restoreplayer(self, player, msg, channel):
-        if not self._enabled():
-            self._reply(player, channel,"^1match_restore disabled.^7")
-            return minqlx.Return.STOP
-        if len(msg) < 3:
-            return minqlx.Return.USAGE
-
-        target = self._resolve_target(player, msg[1])
-        if target is None:
-            self._reply(player, channel,"^1Invalid target^7.")
-            return minqlx.Return.STOP
-
-        payload = self._parse_payload(" ".join(msg[2:]))
-        if payload is None:
-            self._reply(player, channel,"^1Invalid payload^7 (JSON or base64url JSON).")
-            return minqlx.Return.STOP
-
-        ok, detail = self._apply_player_snapshot(target, payload)
-        if ok:
-            self._reply(player, channel,"^2restoreplayer^7 queued for ^3{}^7: {}".format(target.name, detail))
-        else:
-            self._reply(player, channel,"^1restoreplayer failed^7: {}".format(detail))
-        return minqlx.Return.STOP
-
-    def _resolve_target(self, caller, token):
-        text = str(token or "").strip().lower()
-        if text in ("me", "self", "."):
-            return caller
-        try:
-            client_id = int(text)
-        except (TypeError, ValueError):
-            return None
-        try:
-            return self.player(client_id)
-        except (AttributeError, TypeError, ValueError, minqlx.NonexistentPlayerError):
-            return None
-
-    @staticmethod
-    def _parse_payload(raw):
-        text = str(raw or "").strip()
-        if not text:
-            return None
-        if text.startswith("#") and text.endswith("#") and len(text) > 2:
-            text = text[1:-1]
-        if text.startswith("{") or text.startswith("["):
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                return None
-        pad = "=" * ((4 - len(text) % 4) % 4)
-        for decoder in (
-            lambda s: base64.urlsafe_b64decode(s + pad),
-            lambda s: base64.b64decode(s + pad),
-        ):
-            try:
-                decoded = decoder(text).decode("utf-8")
-                return json.loads(decoded)
-            except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
-                continue
-        return None
 
     @staticmethod
     def _num(value):
