@@ -215,6 +215,15 @@ def _setup_playbook_extra_vars(host):
         # a real list.
         'game_udp_ports': GAME_UDP_PORTS,
         'rcon_tcp_ports': RCON_TCP_PORTS,
+        # Mirrors ansible_host_setup.py's cloud-host extra vars -- without
+        # these, build_engine_hook.yml always falls back to its 'minqlx'
+        # default regardless of Host.engine_flavor, so a standalone host
+        # configured for minqlxtended silently keeps rebuilding minqlx on
+        # every rerun-setup.
+        'qlds_engine_flavor': host.engine_flavor,
+        'qlds_engine_source': host.engine_source,
+        'qlds_engine_artifact_url': host.engine_artifact_url or '',
+        'qlsm_github_token': os.environ.get('GITHUB_ARTIFACT_TOKEN', ''),
     }
     if host.provider == 'self':
         extra_vars['use_host_redis'] = 'false'

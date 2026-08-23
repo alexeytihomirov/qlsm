@@ -20,7 +20,10 @@ from ui.task_logic.standalone_host_setup import (
 
 
 def _host(provider='standalone'):
-    return SimpleNamespace(provider=provider, ssh_port=22, timezone=None)
+    return SimpleNamespace(
+        provider=provider, ssh_port=22, timezone=None,
+        engine_flavor='minqlx', engine_source='build', engine_artifact_url=None,
+    )
 
 
 def test_standalone_extra_vars_include_the_derived_game_ports():

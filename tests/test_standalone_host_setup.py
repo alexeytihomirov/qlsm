@@ -61,7 +61,10 @@ def test_wait_for_ssh_fails_when_inventory_host_pattern_does_not_match(
 def test_setup_playbook_vars_disable_host_redis_for_self_host():
     from ui.task_logic.standalone_host_setup import _setup_playbook_extra_vars
 
-    host = SimpleNamespace(provider='self', ssh_port=22, timezone='UTC')
+    host = SimpleNamespace(
+        provider='self', ssh_port=22, timezone='UTC',
+        engine_flavor='minqlx', engine_source='build', engine_artifact_url=None,
+    )
 
     assert _setup_playbook_extra_vars(host)['use_host_redis'] == 'false'
 
@@ -69,7 +72,10 @@ def test_setup_playbook_vars_disable_host_redis_for_self_host():
 def test_setup_playbook_vars_keep_host_redis_for_standalone_host():
     from ui.task_logic.standalone_host_setup import _setup_playbook_extra_vars
 
-    host = SimpleNamespace(provider='standalone', ssh_port=22, timezone='UTC')
+    host = SimpleNamespace(
+        provider='standalone', ssh_port=22, timezone='UTC',
+        engine_flavor='minqlx', engine_source='build', engine_artifact_url=None,
+    )
 
     assert _setup_playbook_extra_vars(host).get('use_host_redis', 'true') == 'true'
 
@@ -77,7 +83,10 @@ def test_setup_playbook_vars_keep_host_redis_for_standalone_host():
 def test_setup_playbook_vars_use_helper_firewall_for_standalone_host():
     from ui.task_logic.standalone_host_setup import _setup_playbook_extra_vars
 
-    host = SimpleNamespace(provider='standalone', ssh_port=22, timezone='UTC')
+    host = SimpleNamespace(
+        provider='standalone', ssh_port=22, timezone='UTC',
+        engine_flavor='minqlx', engine_source='build', engine_artifact_url=None,
+    )
 
     assert _setup_playbook_extra_vars(host)['firewall_mode'] == 'helper'
 
@@ -85,7 +94,10 @@ def test_setup_playbook_vars_use_helper_firewall_for_standalone_host():
 def test_setup_playbook_vars_use_helper_firewall_for_self_host():
     from ui.task_logic.standalone_host_setup import _setup_playbook_extra_vars
 
-    host = SimpleNamespace(provider='self', ssh_port=22, timezone='UTC')
+    host = SimpleNamespace(
+        provider='self', ssh_port=22, timezone='UTC',
+        engine_flavor='minqlx', engine_source='build', engine_artifact_url=None,
+    )
 
     assert _setup_playbook_extra_vars(host)['firewall_mode'] == 'helper'
 
@@ -93,7 +105,10 @@ def test_setup_playbook_vars_use_helper_firewall_for_self_host():
 def test_setup_playbook_vars_disable_static_network_hardening_for_standalone_host():
     from ui.task_logic.standalone_host_setup import _setup_playbook_extra_vars
 
-    host = SimpleNamespace(provider='standalone', ssh_port=22, timezone='UTC')
+    host = SimpleNamespace(
+        provider='standalone', ssh_port=22, timezone='UTC',
+        engine_flavor='minqlx', engine_source='build', engine_artifact_url=None,
+    )
 
     assert _setup_playbook_extra_vars(host)['static_network_hardening'] == 'false'
 
@@ -101,6 +116,9 @@ def test_setup_playbook_vars_disable_static_network_hardening_for_standalone_hos
 def test_setup_playbook_vars_disable_static_network_hardening_for_self_host():
     from ui.task_logic.standalone_host_setup import _setup_playbook_extra_vars
 
-    host = SimpleNamespace(provider='self', ssh_port=22, timezone='UTC')
+    host = SimpleNamespace(
+        provider='self', ssh_port=22, timezone='UTC',
+        engine_flavor='minqlx', engine_source='build', engine_artifact_url=None,
+    )
 
     assert _setup_playbook_extra_vars(host)['static_network_hardening'] == 'false'
