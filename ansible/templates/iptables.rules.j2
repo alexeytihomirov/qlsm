@@ -18,9 +18,10 @@
 -A INPUT -p udp --dport {{ p }} -j ACCEPT
 {% endfor %}
 
-# RCON ports
+# RCON ports (loopback only - external TCP to these ports corrupts QLDS's
+# subscriber RB-tree and crashes the server; the hub reaches rcon via SSH -> 127.0.0.1)
 {% for p in rcon_tcp_ports %}
--A INPUT -p tcp --dport {{ p }} -j ACCEPT
+-A INPUT -p tcp --dport {{ p }} -i lo -j ACCEPT
 {% endfor %}
 
 COMMIT
