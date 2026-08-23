@@ -13,8 +13,21 @@
 # (minqlx-reset-accuracy.patch, minqlx-damage-event.patch) are written
 # against MinoMino/minqlx's source tree. They are NOT applied for the
 # minqlxtended flavor — that's a separate, actively-maintained fork and the
-# patches were never verified against it. Add a minqlxtended-specific patch
-# dir here if/when needed.
+# patches were never verified against it.
+#
+# minqlxtended gets its own patch chain instead, vendored from
+# ql-server-core's build-minqlxtended CI (qlds-scripts/patch-minqlxtended-*.py
+# + minqlxtended-patches/ C sources) under ql-assets/patches/minqlxtended/,
+# with the same qlds-scripts/ + minqlxtended-patches/ sibling layout so the
+# scripts' own __file__-relative path resolution keeps working unmodified.
+# Applied as one call to the vendored patch-minqlxtended-qlhub.py orchestrator,
+# which runs all 7 patches in their required dependency order (set-position,
+# item-events, item-respawn, redis-pool, demo-cutter, demo-match,
+# demo-bindings) and then regenerates minqlxtended's gen_stub.py output so the
+# new natives are actually re-exported by `import minqlxtended` (see that
+# orchestrator's own module docstring for why the gen_stub step is not
+# optional). Update the vendored copy from ql-server-core's qlds-scripts/ +
+# minqlxtended-patches/ when that chain changes upstream.
 
 - name: Set engine hook flavor facts
   set_fact:
@@ -36,6 +49,7 @@
     _engine_repo: "https://github.com/tjone270/minqlxtended.git"
     _engine_git_version: "{{ qlds_engine_git_version | default('HEAD') }}"
     _engine_apply_local_patches: false
+    _engine_apply_minqlxtended_qlhub_patches: true
     _engine_so_name: "minqlxtended.x64.so"
     _engine_wrapper_name: "run_server_x64_minqlxtended.sh"
     _engine_python_pkg: "minqlxtended"
@@ -87,6 +101,25 @@
         chdir: "{{ minqlx_build_dir }}"
         executable: /bin/bash
       when: _engine_apply_local_patches
+
+    - name: Copy minqlxtended qlhub patch chain to build host
+      copy:
+        src: "{{ playbook_dir }}/../../ql-assets/patches/minqlxtended/"
+        dest: "/tmp/minqlxtended-qlhub-patches/"
+        mode: preserve
+      when: _engine_apply_minqlxtended_qlhub_patches | default(false)
+
+    - name: Apply minqlxtended qlhub patch chain (item-events, item-respawn, demo-cutter, demo-match, demo-bindings, redis-pool, set-position + gen_stub re-export)
+      become: yes
+      become_user: ql
+      command: "python3 /tmp/minqlxtended-qlhub-patches/qlds-scripts/patch-minqlxtended-qlhub.py {{ minqlx_build_dir }}"
+      when: _engine_apply_minqlxtended_qlhub_patches | default(false)
+
+    - name: Clean up minqlxtended qlhub patch staging directory
+      file:
+        path: "/tmp/minqlxtended-qlhub-patches"
+        state: absent
+      when: _engine_apply_minqlxtended_qlhub_patches | default(false)
 
     - name: Compile engine (make) as ql user
       become: yes
