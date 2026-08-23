@@ -84,6 +84,39 @@ SYSTEMD_CALENDAR_RE = re.compile(
     r')$'
 )
 
+# ql-watchdog per-host tunables (extra-vars consumed by
+# ansible/templates/ql-watchdog.service.j2, see ui/task_logic/ansible_watchdog.py).
+# key -> (validator, error message)
+WATCHDOG_CONFIG_FIELDS = {
+    'dryrun': (lambda v: isinstance(v, bool), 'dryrun must be a boolean'),
+    'interval': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 2 <= v <= 3600, 'interval must be an integer between 2 and 3600'),
+    'recvq_threshold': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10_000_000, 'recvq_threshold must be a non-negative integer'),
+    'strikes': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 100, 'strikes must be an integer between 1 and 100'),
+    'grace': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 30 <= v <= 3600, 'grace must be an integer between 30 and 3600'),
+    'rate_max': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 100, 'rate_max must be an integer between 1 and 100'),
+    'rate_window': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 60 <= v <= 86400, 'rate_window must be an integer between 60 and 86400'),
+    'forensics': (lambda v: isinstance(v, bool), 'forensics must be a boolean'),
+}
+
+
+def _validate_watchdog_config(data):
+    """Validates the optional `config` dict of a watchdog API payload.
+    Returns (config, error_dict)."""
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, {"message": "config must be an object", "status_code": 400}
+    result = {}
+    for key, value in data.items():
+        if key not in WATCHDOG_CONFIG_FIELDS:
+            return None, {"message": f"Unknown watchdog config field: {key}", "status_code": 400}
+        validator, err_msg = WATCHDOG_CONFIG_FIELDS[key]
+        if not validator(value):
+            return None, {"message": err_msg, "status_code": 400}
+        result[key] = value
+    return result, None
+
+
 def validate_host_name(name, exclude_host_id=None):
     """Validates host name. Returns (validated_name, error_dict)."""
     if not isinstance(name, str):
@@ -135,7 +168,7 @@ from ui.tasks import provision_host, destroy_host, \
     install_qlfilter_task, uninstall_qlfilter_task, check_qlfilter_status_task, \
     restart_host_task, rename_host_task, \
     setup_standalone_host_ansible, remove_standalone_host, \
-    force_update_workshop_task, configure_host_auto_restart_task, \
+    force_update_workshop_task, configure_host_auto_restart_task, configure_host_watchdog_task, \
     resize_host_task, \
     rerun_host_setup_ansible, rerun_standalone_host_setup, \
     RERUN_CLOUD_SETUP_TIMEOUT, RERUN_SETUP_LOCK_RELEASE_BUFFER, \
@@ -1329,6 +1362,49 @@ def configure_auto_restart_api(host_id):
     except Exception as e:
         current_app.logger.error(f"Error enqueuing auto-restart config task for host {host_id}: {e}", exc_info=True)
         return jsonify({"error": {"message": "Failed to initiate auto-restart configuration"}}), 500
+
+
+@host_api_bp.route('/<int:host_id>/watchdog', methods=['POST'], endpoint='configure_watchdog_api')
+@jwt_required()
+def configure_watchdog_api(host_id):
+    """Handles enabling/disabling/configuring the ql-watchdog addon for a host."""
+    current_app.logger.info(f"Received API request to configure ql-watchdog for host ID: {host_id}")
+    host = get_host(host_id)
+    if not host:
+        current_app.logger.warning(f"Configure watchdog API: Host ID {host_id} not found.")
+        return jsonify({"error": {"message": "Host not found"}}), 404
+
+    if host.status != HostStatus.ACTIVE:
+        current_app.logger.warning(f"Configure watchdog API: Host ID {host_id} is not in ACTIVE state (current: {host.status.value}).")
+        return jsonify({"error": {"message": f"Host must be in ACTIVE state. Current state: {host.status.value}"}}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": {"message": "No data provided"}}), 400
+
+    enabled = bool(data.get('enabled', False))
+    config, error = _validate_watchdog_config(data.get('config'))
+    if error:
+        return jsonify({"error": {"message": error["message"]}}), error["status_code"]
+
+    try:
+        lock_token = str(uuid.uuid4())
+        if not acquire_lock('host', host.id, lock_token, ttl=180):
+            return jsonify({"error": {"message": f'Another operation is running on host "{host.name}". Please wait for it to complete.'}}), 409
+        try:
+            update_host(host.id, status=HostStatus.CONFIGURING)
+            enqueue_task(configure_host_watchdog_task, host.id, enabled, config, lock_token=lock_token, on_failure=host_job_failure_handler)
+        except Exception:
+            release_lock('host', host.id, lock_token)
+            raise
+        current_app.logger.info(f"Watchdog config task enqueued for host ID: {host_id} via API.")
+        return jsonify({
+            "message": "ql-watchdog configuration process initiated.",
+            "data": {"watchdog_enabled": enabled, "watchdog_config": config}
+        }), 202
+    except Exception as e:
+        current_app.logger.error(f"Error enqueuing watchdog config task for host {host_id}: {e}", exc_info=True)
+        return jsonify({"error": {"message": "Failed to initiate ql-watchdog configuration"}}), 500
 
 
 @host_api_bp.route('/test-connection', methods=['POST'], endpoint='test_connection_api')

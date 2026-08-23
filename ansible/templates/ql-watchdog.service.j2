@@ -1,0 +1,29 @@
+[Unit]
+Description=QL Watchdog - detects hung QLDS instances and restarts them
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 {{ watchdog_dir }}/watchdog.py
+Restart=on-failure
+RestartSec=5
+
+Environment=QL_WATCHDOG_UNIT_PREFIX=qlds
+Environment=QL_WATCHDOG_DRYRUN={{ '1' if watchdog_dryrun | default(false) else '0' }}
+Environment=QL_WATCHDOG_INTERVAL={{ watchdog_interval | default(10) }}
+Environment=QL_WATCHDOG_RECVQ_THRESHOLD={{ watchdog_recvq_threshold | default(8192) }}
+Environment=QL_WATCHDOG_STRIKES={{ watchdog_strikes | default(3) }}
+Environment=QL_WATCHDOG_GRACE={{ watchdog_grace | default(90) }}
+Environment=QL_WATCHDOG_RATE_MAX={{ watchdog_rate_max | default(3) }}
+Environment=QL_WATCHDOG_RATE_WINDOW={{ watchdog_rate_window | default(900) }}
+Environment=QL_WATCHDOG_FORENSICS={{ '1' if watchdog_forensics | default(true) else '0' }}
+Environment=QL_WATCHDOG_EVENTS=/var/lib/qlsm/watchdog/events.jsonl
+Environment=QL_WATCHDOG_FORENSICS_DIR=/var/lib/qlsm/watchdog/forensics
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

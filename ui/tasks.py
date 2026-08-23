@@ -19,6 +19,7 @@ from ui.task_logic.ansible_host_setup import setup_host_ansible_logic
 from ui.task_logic.ansible_host_restart import restart_host_ansible_logic
 from ui.task_logic.ansible_host_rename import rename_host_logic
 from ui.task_logic.ansible_host_auto_restart import configure_host_auto_restart_logic
+from ui.task_logic.ansible_watchdog import configure_host_watchdog_logic
 
 # Import Terraform task logic from new files
 from ui.task_logic.terraform_provision import provision_host_logic
@@ -263,6 +264,17 @@ def configure_host_auto_restart_task(host_id, schedule_cron, lock_token=None):
     """RQ task entry point for configuring host auto-restart."""
     try:
         return configure_host_auto_restart_logic(host_id, schedule_cron)
+    finally:
+        if lock_token:
+            from ui.task_lock import release_lock
+            release_lock('host', host_id, lock_token)
+
+@rq.job(timeout=120)
+@with_app_context
+def configure_host_watchdog_task(host_id, enabled, config=None, lock_token=None):
+    """RQ task entry point for configuring the ql-watchdog addon on a host."""
+    try:
+        return configure_host_watchdog_logic(host_id, enabled, config)
     finally:
         if lock_token:
             from ui.task_lock import release_lock

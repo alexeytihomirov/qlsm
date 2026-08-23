@@ -1,0 +1,90 @@
+---
+# Deploys/configures/removes the ql-watchdog addon on a host.
+#
+# ql-watchdog detects a hung QLDS main-thread (kernel Recv-Q on the game UDP
+# port stays high because the frame-loop stopped draining it) and restarts
+# only the affected qlds@<port>.service instance via systemctl - see
+# ansible/files/ql-watchdog/watchdog.py for the detection/restart logic.
+#
+# Called with -e watchdog_enabled=true|false (+ optional tunables) by
+# ui/task_logic/ansible_watchdog.py. When watchdog_enabled is false, the
+# systemd unit is stopped/disabled/removed but the deployed script is left in
+# place (cheap to re-enable later, mirrors configure_auto_restart.yml).
+- name: Configure ql-watchdog addon
+  hosts: all
+  become: yes
+  gather_facts: no
+
+  vars:
+    watchdog_dir: /opt/ql-watchdog
+    watchdog_state_dir: /var/lib/qlsm/watchdog
+
+  tasks:
+    - name: Ensure ql-watchdog install directory exists
+      ansible.builtin.file:
+        path: "{{ watchdog_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: watchdog_enabled | default(false)
+
+    - name: Ensure ql-watchdog state directory exists
+      ansible.builtin.file:
+        path: "{{ watchdog_state_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: watchdog_enabled | default(false)
+
+    - name: Deploy ql-watchdog script
+      ansible.builtin.copy:
+        src: ../files/ql-watchdog/watchdog.py
+        dest: "{{ watchdog_dir }}/watchdog.py"
+        owner: root
+        group: root
+        mode: '0755'
+      when: watchdog_enabled | default(false)
+
+    - name: Render ql-watchdog systemd unit
+      ansible.builtin.template:
+        src: ../templates/ql-watchdog.service.j2
+        dest: /etc/systemd/system/ql-watchdog.service
+        owner: root
+        group: root
+        mode: '0644'
+      when: watchdog_enabled | default(false)
+      register: watchdog_unit_rendered
+
+    - name: Reload systemd daemon (ql-watchdog unit deployed)
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      when: watchdog_enabled | default(false)
+
+    - name: Enable and (re)start ql-watchdog
+      ansible.builtin.systemd:
+        name: ql-watchdog
+        state: restarted
+        enabled: yes
+      when: watchdog_enabled | default(false)
+
+    - name: Stop and disable ql-watchdog
+      ansible.builtin.systemd:
+        name: ql-watchdog
+        state: stopped
+        enabled: no
+      when: not (watchdog_enabled | default(false))
+      ignore_errors: yes
+
+    - name: Remove ql-watchdog systemd unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/ql-watchdog.service
+        state: absent
+      when: not (watchdog_enabled | default(false))
+      register: watchdog_unit_removed
+
+    - name: Reload systemd daemon (ql-watchdog unit removed)
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      when: watchdog_unit_removed.changed | default(false)
