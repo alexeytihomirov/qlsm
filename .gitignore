@@ -19,6 +19,11 @@
 !.github/
 !.github/**
 
+# ── Claude Code skills ────────────────────────────────────────────────────────
+!.claude/
+!.claude/skills/
+!.claude/skills/**
+
 # ── CI / home-docker deploy ──────────────────────────────────────────────────
 !deploy/
 !deploy/portainer-stack.home.yml
