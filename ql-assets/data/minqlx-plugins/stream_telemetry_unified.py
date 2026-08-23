@@ -4,11 +4,23 @@
 # Production default (lean runtime pack + hub Statistics → Apply):
 #   set qlx_plugins "...,stream_telemetry_unified"   (before motd)
 #   set qlx_statsHubUnifiedEnabled "1"
-#   set qlx_streamTelemetryEnabled / qlx_pickupTelemetryEnabled / qlx_sessionEventsEnabled
-#     as feed switches (still used; defaults off until Apply)
+#   set qlx_statsHubFeedPositions / qlx_statsHubFeedItems / qlx_statsHubFeedSession
+#     as feed switches (still off by default until Apply)
 #
 # Legacy trio files remain in git for rollback but are NOT packed and are stripped
 # from qlx_plugins on Apply. Never load trio alongside unified (double POST).
+#
+# Per-feed cvar rename (DevInbox #255, one-release compat window): the three feed
+# switches used to reuse the legacy standalone plugins' own cvar names
+# (qlx_streamTelemetryEnabled / qlx_pickupTelemetryEnabled / qlx_sessionEventsEnabled).
+# That trio is gone from the runtime pack now, so the borrowed names just made the
+# unified plugin's own settings look like they belonged to three different plugins.
+# Renamed to one consistent namespace: qlx_statsHubFeedPositions / qlx_statsHubFeedItems
+# / qlx_statsHubFeedSession. For one release, each new cvar falls back to reading its
+# legacy name when left unset (see _feed_flag) so already-deployed instances that only
+# have the old names set in server.cfg keep working unchanged until their next hub
+# Apply. Once a new cvar is explicitly set (by hub Apply with the updated manifest, or
+# by hand), it wins over the legacy fallback.
 #
 # This is a perf/scheduling refactor of the three plugins below. Wire payloads to
 # /api/ingest/telemetry, /api/ingest/item-events, /api/ingest/session-events keep every
@@ -30,10 +42,11 @@
 # header comments for the full list): qlx_statsHubUrl, qlx_statsHubToken,
 # qlx_statsHubInterval, qlx_statsHubIdleInterval, qlx_statsHubAccuracyInterval,
 # qlx_statsHubMatchId, qlx_statsHubServerId, qlx_statsHubTournamentId,
-# qlx_streamTelemetryEnabled, qlx_pickupTelemetryEnabled, qlx_pickupTelemetryDebug,
-# qlx_sessionEventsEnabled. Inside this plugin the three "Enabled" cvars act as
-# per-feature sub-toggles (positions/accuracy, item pickup/drop, session/chat/vote/pause)
-# — identical meaning to what they mean to the standalone plugins today.
+# qlx_pickupTelemetryDebug. The three per-feed switches are this plugin's own
+# namespace now: qlx_statsHubFeedPositions (positions/accuracy),
+# qlx_statsHubFeedItems (item pickup/drop), qlx_statsHubFeedSession
+# (session/chat/vote/pause) — see the rename note above for the legacy-name
+# fallback.
 #
 # New in this file (the one deliberately-new cvar, per operator's "keep it minimal" ask):
 #   qlx_statsHubUnifiedEnabled "0" — master switch for this plugin only. Independent of
@@ -41,12 +54,13 @@
 #   is a no-op while it's off), so dropping this file into qlx_plugins is inert until you
 #   flip it.
 #
-# IMPORTANT — do not double-post: qlx_streamTelemetryEnabled/qlx_pickupTelemetryEnabled/
-# qlx_sessionEventsEnabled are the SAME cvars the three standalone plugins read. If you
-# load stream_telemetry_unified on a box that also has stream_telemetry/pickup_telemetry/
-# session_events in qlx_plugins with those cvars on, you get every feed posted twice. The
-# supported opt-in path is: on one test instance, replace the three plugin names with
-# stream_telemetry_unified in that instance's qlx_plugins line, then set
+# IMPORTANT — do not double-post: while the legacy-name fallback is in effect,
+# qlx_streamTelemetryEnabled/qlx_pickupTelemetryEnabled/qlx_sessionEventsEnabled are
+# still the SAME cvars the three standalone plugins read. If you load
+# stream_telemetry_unified on a box that also has stream_telemetry/pickup_telemetry/
+# session_events in qlx_plugins with those legacy cvars on, you get every feed posted
+# twice. The supported opt-in path is: on one test instance, replace the three plugin
+# names with stream_telemetry_unified in that instance's qlx_plugins line, then set
 # qlx_statsHubUnifiedEnabled "1". Do not touch the default qlx_plugins line in
 # baseq3/server1.cfg (which keeps the three separate plugins).
 #
@@ -206,17 +220,22 @@ class stream_telemetry_unified(minqlx.Plugin):
         # was_enabled edge, in-flight/stuck-post + generation counter (P1-1), and
         # consecutive-failure circuit breaker — one FeedState per feed instead of
         # three copies of the same fields plus a separate self._circuit dict. ---
+        # cvar= is the circuit breaker's auto-disable target (_disable_cvar_safely):
+        # always the new namespaced cvar, never the legacy one — a trip must pin the
+        # feed off going forward even while it's currently running on the legacy-name
+        # fallback (see _feed_flag), so it has to write the cvar that wins the
+        # precedence check.
         self._positions_state = FeedState(
             "positions", self._POSITIONS_POST_STUCK_SEC, self._CIRCUIT_FAIL_THRESHOLD,
-            cvar="qlx_streamTelemetryEnabled",
+            cvar="qlx_statsHubFeedPositions",
         )
         self._items_state = FeedState(
             "items", self._ITEMS_POST_STUCK_SEC, self._CIRCUIT_FAIL_THRESHOLD,
-            cvar="qlx_pickupTelemetryEnabled",
+            cvar="qlx_statsHubFeedItems",
         )
         self._session_state = FeedState(
             "session", self._SESSION_POST_STUCK_SEC, self._CIRCUIT_FAIL_THRESHOLD,
-            cvar="qlx_sessionEventsEnabled",
+            cvar="qlx_statsHubFeedSession",
         )
 
         # --- positions/accuracy telemetry state (stream_telemetry equivalent) ---
@@ -247,6 +266,12 @@ class stream_telemetry_unified(minqlx.Plugin):
         self._last_sv_paused = None
 
         # --- cvars (shared with the three standalone plugins, plus the one new switch) ---
+        # The three per-feed cvars are deliberately NOT registered here: leaving them
+        # unset (rather than set_cvar_once-ing a default) is what lets _feed_flag tell
+        # "operator/hub never touched the new cvar" apart from "operator explicitly
+        # disabled it", so the legacy-name fallback only applies in the former case.
+        # The legacy names keep their set_cvar_once default below so they always read
+        # as a real bool even on a box that never had a standalone plugin loaded.
         self.set_cvar_once("qlx_statsHubUnifiedEnabled", "0")
         self.set_cvar_once("qlx_streamTelemetryEnabled", "0")
         self.set_cvar_once("qlx_pickupTelemetryEnabled", "0")
@@ -420,10 +445,22 @@ class stream_telemetry_unified(minqlx.Plugin):
         self._base_ready_cache = (result, now)
         return result
 
+    def _feed_flag(self, new_cvar, legacy_cvar):
+        """Per-feed on/off, new namespaced cvar wins when explicitly set; falls back
+        to the legacy standalone-plugin cvar name when the new one is untouched
+        (DevInbox #255 — see the rename note in the file header). `new_cvar` is
+        deliberately never registered via set_cvar_once, so an unset cvar reads back
+        as None here rather than a real default, which is what makes "never touched"
+        distinguishable from "explicitly disabled"."""
+        raw = self.get_cvar(new_cvar)
+        if raw is not None and str(raw).strip() != "":
+            return self.get_cvar(new_cvar, bool) is not False
+        return self.get_cvar(legacy_cvar, bool) is not False
+
     def _positions_enabled(self):
         if not self._base_ready():
             return False
-        if self.get_cvar("qlx_streamTelemetryEnabled", bool) is False:
+        if not self._feed_flag("qlx_statsHubFeedPositions", "qlx_streamTelemetryEnabled"):
             return False
         if self._server_id() is None:
             return False
@@ -434,14 +471,14 @@ class stream_telemetry_unified(minqlx.Plugin):
             return False
         if not self._item_events_available:
             return False
-        if self.get_cvar("qlx_pickupTelemetryEnabled", bool) is False:
+        if not self._feed_flag("qlx_statsHubFeedItems", "qlx_pickupTelemetryEnabled"):
             return False
         return True
 
     def _session_enabled(self):
         if not self._base_ready():
             return False
-        if self.get_cvar("qlx_sessionEventsEnabled", bool) is False:
+        if not self._feed_flag("qlx_statsHubFeedSession", "qlx_sessionEventsEnabled"):
             return False
         return True
 
@@ -455,14 +492,14 @@ class stream_telemetry_unified(minqlx.Plugin):
         if not self._base_ready():
             return False, False, False
         positions = (
-            self.get_cvar("qlx_streamTelemetryEnabled", bool) is not False
+            self._feed_flag("qlx_statsHubFeedPositions", "qlx_streamTelemetryEnabled")
             and self._server_id() is not None
         )
         items = (
             self._item_events_available
-            and self.get_cvar("qlx_pickupTelemetryEnabled", bool) is not False
+            and self._feed_flag("qlx_statsHubFeedItems", "qlx_pickupTelemetryEnabled")
         )
-        session = self.get_cvar("qlx_sessionEventsEnabled", bool) is not False
+        session = self._feed_flag("qlx_statsHubFeedSession", "qlx_sessionEventsEnabled")
         return positions, items, session
 
     def _on_map(self, mapname, factory):
