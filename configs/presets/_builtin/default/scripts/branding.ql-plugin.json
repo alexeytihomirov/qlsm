@@ -1,4 +1,16 @@
 {
   "label": "Branding",
-  "description": "Personalizes the server via cvars (qlx_serverBrandName and related) — replaces map-name/other display text with custom branding. Native minqlxtended-plugins version (Thomas Jones)."
+  "description": "Personalizes the server via cvars (qlx_serverBrandName and related) — replaces map-name/other display text with custom branding. Native minqlxtended-plugins version (Thomas Jones).",
+  "cvars": [
+    { "cvar": "qlx_serverBrandName", "label": "Brand Name", "description": "Custom brand name shown in place of/alongside the server name.", "type": "string", "default": "" },
+    { "cvar": "qlx_serverBrandTopField", "label": "Brand Top Field", "description": "Custom text shown in the top branding field.", "type": "string", "default": "" },
+    { "cvar": "qlx_serverBrandBottomField", "label": "Brand Bottom Field", "description": "Custom text shown in the bottom branding field.", "type": "string", "default": "" },
+    { "cvar": "qlx_connectMessage", "label": "Connect Message", "description": "Message shown to a player when they connect.", "type": "string", "default": "" },
+    { "cvar": "qlx_loadedMessage", "label": "Loaded Message", "description": "Message shown once the player has fully loaded in.", "type": "string", "default": "" },
+    { "cvar": "qlx_countdownMessage", "label": "Countdown Message", "description": "Message shown during the match countdown.", "type": "string", "default": "" },
+    { "cvar": "qlx_endOfGameMessage", "label": "End Of Game Message", "description": "Message shown when the game ends.", "type": "string", "default": "" },
+    { "cvar": "qlx_brandingPrependMapName", "label": "Prepend Map Name", "description": "Prepends the map name to the branded display text.", "type": "bool", "default": false },
+    { "cvar": "qlx_brandingAppendGameType", "label": "Append Game Type", "description": "Appends the game type to the branded display text.", "type": "bool", "default": false },
+    { "cvar": "qlx_rainbowBrandName", "label": "Rainbow Brand Name", "description": "Cycles the brand name through rainbow colours.", "type": "bool", "default": false }
+  ]
 }

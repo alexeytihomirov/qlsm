@@ -1,0 +1,9 @@
+{
+  "label": "Silence",
+  "description": "Persistent mute across reconnects (separate from essentials.py's session-only !mute).",
+  "commands": [
+    { "name": "silence", "usage": "<id> <length> seconds|minutes|hours|days|... [reason]", "permission": 4, "description": "Mutes a player persistently for the given length." },
+    { "name": "unsilence", "usage": "<id>", "permission": 4, "description": "Removes a persistent mute from a player." },
+    { "name": "checksilence", "usage": "<id>", "permission": 0, "description": "Checks whether a player is currently silenced." }
+  ]
+}

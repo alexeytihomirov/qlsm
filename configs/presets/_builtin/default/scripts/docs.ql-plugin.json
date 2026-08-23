@@ -1,0 +1,7 @@
+{
+  "label": "Docs",
+  "description": "Generates an HTML command list from the currently loaded plugins.",
+  "commands": [
+    { "name": "gendocs", "usage": "[excluded_plugins]", "permission": 5, "description": "Generates a command_list.twig HTML file listing commands from loaded plugins (optionally excluding some)." }
+  ]
+}

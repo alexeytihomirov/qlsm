@@ -1,0 +1,25 @@
+{
+  "label": "Balance",
+  "description": "Team balance via QLStats.net ratings — suggests/forces player switches to even out team skill.",
+  "commands": [
+    { "name": "getrating", "usage": "<id> [gametype]", "permission": 0, "description": "Fetch the rating of the player ID supplied, or of the calling player if no ID supplied." },
+    { "name": "setrating", "usage": "<id> <rating>", "permission": 3, "description": "Manually set the rating of a player (may expire after a configured timeframe)." },
+    { "name": "remrating", "usage": "<id>", "permission": 3, "description": "Remove a manually-set rating for a player." },
+    { "name": "balance", "permission": 1, "description": "Balance the teams according to player ratings, distributing players evenly." },
+    { "name": "teams", "permission": 0, "description": "Displays the current rating difference between teams." },
+    { "name": "do", "permission": 1, "description": "Forces a player switch as suggested by the balancer to be done now." },
+    { "name": "dl", "permission": 1, "description": "Forces a player switch as suggested by the balancer to be done at the start of the next round." },
+    { "name": "agree", "permission": 0, "description": "After the balancer suggests a switch, indicates agreement to that switch." },
+    { "name": "ratings", "permission": 0, "description": "List the ratings for each player, grouped by team." },
+    { "name": "prepare", "permission": 1, "description": "Shuffle and balance the teams." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_balanceUseLocal", "label": "Use Local Ratings", "description": "Prefer locally-stored (manually set) ratings over QLStats when available.", "type": "bool", "default": true },
+    { "cvar": "qlx_balanceLocalExpires", "label": "Local Rating Expiry", "description": "Seconds until a manually-set local rating expires and falls back to QLStats (0 = never).", "type": "number", "default": 0, "min": 0 },
+    { "cvar": "qlx_balanceUrl", "label": "Ratings API URL", "description": "Host (or host:port) of the QLStats-compatible ratings API.", "type": "string", "default": "qlstats.net" },
+    { "cvar": "qlx_balanceAuto", "label": "Auto-Balance", "description": "Automatically suggest a balance shuffle when appropriate.", "type": "bool", "default": true },
+    { "cvar": "qlx_balanceMinimumSuggestionDiff", "label": "Min Suggestion Diff", "description": "Minimum team rating difference before a balance switch is suggested.", "type": "number", "default": 25.0, "min": 0 },
+    { "cvar": "qlx_balanceMinimumSuggestionActionDiff", "label": "Min Auto-Action Diff", "description": "Minimum team rating difference before a balance switch is auto-actioned.", "type": "number", "default": 50.0, "min": 0 },
+    { "cvar": "qlx_balanceApi", "label": "Ratings API Flavor", "description": "Which rating API/algorithm to query (e.g. elo).", "type": "string", "default": "elo" }
+  ]
+}

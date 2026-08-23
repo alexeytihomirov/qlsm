@@ -1,0 +1,11 @@
+# Plugin source of truth: ql-assets/data/minqlx-plugins/ (the pool ansible
+# deploys to every host) is mirrored onto configs/presets/_builtin/default/scripts/
+# (the builtin default ConfigPreset) via `flask sync-plugin-pool`
+# (ui/plugin_pool_sync.py). Both trees must use the same line endings or every
+# sync pass reintroduces a CRLF/LF-only diff that masks/duplicates real
+# content changes. Normalize to LF regardless of platform or per-user
+# core.autocrlf.
+ql-assets/data/minqlx-plugins/**/*.py text eol=lf
+ql-assets/data/minqlx-plugins/**/*.ql-plugin.json text eol=lf
+configs/presets/_builtin/default/scripts/**/*.py text eol=lf
+configs/presets/_builtin/default/scripts/**/*.ql-plugin.json text eol=lf

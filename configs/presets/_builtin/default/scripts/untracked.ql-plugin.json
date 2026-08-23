@@ -1,0 +1,7 @@
+{
+  "label": "Untracked",
+  "description": "Restricts players whose stats can't be tracked (e.g. no valid Steam ID) from disrupting a match.",
+  "cvars": [
+    { "cvar": "qlx_untrackedPlayerAction", "label": "Untracked Player Action", "description": "0 = do nothing, 1 = prevent team changes, 2 = prevent connecting.", "type": "number", "default": 0, "min": 0, "max": 2 }
+  ]
+}

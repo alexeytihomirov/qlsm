@@ -1,0 +1,8 @@
+{
+  "label": "Log",
+  "description": "Logs chat and commands to fs_homepath/chatlogs (hook/cvar-only plugin, no chat commands).",
+  "cvars": [
+    { "cvar": "qlx_chatlogs", "label": "Kept Log Files", "description": "Number of rotated chat log files to keep.", "type": "number", "default": 10, "min": 1 },
+    { "cvar": "qlx_chatlogsSize", "label": "Max Log Size (bytes)", "description": "Max size in bytes before a chat log file is rotated.", "type": "number", "default": 3000000, "min": 1 }
+  ]
+}

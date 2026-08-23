@@ -1,0 +1,9 @@
+{
+  "label": "Ban",
+  "description": "Manual timed bans by referees/admins. Leaver auto-ban tracking is a separate plugin (leaverban.py), which owns the qlx_leaverBan* cvars and forgive/gamestats/tracked commands.",
+  "commands": [
+    { "name": "ban", "usage": "<id> <length> seconds|minutes|hours|days|... [reason]", "permission": 4, "description": "Bans a player temporarily for the given length." },
+    { "name": "unban", "usage": "<id>", "permission": 4, "description": "Unbans the specified player if banned." },
+    { "name": "checkban", "usage": "<id>", "permission": 0, "description": "Checks whether a player has been banned, and if so, the reason." }
+  ]
+}

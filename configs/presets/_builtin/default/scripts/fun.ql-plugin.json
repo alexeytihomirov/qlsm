@@ -1,0 +1,10 @@
+{
+  "label": "Fun",
+  "description": "Misc fun/joke sound-based command.",
+  "commands": [
+    { "name": "cookies", "permission": 0, "description": "Plays a joke sound after a short delay." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_funSoundDelay", "label": "Sound Delay", "description": "Seconds to wait before playing the !cookies sound.", "type": "number", "default": 3, "min": 0 }
+  ]
+}

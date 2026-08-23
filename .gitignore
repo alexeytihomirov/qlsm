@@ -8,6 +8,7 @@
 
 # ── Root files ────────────────────────────────────────────────────────────────
 !.gitignore
+!.gitattributes
 !.env.example
 !.dockerignore
 !.woodpecker.yml

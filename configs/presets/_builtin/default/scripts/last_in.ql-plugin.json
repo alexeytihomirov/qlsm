@@ -1,0 +1,8 @@
+{
+  "label": "Last In",
+  "description": "Shows which player joined most recently and current player count.",
+  "commands": [
+    { "name": "lastin", "permission": 0, "description": "Shows which player most recently joined the server." },
+    { "name": "c", "permission": 0, "description": "Shows the current player count." }
+  ]
+}

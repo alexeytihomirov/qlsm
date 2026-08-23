@@ -1,0 +1,15 @@
+{
+  "label": "LAN",
+  "description": "Restricts connections to LAN/known subnets and shows players the LAN connect address.",
+  "commands": [
+    { "name": "lan", "permission": 0, "description": "Shows the LAN connect address (hostname/router and port) for this server." }
+  ],
+  "cvars": [
+    { "cvar": "qlx_lanPlayersOnly", "label": "LAN Players Only", "description": "Reject connections that don't come from an allowed LAN subnet.", "type": "bool", "default": false },
+    { "cvar": "qlx_lanAllowIndirectConnections", "label": "Allow Indirect Connections", "description": "Allow connections routed through the configured LAN router/NAT.", "type": "bool", "default": false },
+    { "cvar": "qlx_lanSubnets", "label": "Allowed Subnets", "description": "Comma-separated list of subnets treated as LAN.", "type": "string", "default": "" },
+    { "cvar": "qlx_lanRouter", "label": "LAN Router", "description": "Router/gateway address used for indirect-connection checks.", "type": "string", "default": "" },
+    { "cvar": "qlx_lanHostname", "label": "LAN Hostname", "description": "Hostname shown to players for connecting over LAN.", "type": "string", "default": "" },
+    { "cvar": "qlx_lanInterface", "label": "LAN Interface", "description": "Network interface used for LAN-only checks.", "type": "string", "default": "" }
+  ]
+}

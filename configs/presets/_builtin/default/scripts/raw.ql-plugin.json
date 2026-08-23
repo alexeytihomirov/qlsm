@@ -1,0 +1,9 @@
+{
+  "label": "⚠️ Raw Python — owner-only, security-sensitive",
+  "description": "Runs arbitrary Python code from chat. Debug tool only — permission-5 players can execute anything on the host.",
+  "commands": [
+    { "name": "exec", "usage": "<python_code>", "permission": 5, "description": "Executes (exec) arbitrary Python code." },
+    { "name": "eval", "usage": "<python_code>", "permission": 5, "description": "Evaluates (eval) arbitrary Python code." },
+    { "name": "db", "usage": "<key> [value]", "permission": 5, "description": "Reads (or sets) a raw key in the plugin database." }
+  ]
+}

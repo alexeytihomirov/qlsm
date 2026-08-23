@@ -1,0 +1,4 @@
+{
+  "label": "Scores",
+  "description": "Periodic scoreboard refresh in chat (hook-only, no chat commands or cvars)."
+}
