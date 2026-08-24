@@ -228,7 +228,7 @@ class tournament_access(minqlx.Plugin):
         if role == "caster" or self._is_lobby_server():
             self._force_spec(player)
 
-    def handle_team_switch_attempt(self, player, old_team, new_team):
+    def handle_team_switch_attempt(self, player, old_team, new_team, target=None):
         if self._dev_auth_open():
             return
         if self._is_bot(player) or self._bypass(player):

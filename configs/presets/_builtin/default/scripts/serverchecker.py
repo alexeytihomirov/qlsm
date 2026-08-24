@@ -8,7 +8,10 @@ ql-packet-fragmentation collector for per-player UDP port mapping.
 Redis key: minqlx:server_status:<port>  (e.g. minqlx:server_status:27960)
 """
 
-import minqlx
+try:
+    import minqlxtended as minqlx
+except ImportError:
+    import minqlx
 import json
 import os
 import re
