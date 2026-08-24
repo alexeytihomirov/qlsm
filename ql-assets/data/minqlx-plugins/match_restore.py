@@ -2953,15 +2953,23 @@ class match_restore(minqlx.Plugin):
             return None
         return int(num)
 
+    def _sync_health_hud_stat(self, target, hp):
+        # v1.0.0's Player.health setter writes only the native Entity.health
+        # field; stats[STAT_HEALTH] (the HUD/read-back copy) is documented as
+        # "rewritten from this one every frame" by the engine, but that
+        # refresh needs a live frame to actually run. Restore always
+        # re-pauses right after applying vitals (_ensure_restore_paused,
+        # called from the same command handler with no frame boundary in
+        # between) so that refresh may never happen before the freeze -
+        # write the stat directly too, the same way the native armor setter
+        # already does (gclient.ps.stats[StatIndex.ARMOR]), instead of
+        # depending on frame timing around pause.
+        try:
+            target.gclient.ps.stats[minqlx.StatIndex.HEALTH] = int(hp)
+        except (AttributeError, TypeError, ValueError, minqlx.EngineStateError):
+            pass
+
     def _apply_player_health_hud(self, target, health):
-        # set_health() was a custom C function pre-port that wrote both
-        # gentity_t.health and ps.stats[STAT_HEALTH] atomically, working
-        # around the HUD copy not otherwise staying in sync. v1.0.0's own
-        # Player.health setter writes only the native Entity.health field,
-        # but its own doc comment states stats[STAT_HEALTH] "is rewritten
-        # from this one every frame" by the engine itself now - the HUD-sync
-        # bug the old patch existed for is fixed natively, so target.health
-        # alone (this file's own pre-existing fallback path) is enough.
         if health is None:
             return True
         hp = int(health)
@@ -2978,6 +2986,7 @@ class match_restore(minqlx.Plugin):
                 exc,
             )
             return False
+        self._sync_health_hud_stat(target, hp)
         return True
 
     @staticmethod
@@ -3012,6 +3021,8 @@ class match_restore(minqlx.Plugin):
                 getattr(target, "id", "?"),
                 exc,
             )
+        else:
+            self._sync_health_hud_stat(target, 0)
         self._apply_dead_player_inventory(target)
 
     def _schedule_dead_state_reassert(self, target, delay_sec=0.12):
