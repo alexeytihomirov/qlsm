@@ -514,42 +514,7 @@
   #######################################################################
   # 6. Sync Common Assets & Install Core Dependencies
   #######################################################################
-    - name: Get pip3 version
-      command: pip3 --version
-      register: pip3_version_output
-      changed_when: false
-
-    - name: Check if minqlx-plugins requirements.txt is available on controller
-      stat:
-        path: "{{ playbook_dir }}/../../ql-assets/data/minqlx-plugins/requirements.txt"
-      delegate_to: localhost
-      become: no
-      register: minqlx_reqs_stat
-
-    - name: Stage minqlx requirements file on host
-      copy:
-        src: "{{ playbook_dir }}/../../ql-assets/data/minqlx-plugins/requirements.txt"
-        dest: "/root/minqlx-requirements.txt"
-        owner: root
-        group: root
-        mode: '0644'
-      when: minqlx_reqs_stat.stat.exists
-
-    - name: Install core Python dependencies for minqlx
-      pip:
-        requirements: "/root/minqlx-requirements.txt"
-        executable: pip3
-        # --ignore-installed avoids "Cannot uninstall X, RECORD file not found" when a
-        # dependency (e.g. pyzmq) was preinstalled via apt/debian packaging, not pip.
-        extra_args: "{{ '--break-system-packages --ignore-installed' if (pip3_version_output.stdout.split()[1] is version('22.1', '>=')) else '--ignore-installed' }}"
-      when: minqlx_reqs_stat.stat.exists
-      ignore_errors: yes
-      register: minqlx_core_pip_result
-
-    - name: Warn if core minqlx pip install failed
-      debug:
-        msg: "QLSM_PIP_WARN: pip install failed: {{ minqlx_core_pip_result.stderr | default(minqlx_core_pip_result.stdout | default('unknown error')) | truncate(200) }}"
-      when: minqlx_core_pip_result is defined and minqlx_core_pip_result.failed | default(false)
+    - ansible.builtin.import_tasks: tasks/sync_common_plugins.yml
 
   #######################################################################
   # 6a. Configure Redis Unix Socket
@@ -601,13 +566,6 @@
       register: local_steamapps_stat
       become: no
 
-    - name: Check if local minqlx-plugins directory exists
-      stat:
-        path: "../../ql-assets/data/minqlx-plugins"
-      delegate_to: localhost
-      register: local_minqlx_plugins_stat
-      become: no
-
     - name: Check if local scripts directory exists
       stat:
         path: "../../ql-assets/data/scripts"
@@ -615,15 +573,8 @@
       register: local_scripts_stat
       become: no
 
-    - name: Sync common minqlx plugins
-      synchronize:
-        src: "../../ql-assets/data/minqlx-plugins/"
-        dest: "{{ common_assets_dir }}/minqlx-plugins/"
-        private_key: "{{ ansible_ssh_private_key_file }}"
-        archive: yes
-        recursive: yes
-        delete: yes
-      when: local_minqlx_plugins_stat.stat.exists and local_minqlx_plugins_stat.stat.isdir
+    # minqlx-plugins pool sync + its core pip deps live in
+    # tasks/sync_common_plugins.yml, imported above in section 6.
 
     - name: Sync steamapps (workshop items) if present locally
       synchronize:

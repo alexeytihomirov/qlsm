@@ -1,0 +1,147 @@
+import React, { useState } from 'react';
+import { Dialog, DialogBackdrop } from '@headlessui/react';
+import { PackageCheck, X } from 'lucide-react';
+
+function UpdateCommonPluginsModal({ isOpen, onClose, onSubmit, host }) {
+    const [selectedInstances, setSelectedInstances] = useState({});
+
+    const validInstances = host?.instances?.filter(instance => {
+        const s = instance.status?.toLowerCase();
+        return s !== 'deleting' && s !== 'error' && s !== 'deploying' && s !== 'configuring' && s !== 'restarting';
+    }) || [];
+
+    const handleToggle = (instanceId) => {
+        setSelectedInstances(prev => ({
+            ...prev,
+            [instanceId]: !prev[instanceId]
+        }));
+    };
+
+    const handleClose = () => {
+        setSelectedInstances({});
+        onClose();
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+
+        const restartInstanceIds = Object.entries(selectedInstances)
+            .filter(([, isSelected]) => isSelected)
+            .map(([id]) => parseInt(id, 10));
+
+        onSubmit(restartInstanceIds);
+        handleClose();
+    };
+
+    return (
+        <Dialog open={isOpen} as="div" className="relative z-50" onClose={handleClose}>
+            <DialogBackdrop transition className="modal-backdrop fixed inset-0 transition data-[enter]:ease-out data-[enter]:duration-300 data-[leave]:ease-in data-[leave]:duration-200 data-[closed]:opacity-0" />
+
+                <div className="fixed inset-0 overflow-y-auto scrollbar-thick">
+                    <div className="flex min-h-full items-center justify-center p-4">
+                            <Dialog.Panel transition className="modal-panel w-full max-w-md transform p-6 text-left align-middle transition-all transition data-[enter]:ease-out data-[enter]:duration-300 data-[leave]:ease-in data-[leave]:duration-200 data-[closed]:opacity-0 data-[closed]:translate-y-4 data-[closed]:scale-95">
+                                {/* Accent line decoration (dark mode only) */}
+                                <div className="accent-line-top" />
+
+                                {/* Header */}
+                                <Dialog.Title
+                                    as="h3"
+                                    className="relative z-10 flex items-center gap-3 mb-6"
+                                >
+                                    <span className="status-pulse status-pulse-active" />
+                                    <PackageCheck size={18} className="text-[var(--accent-primary)]" />
+                                    <span className="font-display text-base font-semibold tracking-wider uppercase text-[var(--text-primary)]">
+                                        Update Plugins
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={handleClose}
+                                        className="ml-auto logs-modal-close-btn"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </Dialog.Title>
+
+                                <form onSubmit={handleSubmit}>
+                                    <div className="space-y-6">
+                                        <p className="text-xs text-[var(--text-muted)]">
+                                            Refreshes the shared minqlx plugin pool on this host from the
+                                            latest build. This does not require a full host setup re-run.
+                                        </p>
+
+                                        {validInstances.length > 0 && (
+                                            <div>
+                                                <label className="label-tech mb-1.5 block">
+                                                    Auto-Restart Instances
+                                                </label>
+                                                <p className="text-xs text-[var(--text-muted)] mb-3">
+                                                    Select instances to automatically restart so they pick up
+                                                    the refreshed plugins.
+                                                </p>
+                                                <div className="space-y-2 max-h-72 overflow-y-auto scrollbar-thin pr-2">
+                                                    {validInstances.map(instance => {
+                                                        const isStopped = instance.status?.toLowerCase() === 'stopped';
+                                                        const isSelected = !!selectedInstances[instance.id];
+                                                        return (
+                                                            <div
+                                                                key={instance.id}
+                                                                className={`flex items-center justify-between p-3 rounded-lg border transition-all ${isSelected
+                                                                    ? 'border-[var(--accent-primary)]/30 bg-[var(--accent-primary)]/5'
+                                                                    : 'border-[var(--surface-border)] bg-[var(--surface-raised)]'
+                                                                    } ${isStopped ? 'opacity-45 grayscale' : ''}`}
+                                                                title={isStopped ? "Instance is stopped" : ""}
+                                                            >
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-sm font-medium text-[var(--text-primary)]">{instance.name}</span>
+                                                                    <span className="text-xs font-mono text-[var(--text-muted)]">Port {instance.port}</span>
+                                                                </div>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleToggle(instance.id)}
+                                                                    disabled={isStopped}
+                                                                    className="neu-toggle neu-toggle--sm"
+                                                                    aria-pressed={isSelected}
+                                                                >
+                                                                    <span className="sr-only">Toggle restart for {instance.name}</span>
+                                                                    <span className={`neu-toggle__track ${isSelected ? 'neu-toggle__track--on' : 'neu-toggle__track--off'}`}>
+                                                                        <span className={`neu-toggle__knob ${isSelected ? 'neu-toggle__knob--on' : 'neu-toggle__knob--off'}`} />
+                                                                    </span>
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Footer */}
+                                    <div className="flex justify-end items-center gap-3 mt-6 pt-4 border-t border-[var(--surface-border)]">
+                                        <span className="font-mono text-xs text-[var(--text-muted)] tracking-wide mr-auto hidden sm:inline-flex items-center gap-1.5">
+                                            <kbd className="px-1.5 py-0.5 rounded bg-[var(--surface-elevated)] border border-[var(--surface-border)] text-[10px] font-bold">Esc</kbd>
+                                            to close
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handleClose}
+                                            className="btn btn-secondary"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="btn btn-primary"
+                                        >
+                                            Update Plugins
+                                        </button>
+                                    </div>
+                                </form>
+                            </Dialog.Panel>
+                    </div>
+                </div>
+        </Dialog>
+    );
+}
+
+export default UpdateCommonPluginsModal;

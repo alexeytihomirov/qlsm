@@ -168,7 +168,7 @@ from ui.tasks import provision_host, destroy_host, \
     install_qlfilter_task, uninstall_qlfilter_task, check_qlfilter_status_task, \
     restart_host_task, rename_host_task, \
     setup_standalone_host_ansible, remove_standalone_host, \
-    force_update_workshop_task, configure_host_auto_restart_task, configure_host_watchdog_task, \
+    force_update_workshop_task, update_common_plugins_task, configure_host_auto_restart_task, configure_host_watchdog_task, \
     resize_host_task, \
     rerun_host_setup_ansible, rerun_standalone_host_setup, \
     RERUN_CLOUD_SETUP_TIMEOUT, RERUN_SETUP_LOCK_RELEASE_BUFFER, \
@@ -1313,6 +1313,41 @@ def force_update_workshop_api(host_id):
     except Exception as e:
         current_app.logger.error(f"Error enqueuing workshop update task for host {host_id} via API: {e}", exc_info=True)
         return jsonify({"error": {"message": "Failed to initiate workshop update process"}}), 500
+
+@host_api_bp.route('/<int:host_id>/update-plugins', methods=['POST'], endpoint='update_common_plugins_api')
+@jwt_required()
+def update_common_plugins_api(host_id):
+    """Handles triggering a common minqlx plugin pool refresh for a host via API."""
+    current_app.logger.info(f"Received API request to update common plugins for host ID: {host_id}")
+    host = get_host(host_id)
+    if not host:
+        current_app.logger.warning(f"Update plugins API: Host ID {host_id} not found.")
+        return jsonify({"error": {"message": "Host not found"}}), 404
+
+    # Basic validation: only allow if host is ACTIVE
+    if host.status != HostStatus.ACTIVE:
+        current_app.logger.warning(f"Update plugins API: Host ID {host_id} is not in ACTIVE state (current: {host.status.value}).")
+        return jsonify({"error": {"message": f"Host must be in ACTIVE state to update plugins. Current state: {host.status.value}"}}), 400
+
+    data = request.get_json(silent=True) or {}
+    restart_instances = data.get('restart_instances', [])
+    if not isinstance(restart_instances, list) or not all(isinstance(x, int) for x in restart_instances):
+        return jsonify({"error": {"message": "restart_instances must be a list of integers"}}), 400
+
+    try:
+        lock_token = str(uuid.uuid4())
+        if not acquire_lock('host', host_id, lock_token, ttl=240):
+            return jsonify({"error": {"message": f'Another operation is running on host "{host.name}". Please wait for it to complete.'}}), 409
+        try:
+            enqueue_task(update_common_plugins_task, host_id, restart_instances, lock_token=lock_token, on_failure=host_job_failure_handler)
+        except Exception:
+            release_lock('host', host_id, lock_token)
+            raise
+        current_app.logger.info(f"Common plugin pool update task enqueued for host ID: {host_id} via API.")
+        return jsonify({"message": "Plugin pool update process initiated."}), 202
+    except Exception as e:
+        current_app.logger.error(f"Error enqueuing plugin pool update task for host {host_id} via API: {e}", exc_info=True)
+        return jsonify({"error": {"message": "Failed to initiate plugin pool update process"}}), 500
 
 @host_api_bp.route('/<int:host_id>/auto-restart', methods=['POST'], endpoint='configure_auto_restart_api')
 @jwt_required()
