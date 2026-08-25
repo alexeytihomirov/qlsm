@@ -2987,8 +2987,29 @@ class match_restore(minqlx.Plugin):
             )
             return False
         self._sync_health_hud_stat(target, hp)
+        self._log_health_diag(target, hp, "write")
         self._schedule_health_reassert(target, hp)
         return True
+
+    def _log_health_diag(self, target, hp, tag):
+        # TEMPORARY diagnostic (2026-08-25 live investigation) - remove once
+        # the STAT_HEALTH-during-pause mystery is root-caused. Logs what the
+        # engine actually reads back right after we write, so we can tell
+        # whether the value reverts before the client ever sees it, and
+        # whether _schedule_health_reassert's next_frame callback runs while
+        # still paused or only once the match truly unfreezes.
+        try:
+            cid = getattr(target, "id", "?")
+            ent_hp = getattr(target, "health", "?")
+            stat_hp = target.gclient.ps.stats[minqlx.StatIndex.HEALTH]
+            paused = self._sv_paused_active()
+            self.logger.info(
+                "match_restore: health_diag tag=%s cid=%s wrote=%s entity.health=%s "
+                "stats[HEALTH]=%s paused=%s t=%.3f",
+                tag, cid, hp, ent_hp, stat_hp, paused, time.time(),
+            )
+        except Exception:
+            self.logger.exception("match_restore: health_diag failed tag=%s", tag)
 
     def _schedule_health_reassert(self, target, hp, delay_sec=0.15):
         # Live-tested 2026-08-25 on a real match: the HUD-visible health kept
@@ -3004,8 +3025,10 @@ class match_restore(minqlx.Plugin):
             def _reassert_main():
                 try:
                     if target is not None:
+                        self._log_health_diag(target, hp, "reassert_before")
                         target.health = hp
                         self._sync_health_hud_stat(target, hp)
+                        self._log_health_diag(target, hp, "reassert_after")
                 except (AttributeError, TypeError, ValueError, minqlx.EngineStateError) as exc:
                     self.logger.warning(
                         "match_restore: health reassert cid=%s failed: %s",
