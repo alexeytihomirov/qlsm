@@ -167,6 +167,16 @@ export const updateWorkshopItem = async (hostId, data) => {
   }
 };
 
+export const updateCommonPlugins = async (hostId, data) => {
+  try {
+    const response = await apiClient.post(`/hosts/${hostId}/update-plugins`, data);
+    return response.data; // Assuming API returns { "message": "..." }
+  } catch (error) {
+    console.error(`Failed to update common plugins for host ${hostId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to update common plugins for host ${hostId}`);
+  }
+};
+
 export const configureAutoRestart = async (hostId, schedule) => {
   try {
     const response = await apiClient.post(`/hosts/${hostId}/auto-restart`, { schedule });

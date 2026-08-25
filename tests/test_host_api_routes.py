@@ -1503,6 +1503,71 @@ def test_force_update_workshop_invalid_restart_instances(client, app):
     assert 'list of integers' in response.get_json()['error']['message']
 
 
+# --- POST /api/hosts/<id>/update-plugins ---
+
+@patch('ui.routes.host_routes.enqueue_task')
+@patch('ui.routes.host_routes.acquire_lock', return_value=True)
+def test_update_common_plugins_success(mock_lock, mock_enqueue, client, app):
+    """Queues common plugin pool update task on active host."""
+    with app.app_context():
+        host = create_host(name='plugins-update-host', provider='vultr', status=HostStatus.ACTIVE)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post(f'/api/hosts/{host_id}/update-plugins', headers=headers, json={
+        'restart_instances': [1, 2]
+    })
+    assert response.status_code == 202
+    assert 'process initiated' in response.get_json()['message']
+    mock_enqueue.assert_called_once()
+
+
+@patch('ui.routes.host_routes.enqueue_task')
+@patch('ui.routes.host_routes.acquire_lock', return_value=True)
+def test_update_common_plugins_no_body(mock_lock, mock_enqueue, client, app):
+    """No JSON body defaults restart_instances to an empty list."""
+    with app.app_context():
+        host = create_host(name='plugins-update-host-nobody', provider='vultr', status=HostStatus.ACTIVE)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post(f'/api/hosts/{host_id}/update-plugins', headers=headers)
+    assert response.status_code == 202
+    mock_enqueue.assert_called_once()
+
+
+def test_update_common_plugins_host_not_found(client, app):
+    """Non-existent host returns 404."""
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post('/api/hosts/99999/update-plugins', headers=headers, json={})
+    assert response.status_code == 404
+
+
+def test_update_common_plugins_host_not_active(client, app):
+    """Non-ACTIVE host returns 400."""
+    with app.app_context():
+        host = create_host(name='plugins-update-notactive', provider='vultr', status=HostStatus.ERROR)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post(f'/api/hosts/{host_id}/update-plugins', headers=headers, json={})
+    assert response.status_code == 400
+
+
+def test_update_common_plugins_invalid_restart_instances(client, app):
+    """Non-list restart_instances returns 400."""
+    with app.app_context():
+        host = create_host(name='plugins-update-badinst', provider='vultr', status=HostStatus.ACTIVE)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.post(f'/api/hosts/{host_id}/update-plugins', headers=headers, json={
+        'restart_instances': 'not-a-list'
+    })
+    assert response.status_code == 400
+    assert 'list of integers' in response.get_json()['error']['message']
+
+
 # --- POST /api/hosts/<id>/auto-restart ---
 
 @patch('ui.routes.host_routes.enqueue_task')
