@@ -2987,48 +2987,25 @@ class match_restore(minqlx.Plugin):
             )
             return False
         self._sync_health_hud_stat(target, hp)
-        self._log_health_diag(target, hp, "write")
         self._schedule_health_reassert(target, hp)
         return True
 
-    def _log_health_diag(self, target, hp, tag):
-        # TEMPORARY diagnostic (2026-08-25 live investigation) - remove once
-        # the STAT_HEALTH-during-pause mystery is root-caused. Logs what the
-        # engine actually reads back right after we write, so we can tell
-        # whether the value reverts before the client ever sees it, and
-        # whether _schedule_health_reassert's next_frame callback runs while
-        # still paused or only once the match truly unfreezes.
-        try:
-            cid = getattr(target, "id", "?")
-            ent_hp = getattr(target, "health", "?")
-            stat_hp = target.gclient.ps.stats[minqlx.StatIndex.HEALTH]
-            paused = self._sv_paused_active()
-            self.logger.info(
-                "match_restore: health_diag tag=%s cid=%s wrote=%s entity.health=%s "
-                "stats[HEALTH]=%s paused=%s t=%.3f",
-                tag, cid, hp, ent_hp, stat_hp, paused, time.time(),
-            )
-        except Exception:
-            self.logger.exception("match_restore: health_diag failed tag=%s", tag)
-
     def _schedule_health_reassert(self, target, hp, delay_sec=0.15):
-        # Live-tested 2026-08-25 on a real match: the HUD-visible health kept
-        # showing the pre-restore value through the whole paused window and
-        # only snapped to the restored hp once the match actually unpaused/
-        # unfroze - something between the immediate write here and the real
-        # unfreeze reverts stats[STAT_HEALTH] back while the player is frozen.
-        # Mirror the same delayed reassert _schedule_dead_state_reassert
-        # already uses for the dead-player path.
+        # Live-tested 2026-08-25 on a real match: the immediate write above
+        # alone left the HUD-visible health showing the pre-restore value
+        # through the whole paused window, only snapping to the restored hp
+        # once the match actually unpaused/unfroze. Mirror the same delayed
+        # reassert _schedule_dead_state_reassert already uses for the
+        # dead-player path - re-applying health+stat once more a beat later
+        # made it stick immediately, confirmed live.
         @minqlx.delay(float(delay_sec))
         def _reassert():
             @minqlx.next_frame
             def _reassert_main():
                 try:
                     if target is not None:
-                        self._log_health_diag(target, hp, "reassert_before")
                         target.health = hp
                         self._sync_health_hud_stat(target, hp)
-                        self._log_health_diag(target, hp, "reassert_after")
                 except (AttributeError, TypeError, ValueError, minqlx.EngineStateError) as exc:
                     self.logger.warning(
                         "match_restore: health reassert cid=%s failed: %s",
