@@ -1,0 +1,7 @@
+{
+  "label": "Native Demo Auto-Record",
+  "description": "Arms/disarms minqlxtended's native per-player demo capture (demo_arm/demo_disarm) on game_countdown/game_end, so server-side .dm_91 recording starts exactly at match start (not warmup) and ships as a countdown-trimmed, match-named .qlmatch package. No eBPF, no separate process. Requires a minqlxtended build with the demo-match/demo-cutter/demo-bindings patch chain applied (qlds_engine_flavor=minqlxtended, source=build).",
+  "cvars": [
+    { "cvar": "qlx_nativeDemoRecordEnabled", "label": "Enabled", "description": "Turns native server-side match demo recording on or off. Do not combine with sv_demoRecord — that's the old, match-unaware upstream toggle this plugin replaces.", "type": "bool", "default": false }
+  ]
+}
