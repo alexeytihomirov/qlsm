@@ -1,8 +1,10 @@
+import io
 import os
 import re
 import shutil
 import uuid
-from flask import Blueprint, request, current_app, jsonify
+import zipfile
+from flask import Blueprint, request, current_app, jsonify, send_file
 import sqlalchemy
 from ui import db
 from ui.constants import MAX_INSTANCES_PER_HOST
@@ -1087,6 +1089,86 @@ def list_instance_demos_api(instance_id):
 
     current_app.logger.error(f"Failed to list demos for instance {instance_id}: {error_msg}")
     return jsonify({"error": {"message": error_msg}}), 500
+
+
+@instance_api_bp.route('/<int:instance_id>/demos/download', methods=['GET'], endpoint='download_instance_demo_api')
+@jwt_required()
+def download_instance_demo_api(instance_id):
+    """Downloads a single demo file (.dm_91) from the remote QLDS instance."""
+    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+
+    instance = get_instance(instance_id)
+    if not instance:
+        return jsonify({"error": {"message": "Instance not found."}}), 404
+
+    if not instance.host:
+        return jsonify({"error": {"message": "Instance has no associated host."}}), 400
+
+    filename = request.args.get('filename', '')
+
+    current_app.logger.info(f"Downloading demo '{filename}' for instance {instance_id} ({instance.name})")
+
+    success, files, missing, error_msg = fetch_instance_demos(instance_id, [filename])
+
+    if not success:
+        current_app.logger.error(f"Failed to download demo for instance {instance_id}: {error_msg}")
+        return jsonify({"error": {"message": error_msg}}), 500
+
+    if filename in missing or filename not in files:
+        return jsonify({"error": {"message": "Demo file not found on the remote host."}}), 404
+
+    return send_file(
+        io.BytesIO(files[filename]),
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/octet-stream',
+    )
+
+
+@instance_api_bp.route('/<int:instance_id>/demos/download-batch', methods=['POST'], endpoint='download_instance_demos_batch_api')
+@jwt_required()
+def download_instance_demos_batch_api(instance_id):
+    """Downloads multiple demo files as a single ZIP from the remote QLDS instance."""
+    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+
+    instance = get_instance(instance_id)
+    if not instance:
+        return jsonify({"error": {"message": "Instance not found."}}), 404
+
+    if not instance.host:
+        return jsonify({"error": {"message": "Instance has no associated host."}}), 400
+
+    data = request.get_json(silent=True) or {}
+    filenames = data.get('filenames')
+    if not isinstance(filenames, list) or not filenames:
+        return jsonify({"error": {"message": "filenames must be a non-empty list."}}), 400
+
+    current_app.logger.info(
+        f"Batch-downloading {len(filenames)} demo(s) for instance {instance_id} ({instance.name})"
+    )
+
+    success, files, missing, error_msg = fetch_instance_demos(instance_id, filenames)
+
+    if not success:
+        current_app.logger.error(f"Failed to batch-download demos for instance {instance_id}: {error_msg}")
+        return jsonify({"error": {"message": error_msg}}), 500
+
+    if not files:
+        return jsonify({"error": {"message": "None of the requested demo files were found on the remote host."}}), 404
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    buf.seek(0)
+
+    safe_name = re.sub(r'[^A-Za-z0-9._-]+', '-', instance.name or '').strip('.-') or 'instance'
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f'{safe_name}-demos.zip',
+        mimetype='application/zip',
+    )
 
 # Helper function to read instance-specific config files - still needed for API
 def _read_instance_config(host_name, instance_id, filename):

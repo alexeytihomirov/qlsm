@@ -567,6 +567,50 @@ export const listInstanceDemos = async (instanceId) => {
   }
 };
 
+async function _blobErrorToJson(error, fallbackMessage) {
+  // responseType: 'blob' applies to error responses too, so a JSON error body
+  // arrives as a Blob. Parse it back so the caller sees the server's message.
+  if (error.response?.data instanceof Blob) {
+    try {
+      const text = await error.response.data.text();
+      throw JSON.parse(text);
+    } catch (parseError) {
+      if (!(parseError instanceof SyntaxError)) {
+        throw parseError;
+      }
+      // Blob wasn't JSON; fall through to the generic error below.
+    }
+  }
+  throw error.response ? error.response.data : new Error(fallbackMessage);
+}
+
+export const downloadInstanceDemo = async (instanceId, filename) => {
+  try {
+    const response = await apiClient.get(`/instances/${instanceId}/demos/download`, {
+      params: { filename },
+      responseType: 'blob',
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to download demo ${filename} for instance ${instanceId}:`, error.response ? error.response.data : error.message);
+    await _blobErrorToJson(error, `Failed to download demo ${filename}`);
+  }
+};
+
+export const downloadInstanceDemosBatch = async (instanceId, filenames) => {
+  try {
+    const response = await apiClient.post(
+      `/instances/${instanceId}/demos/download-batch`,
+      { filenames },
+      { responseType: 'blob' },
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to batch-download demos for instance ${instanceId}:`, error.response ? error.response.data : error.message);
+    await _blobErrorToJson(error, 'Failed to download demos');
+  }
+};
+
 // Config Preset APIs
 export const getPresets = async () => {
   try {

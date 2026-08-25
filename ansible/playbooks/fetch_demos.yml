@@ -1,0 +1,18 @@
+---
+- name: Fetch QLDS Server-Side Demos
+  hosts: all
+  become: yes
+  gather_facts: false
+
+  vars:
+    game_port: "{{ port }}"
+    demo_dir: "/home/ql/qlds-{{ game_port }}/demos"
+
+  tasks:
+    - name: Fetch requested demo files
+      ansible.builtin.fetch:
+        src: "{{ demo_dir }}/{{ item }}"
+        dest: "{{ local_dir }}/{{ item }}"
+        flat: yes
+        fail_on_missing: false
+      loop: "{{ filenames }}"
