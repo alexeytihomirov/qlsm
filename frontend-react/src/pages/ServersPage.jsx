@@ -28,9 +28,11 @@ import { useInstanceLanRate } from '../hooks/useInstanceLanRate';
 import { useViewLogs } from '../hooks/useViewLogs';
 import { useViewChatLogs } from '../hooks/useViewChatLogs';
 import { useViewMinqlxLogs } from '../hooks/useViewMinqlxLogs';
+import { useViewDemos } from '../hooks/useViewDemos';
 import { useInstanceStopStart } from '../hooks/useInstanceStopStart';
 import ViewChatLogsModal from '../components/instances/ViewChatLogsModal';
 import ViewMinqlxLogsModal from '../components/instances/ViewMinqlxLogsModal';
+import ViewDemosModal from '../components/instances/ViewDemosModal';
 import { useInstanceOrder } from '../hooks/useInstanceOrder';
 import { useHostOrder } from '../hooks/useHostOrder';
 import SortableHostList from '../components/hosts/SortableHostList';
@@ -76,6 +78,7 @@ export default function ServersPage() {
     const { selectedInstanceForLogs, isViewLogsModalOpen, openViewLogs: handleViewLogs, closeViewLogs: closeViewLogsModal } = useViewLogs();
     const { selectedInstanceForChatLogs, isViewChatLogsModalOpen, openViewChatLogs: handleViewChatLogs, closeViewChatLogs: closeViewChatLogsModal } = useViewChatLogs(); // Instantiate hook
     const { selectedInstanceForMinqlxLogs, isViewMinqlxLogsModalOpen, openViewMinqlxLogs: handleViewMinqlxLogs, closeViewMinqlxLogs: closeViewMinqlxLogsModal } = useViewMinqlxLogs();
+    const { selectedInstanceForDemos, isViewDemosModalOpen, openViewDemos: handleViewDemos, closeViewDemos: closeViewDemosModal } = useViewDemos();
     const { lanRateAction, isLanRateModalOpen, requestToggleLanRate, confirmToggleLanRate, closeLanRateModal } = useInstanceLanRate(showSuccess, showError, () => refreshData(false));
     const { handleQlfilterAction } = useQlfilterActions(showSuccess, showError, () => refreshData(false));
     const { stopStartAction, isStopStartModalOpen, requestStop, requestStart, confirmStopStart, closeStopStartModal } = useInstanceStopStart(showSuccess, showError, () => refreshData(false));
@@ -338,6 +341,7 @@ export default function ServersPage() {
                                                 onViewLogs={handleViewLogs}
                                                 onViewChatLogs={handleViewChatLogs}
                                                 onViewMinqlxLogs={handleViewMinqlxLogs}
+                                                onViewDemos={handleViewDemos}
                                                 onOpenRcon={handleOpenRconConsole}
                                             />
                                         )}
@@ -384,6 +388,7 @@ export default function ServersPage() {
             <ViewLogsModal isOpen={isViewLogsModalOpen} onClose={closeViewLogsModal} instance={selectedInstanceForLogs} />
             <ViewChatLogsModal isOpen={isViewChatLogsModalOpen} onClose={closeViewChatLogsModal} instance={selectedInstanceForChatLogs} />
             <ViewMinqlxLogsModal isOpen={isViewMinqlxLogsModalOpen} onClose={closeViewMinqlxLogsModal} instance={selectedInstanceForMinqlxLogs} />
+            <ViewDemosModal isOpen={isViewDemosModalOpen} onClose={closeViewDemosModal} instance={selectedInstanceForDemos} />
             <ConfirmationModal isOpen={isLanRateModalOpen} onClose={closeLanRateModal} onConfirm={confirmToggleLanRate} title={lanRateAction?.enabling ? 'Enable 99k LAN Rate' : 'Disable 99k LAN Rate'} message={`Are you sure you want to ${lanRateAction?.enabling ? 'enable' : 'disable'} 99k LAN rate mode for instance "${lanRateAction?.name}"? The instance will be reconfigured and restarted.`} confirmButtonText={lanRateAction?.enabling ? 'Enable' : 'Disable'} confirmButtonVariant="amber" />
             <ConfirmationModal isOpen={isStopStartModalOpen} onClose={closeStopStartModal} onConfirm={confirmStopStart} title={stopStartAction?.action === 'stop' ? 'Stop Instance' : 'Start Instance'} message={stopStartAction?.action === 'stop' ? `Are you sure you want to stop instance "${stopStartAction?.name}"? The server will go offline.` : `Are you sure you want to start instance "${stopStartAction?.name}"?`} confirmButtonText={stopStartAction?.action === 'stop' ? 'Stop' : 'Start'} confirmButtonVariant={stopStartAction?.action === 'stop' ? 'warning' : 'primary'} />
             <ForceUpdateWorkshopModal isOpen={isWorkshopModalOpen} onClose={closeWorkshopModal} onSubmit={handleWorkshopUpdateSubmit} host={hostForWorkshopUpdate} />

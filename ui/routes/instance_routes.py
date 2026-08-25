@@ -1064,6 +1064,30 @@ def list_remote_minqlx_logs_api(instance_id):
     current_app.logger.error(f"Failed to list MinQLX logs for instance {instance_id}: {error_msg}")
     return jsonify({"error": {"message": error_msg}}), 500
 
+
+@instance_api_bp.route('/<int:instance_id>/demos', methods=['GET'], endpoint='list_instance_demos_api')
+@jwt_required()
+def list_instance_demos_api(instance_id):
+    """Lists server-side demo files (.dm_91) recorded on the remote QLDS instance."""
+    from ui.task_logic.ansible_instance_demos import list_instance_demos
+
+    instance = get_instance(instance_id)
+    if not instance:
+        return jsonify({"error": {"message": "Instance not found."}}), 404
+
+    if not instance.host:
+        return jsonify({"error": {"message": "Instance has no associated host."}}), 400
+
+    current_app.logger.info(f"Listing demos for instance {instance_id} ({instance.name})")
+
+    success, demos, error_msg = list_instance_demos(instance_id)
+
+    if success:
+        return jsonify({"data": {"demos": demos, "instance_name": instance.name}})
+
+    current_app.logger.error(f"Failed to list demos for instance {instance_id}: {error_msg}")
+    return jsonify({"error": {"message": error_msg}}), 500
+
 # Helper function to read instance-specific config files - still needed for API
 def _read_instance_config(host_name, instance_id, filename):
     """Reads content from a file in configs/<host_name>/<instance_id>/filename."""

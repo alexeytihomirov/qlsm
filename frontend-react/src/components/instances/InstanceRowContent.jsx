@@ -18,6 +18,7 @@ export default function InstanceRowContent({
     onViewLogs,
     onViewChatLogs,
     onViewMinqlxLogs,
+    onViewDemos,
     onOpenRcon,
 }) {
     return (
@@ -110,6 +111,7 @@ export default function InstanceRowContent({
                     onViewLogs={() => onViewLogs(inst)}
                     onViewChatLogs={() => onViewChatLogs(inst)}
                     onViewMinqlxLogs={() => onViewMinqlxLogs(inst)}
+                    onViewDemos={() => onViewDemos(inst)}
                     onOpenRconConsole={(instance) =>
                         onOpenRcon({
                             ...instance,

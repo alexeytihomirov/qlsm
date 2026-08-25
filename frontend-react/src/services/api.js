@@ -547,6 +547,16 @@ export const listInstanceMinqlxLogs = async (instanceId) => {
   }
 };
 
+export const listInstanceDemos = async (instanceId) => {
+  try {
+    const response = await apiClient.get(`/instances/${instanceId}/demos`);
+    return response.data.data; // { demos: [{ name, size, mtime }], instance_name }
+  } catch (error) {
+    console.error(`Failed to list demos for instance ${instanceId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to list demos for instance ${instanceId}`);
+  }
+};
+
 // Config Preset APIs
 export const getPresets = async () => {
   try {

@@ -234,6 +234,11 @@ qlsm/
 2. Frontend calls `GET /api/instances/<id>/remote-logs/list` → `list_instance_server_log_archives()` runs `list_server_log_archives.yml` to enumerate the instance's `server.log*` files.
 3. Frontend calls `GET /api/instances/<id>/remote-logs?filename=...` → current-log `lines` and `time` requests query journald through `fetch_instance_remote_logs()`, preserving the existing live-journal views. Current-log `all` and dated-archive `lines`/`all` requests use `fetch_instance_server_log()` and `fetch_server_log_archive.yml`; the playbook self-provisions the archiving machinery on older hosts, flushes pending journal entries before reading `server.log`, and fetches the selected bounded file to the controller. Archive `time` requests are rejected.
 
+### Server-Side Demo Listing
+1. minqlxtended's native demo-match capture (`demo_match.c`, vendored under `ql-assets/patches/minqlxtended/`) writes finished `.dm_91` files under `fs_homepath/sv_demoDir` — `sv_demoDir` is not overridden anywhere in this repo, so it defaults to `/home/ql/qlds-<port>/demos`. Recording only happens when `sv_demoRecord` or `qlx_nativeDemoRecordEnabled` is set and a match arms the capture; neither cvar is set by any qlsm default, so this is opt-in/manual today.
+2. "Demos" instance action → `GET /api/instances/<id>/demos` → `list_instance_demos()` runs `list_demos.yml`, which `find`s `*.dm_91` under that directory and returns `{name, size, mtime}` per file, newest first. This is a read of what's actually on disk, not a claim from a plugin or cvar state, so it doubles as the observable result of a manual demo-recording test with the current minqlxtended build.
+3. `DebugPrint("demo: ...")` lines from the same C code (e.g. "demo: armed ..." / "demo: finalised ...") are the log-side half of verifying a recording; check the existing "View MinQLX Logs" / "View Server Logs" actions for them — which log sink `DebugPrint` lands in was not confirmed against the actual minqlxtended source, only inferred from the code comments.
+
 ### Host Rename
 1. User edits name → `PUT /api/hosts/<id>`
 2. Database updated immediately

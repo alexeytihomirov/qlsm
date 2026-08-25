@@ -2,7 +2,7 @@ import React, { Fragment } from 'react'; // Removed useEffect
 // Link removed for Edit Config
 import { Menu, Transition, Portal } from '@headlessui/react';
 import { useFloating, shift, offset, autoUpdate, flip } from '@floating-ui/react-dom';
-import { Trash2, RefreshCw, SlidersHorizontal, Zap, FileText, ExternalLink, Check, Square, Play, Terminal, MessageSquare, ScrollText } from 'lucide-react';
+import { Trash2, RefreshCw, SlidersHorizontal, Zap, FileText, ExternalLink, Check, Square, Play, Terminal, MessageSquare, ScrollText, Film } from 'lucide-react';
 import InfoTooltip from './common/InfoTooltip';
 import {
   canEnableLanRate,
@@ -25,7 +25,7 @@ const InstanceStatus = {
   ACTIVE: 'active'
 };
 
-function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop, handleStart, handleToggleLanRate, onOpenEditConfigModal, onViewInstanceDetails, onViewLogs, onViewChatLogs, onViewMinqlxLogs, onOpenRconConsole }) {
+function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop, handleStart, handleToggleLanRate, onOpenEditConfigModal, onViewInstanceDetails, onViewLogs, onViewChatLogs, onViewMinqlxLogs, onViewDemos, onOpenRconConsole }) {
   const { x, y, refs, strategy } = useFloating({
     placement: 'bottom-end',
     middleware: [
@@ -136,6 +136,15 @@ function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop
                         disabled={!isActionable}
                         className={`group flex rounded-md items-center w-full px-3 py-2 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-black/[0.04] dark:bg-white/[0.06] text-theme-primary' : 'text-theme-secondary'}`}>
                         <ScrollText size={15} className="mr-3 flex-shrink-0 text-theme-muted" /> View MinQLX Logs
+                      </button>
+                    )}
+                  </Menu.Item>
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button onClick={() => onViewDemos?.(instance)}
+                        disabled={!isActionable}
+                        className={`group flex rounded-md items-center w-full px-3 py-2 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-black/[0.04] dark:bg-white/[0.06] text-theme-primary' : 'text-theme-secondary'}`}>
+                        <Film size={15} className="mr-3 flex-shrink-0 text-theme-muted" /> Demos
                       </button>
                     )}
                   </Menu.Item>
