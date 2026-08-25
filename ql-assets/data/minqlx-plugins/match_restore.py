@@ -2987,7 +2987,35 @@ class match_restore(minqlx.Plugin):
             )
             return False
         self._sync_health_hud_stat(target, hp)
+        self._schedule_health_reassert(target, hp)
         return True
+
+    def _schedule_health_reassert(self, target, hp, delay_sec=0.15):
+        # Live-tested 2026-08-25 on a real match: the HUD-visible health kept
+        # showing the pre-restore value through the whole paused window and
+        # only snapped to the restored hp once the match actually unpaused/
+        # unfroze - something between the immediate write here and the real
+        # unfreeze reverts stats[STAT_HEALTH] back while the player is frozen.
+        # Mirror the same delayed reassert _schedule_dead_state_reassert
+        # already uses for the dead-player path.
+        @minqlx.delay(float(delay_sec))
+        def _reassert():
+            @minqlx.next_frame
+            def _reassert_main():
+                try:
+                    if target is not None:
+                        target.health = hp
+                        self._sync_health_hud_stat(target, hp)
+                except (AttributeError, TypeError, ValueError, minqlx.EngineStateError) as exc:
+                    self.logger.warning(
+                        "match_restore: health reassert cid=%s failed: %s",
+                        getattr(target, "id", "?"),
+                        exc,
+                    )
+
+            _reassert_main()
+
+        _reassert()
 
     @staticmethod
     def _strip_dead_player_inventory(payload):
