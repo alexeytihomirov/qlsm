@@ -1,13 +1,15 @@
-import React, { Fragment } from 'react'; // Removed useEffect
+import React, { Fragment, useState } from 'react';
 // Link removed for Edit Config
 import { Menu, Transition, Portal } from '@headlessui/react';
 import { useFloating, shift, offset, autoUpdate, flip } from '@floating-ui/react-dom';
-import { Trash2, RefreshCw, SlidersHorizontal, Zap, FileText, ExternalLink, Check, Square, Play, Terminal, MessageSquare, ScrollText, Film } from 'lucide-react';
+import { Trash2, RefreshCw, SlidersHorizontal, Zap, FileText, ExternalLink, Check, Square, Play, Terminal, MessageSquare, ScrollText, Film, Radio, Loader2 } from 'lucide-react';
 import InfoTooltip from './common/InfoTooltip';
 import {
   canEnableLanRate,
   getLanRateUnsupportedMessage,
 } from '../utils/lanRateCompatibility';
+import { getInstanceTelemetry, enableInstanceTelemetry } from '../services/api';
+import { useNotification } from './NotificationProvider';
 
 // Define InstanceStatus constants to match backend enum values
 const InstanceStatus = {
@@ -50,6 +52,36 @@ function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop
     ? getLanRateUnsupportedMessage(hostShape)
     : null;
 
+  const [telemetryServerId, setTelemetryServerId] = useState(null);
+  const [telemetryChecked, setTelemetryChecked] = useState(false);
+  const [isEnablingTelemetry, setIsEnablingTelemetry] = useState(false);
+  const { showSuccess, showError } = useNotification();
+
+  const handleEnableTelemetry = async () => {
+    setIsEnablingTelemetry(true);
+    try {
+      const data = await enableInstanceTelemetry(instance.id);
+      showSuccess(data.message || `Telemetry enable queued for "${instance.name}".`);
+      const status = await getInstanceTelemetry(instance.id);
+      setTelemetryServerId(status.server_id);
+      setTelemetryChecked(true);
+    } catch (err) {
+      showError(err.error?.message || err.message || 'Failed to enable telemetry.');
+    } finally {
+      setIsEnablingTelemetry(false);
+    }
+  };
+
+  const handleMenuOpen = async () => {
+    if (telemetryChecked) return;
+    try {
+      const status = await getInstanceTelemetry(instance.id);
+      setTelemetryServerId(status.server_id);
+    } finally {
+      setTelemetryChecked(true);
+    }
+  };
+
   return (
     <Menu as="div" className="relative inline-block text-left ml-2">
       {({ open }) => (
@@ -57,6 +89,7 @@ function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop
           <div>
             <Menu.Button
               ref={refs.setReference}
+              onClick={handleMenuOpen}
               className={`instance-actions-trigger inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md text-theme-muted hover:text-theme-secondary hover:bg-black/[0.04] dark:hover:bg-white/[0.04] focus:outline-none transition-all ${open ? 'bg-black/[0.04] dark:bg-white/[0.04] text-theme-secondary' : ''
                 }`}
               title="Instance Settings"
@@ -185,6 +218,27 @@ function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop
                           style={instance.lan_rate_enabled ? { background: 'rgba(34,217,127,0.12)' } : { background: 'rgba(100,116,139,0.12)' }}>
                           {instance.lan_rate_enabled ? <><Check size={10} /> ON</> : 'OFF'}
                         </span>
+                      </button>
+                    )}
+                  </Menu.Item>
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        type="button"
+                        onClick={handleEnableTelemetry}
+                        disabled={isEnablingTelemetry || !!telemetryServerId}
+                        className={`group flex rounded-md items-center w-full px-3 py-2 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-black/[0.04] dark:bg-white/[0.06] text-theme-primary' : 'text-theme-secondary'}`}
+                      >
+                        {isEnablingTelemetry
+                          ? <Loader2 size={15} className="mr-3 flex-shrink-0 text-theme-muted animate-spin" />
+                          : <Radio size={15} className="mr-3 flex-shrink-0 text-theme-muted" />}
+                        <span className="flex-1 text-left">Enable Telemetry</span>
+                        {telemetryServerId && (
+                          <span className="ml-2 inline-flex items-center text-[11px] font-medium px-1.5 py-0.5 rounded text-emerald-400"
+                            style={{ background: 'rgba(34,217,127,0.12)' }}>
+                            #{telemetryServerId}
+                          </span>
+                        )}
                       </button>
                     )}
                   </Menu.Item>

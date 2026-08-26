@@ -1054,6 +1054,40 @@ export const setVultrKeySetting = async (key) => {
   return response.data.data;
 };
 
+// Stats-hub target (global): base URL + ingest token used by every host's
+// telemetry relay and by instance server_id reservation.
+export const getStatsHubSetting = async () => {
+  const response = await apiClient.get('/settings/stats-hub');
+  return response.data.data;
+};
+
+export const setStatsHubSetting = async (url, ingestToken) => {
+  const response = await apiClient.put('/settings/stats-hub', { url, ingest_token: ingestToken });
+  return response.data.data;
+};
+
+// Telemetry relay (per host)
+export const getTelemetryRelay = async (hostId) => {
+  const response = await apiClient.get(`/hosts/${hostId}/telemetry-relay`);
+  return response.data.data;
+};
+
+export const configureTelemetryRelay = async (hostId, enabled) => {
+  const response = await apiClient.post(`/hosts/${hostId}/telemetry-relay`, { enabled });
+  return response.data;
+};
+
+// Instance telemetry (reserves a stats-hub server_id + wires cvars at the relay)
+export const getInstanceTelemetry = async (instanceId) => {
+  const response = await apiClient.get(`/instances/${instanceId}/telemetry`);
+  return response.data.data;
+};
+
+export const enableInstanceTelemetry = async (instanceId) => {
+  const response = await apiClient.post(`/instances/${instanceId}/telemetry`);
+  return response.data;
+};
+
 export const getServerStatus = async () => {
   const response = await apiClient.get('/server-status');
   return response.data.data; // {instanceId: statusData}
