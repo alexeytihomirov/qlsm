@@ -17,13 +17,15 @@ You can also create **subfolders** (one level deep) to hold `.ent` entity overri
 
 ## Owner & Admins
 
-Above the file manager, the **Owner & Admins** panel lets you assign
-operators from the [Operators](../administration/operators.md) directory
-without hand-editing `server.cfg` or `access.txt`: pick an Owner (writes
-`qlx_owner`), or add an operator as an Admin with a level 0-5 (writes a
-`steamid|level` line to `access.txt`). Typing a SteamID directly in the
-`access.txt` editor also offers autocomplete suggestions from the same
-directory.
+The **Owner & Admins** tab lets you assign operators from the
+[Operators](../administration/operators.md) directory without hand-editing
+`server.cfg` or `access.txt`: pick an Owner (writes `qlx_owner`), or add an
+operator as an Admin with a level 0-5 (writes a `steamid|level` line to
+`access.txt`). Typing a SteamID directly in the `access.txt` editor also
+offers autocomplete suggestions from the same directory.
+
+On the Add Instance form and the preset Add/Edit pages, this same panel is
+shown above the file manager instead of in its own tab.
 
 
 ## Editor Buttons

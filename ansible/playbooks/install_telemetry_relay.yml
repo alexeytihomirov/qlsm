@@ -1,32 +1,22 @@
 ---
-# Manual maintenance playbook — not wired into the QLSM UI/task queue (same
-# pattern as rebuild_minqlx.yml). One relay serves every QLDS instance on
-# the host (it routes internally by server_id in each POST body), so this
-# installs once per host, not once per instance.
+# Installs + configures ql-telemetry-relay (local HTTP forwarder, one per
+# host - it routes internally by server_id in each POST body). Called by
+# qlsm's "Telemetry relay" host toggle (ui/task_logic/ansible_telemetry_relay.py),
+# which passes real telemetry_relay_enabled/token/routes extravars.
 #
-# Run directly, e.g.:
+# Can also be run directly for a one-off manual install - without extravars
+# it renders a disabled, empty-routes config (the historical default), so a
+# bare run never turns on a relay an operator didn't ask for:
 #   ansible-playbook -i ansible/inventory/<host>.yml ansible/playbooks/install_telemetry_relay.yml
 #
-# After this runs, two things still need manual setup (deployment-specific,
-# not something to guess a default for):
-#   1. Edit /home/ql/telemetry-relay.json on the host — set "enabled": true,
-#      the real ingest "token", and a "routes" entry per instance:
-#        "routes": { "<server_id>": {
-#          "telemetry": "https://<stats-hub>/api/ingest/telemetry",
-#          "item_events": "https://<stats-hub>/api/ingest/item-events"
-#        } }
-#      then `systemctl reload ql-telemetry-relay` (relay.py reloads on SIGHUP,
-#      matching the supervisor-based install's hub-Apply behavior).
-#   2. Point each instance's stream_telemetry_unified.py at the local relay
-#      and give it a matching server_id, e.g. in server.cfg (cvar names
-#      verified against addons/telemetry/minqlx/stream_telemetry_unified.py
-#      in ql-server-core — check that file if it's changed since this was written):
-#        set qlx_statsHubUnifiedEnabled "1"   # master switch, off by default
-#        set qlx_statsHubUrl "http://127.0.0.1:8190/api/ingest/telemetry"
-#        set qlx_statsHubToken "local"
-#        set qlx_statsHubServerId "<server_id — matches a routes/ key above>"
+# routes shape (per instance): { "<server_id>": {
+#   "telemetry": "<stats-hub base>/api/ingest/telemetry",
+#   "server_name": "<instance name>"
+# } }
+# item_events/session_events URLs are derived by relay.py from "telemetry"
+# when not given explicitly.
 
-- name: Install ql-telemetry-relay (local HTTP forwarder, one per host)
+- name: Install + configure ql-telemetry-relay (local HTTP forwarder, one per host)
   hosts: all
   become: yes
   gather_facts: false
@@ -34,6 +24,10 @@
   vars:
     telemetry_relay_dir: "/home/ql/telemetry-relay"
     telemetry_relay_config: "/home/ql/telemetry-relay.json"
+    telemetry_relay_enabled: false
+    telemetry_relay_token: ""
+    telemetry_relay_routes: {}
+    telemetry_relay_timeout_sec: 2
 
   tasks:
     - name: Create telemetry-relay directory
@@ -52,20 +46,20 @@
         group: ql
         mode: '0755'
 
-    - name: Create default config if missing (disabled — operator fills in routes/token)
+    - name: Render telemetry-relay.json config
       copy:
         dest: "{{ telemetry_relay_config }}"
         owner: ql
         group: ql
         mode: '0600'
-        force: no # Never overwrite an existing config — it holds the real token.
         content: |
-          {
-            "enabled": false,
-            "token": "",
-            "routes": {},
-            "timeout_sec": 2
-          }
+          {{ {
+            'enabled': telemetry_relay_enabled | bool,
+            'token': telemetry_relay_token,
+            'routes': telemetry_relay_routes,
+            'timeout_sec': telemetry_relay_timeout_sec,
+          } | to_nice_json }}
+      notify: reload systemd and (re)start telemetry relay
 
     - name: Render ql-telemetry-relay systemd unit
       template:
@@ -76,13 +70,14 @@
         mode: '0644'
       notify: reload systemd and (re)start telemetry relay
 
-    - name: Flush handlers so daemon_reload runs before enabling/starting
+    - name: Flush handlers so daemon_reload/restart runs before enabling
       meta: flush_handlers
 
     - name: Enable ql-telemetry-relay service
       ansible.builtin.systemd:
         name: ql-telemetry-relay
         enabled: yes
+        state: started
 
   handlers:
     - name: reload systemd and (re)start telemetry relay

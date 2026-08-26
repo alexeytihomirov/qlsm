@@ -645,6 +645,54 @@ def restart_instance_api(instance_id): # Renamed function
         current_app.logger.error(f'Error queuing instance restart for {instance.id}: {e}', exc_info=True)
         return jsonify({"error": {"message": f'Error queuing instance restart: {str(e)}'}}), 500
 
+@instance_api_bp.route('/<int:instance_id>/telemetry', methods=['GET'], endpoint='get_instance_telemetry_api')
+@jwt_required()
+def get_instance_telemetry_api(instance_id):
+    """The stats-hub server_id reserved for this instance, if any."""
+    from ui.telemetry_relay_settings import get_instance_server_id
+
+    instance = get_instance(instance_id)
+    if not instance:
+        return jsonify({"error": {"message": "Instance not found."}}), 404
+    return jsonify({"data": {"server_id": get_instance_server_id(instance.id)}})
+
+
+@instance_api_bp.route('/<int:instance_id>/telemetry', methods=['POST'], endpoint='enable_instance_telemetry_api')
+@jwt_required()
+def enable_instance_telemetry_api(instance_id):
+    """Reserves a stats-hub server_id for this instance (if it doesn't have
+    one yet) and points its qlx_statsHub* cvars at the host's telemetry
+    relay - requires the relay already enabled on the host (see
+    POST /api/hosts/<id>/telemetry-relay) and the stats-hub URL/ingest
+    token configured in Settings. Applies config + restarts the instance."""
+    from ui.tasks import enable_instance_telemetry_task
+
+    instance = get_instance(instance_id)
+    if not instance:
+        return jsonify({"error": {"message": "Instance not found."}}), 404
+
+    mutation_rejection = _reject_mutation_while_host_configuring(instance.host)
+    if mutation_rejection:
+        return mutation_rejection
+
+    if instance.status in [InstanceStatus.DEPLOYING, InstanceStatus.CONFIGURING, InstanceStatus.RESTARTING,
+                           InstanceStatus.DELETING, InstanceStatus.STOPPING, InstanceStatus.STARTING]:
+        return jsonify({"error": {"message": f'Instance "{instance.name}" is currently busy ({instance.status.value}). Cannot enable telemetry now.'}}), 409
+
+    lock_token = str(uuid.uuid4())
+    if not acquire_lock('instance', instance.id, lock_token, ttl=180):
+        return jsonify({"error": {"message": f'Another operation is running on instance "{instance.name}". Please wait for it to complete.'}}), 409
+
+    try:
+        update_instance(instance.id, status=InstanceStatus.CONFIGURING)
+        enqueue_task(enable_instance_telemetry_task, instance.id, lock_token=lock_token, on_failure=instance_job_failure_handler)
+        current_app.logger.info(f'Instance "{instance.name}" (ID: {instance.id}) telemetry-enable task queued.')
+        return jsonify({"message": f'Telemetry enable task queued for instance "{instance.name}".'}), 202
+    except Exception as e:
+        release_lock('instance', instance.id, lock_token)
+        current_app.logger.error(f'Error queuing telemetry enable for {instance.id}: {e}', exc_info=True)
+        return jsonify({"error": {"message": f'Error queuing telemetry enable: {str(e)}'}}), 500
+
 @instance_api_bp.route('/<int:instance_id>/stop', methods=['POST'], endpoint='stop_instance_api')
 @jwt_required()
 def stop_instance_api(instance_id):

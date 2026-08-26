@@ -3,7 +3,9 @@
 QLSM keeps a directory of named operators (SteamID64) so you don't have to
 remember or retype IDs when granting server access. Operators are added and
 removed in **Settings → Operators**, then assigned as Owner or Admin directly
-from the Owner & Admins panel on the Config tab.
+from the Owner & Admins panel (its own tab on the instance Edit Config
+modal; shown above the file manager on the Add Instance form and preset
+Add/Edit pages).
 
 ## Add An Operator
 
@@ -25,9 +27,9 @@ SteamID64 on an instance or preset.
 
 ## Assign Owner Or Admin
 
-The **Owner & Admins** panel appears above the file manager wherever
-`server.cfg` / `access.txt` are edited — the instance Config tab, the Add
-Instance form, and the preset Add/Edit pages.
+The **Owner & Admins** panel appears wherever `server.cfg` / `access.txt`
+are edited — its own tab on the instance Edit Config modal, and above the
+file manager on the Add Instance form and the preset Add/Edit pages.
 
 - **Owner** — pick an operator from the dropdown. This writes their
   SteamID64 into the `qlx_owner` line of `server.cfg`.

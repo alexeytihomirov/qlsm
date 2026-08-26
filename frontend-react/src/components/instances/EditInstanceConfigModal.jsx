@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Dialog, DialogBackdrop } from '@headlessui/react';
-import { X, LoaderCircle, Zap, AlertTriangle, Settings, Code2, LayoutGrid, Save, FolderOpen, RotateCw, Webhook } from 'lucide-react';
+import { X, LoaderCircle, Zap, AlertTriangle, Settings, Code2, LayoutGrid, Save, FolderOpen, RotateCw, Webhook, Crown } from 'lucide-react';
 import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
 import { getInstanceConfig, updateInstanceConfig, getInstanceById, getPresets, getPresetById, createPreset, updatePreset, getFactoryTree, getFactoryContent, fetchInstanceHooks } from '../../services/api';
@@ -127,7 +127,7 @@ function EditInstanceConfigModal({
   const [savedPresetForDownload, setSavedPresetForDownload] = useState(null);
 
   // Scripts tab state
-  const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'config' | 'scripts' | 'factories' | 'hooks'
+  const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'config' | 'operators' | 'scripts' | 'factories' | 'hooks'
   const [checkedPlugins, setCheckedPlugins] = useState(new Set());
   const [initialCheckedPlugins, setInitialCheckedPlugins] = useState(new Set());
   const [scriptHostName, setScriptHostName] = useState(null);
@@ -1047,10 +1047,11 @@ function EditInstanceConfigModal({
                           </div>
                         )}
 
-                        {/* Main tabs: Configuration Files | Scripts | Factories */}
+                        {/* Main tabs: Configuration Files | Owner & Admins | Scripts | Factories | Hooks */}
                         <div className="flex flex-shrink-0 border border-[var(--surface-border)] bg-[var(--surface-elevated)] rounded-t-xl overflow-hidden mb-0">
                           {[
                             { key: 'config', icon: Settings, label: 'Configuration Files' },
+                            { key: 'operators', icon: Crown, label: 'Owner & Admins' },
                             { key: 'scripts', icon: Code2, label: 'Plugins' },
                             { key: 'factories', icon: LayoutGrid, label: 'Factories' },
                             { key: 'hooks', icon: Webhook, label: 'Hooks' },
@@ -1073,12 +1074,6 @@ function EditInstanceConfigModal({
                         {/* Content area */}
                         <div className="flex-grow min-h-0 bg-[var(--surface-base)] border-x border-b border-[var(--surface-border)] rounded-b-xl p-4 flex flex-col">
                           <div className={activeMainTab === 'config' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
-                            <OwnerAdminEditor
-                              serverCfgContent={serverCfgContent}
-                              accessTxtContent={accessTxtContent}
-                              onServerCfgChange={handleServerCfgOwnerChange}
-                              onAccessTxtChange={handleAccessTxtChange}
-                            />
                             <div className="flex-1 min-h-0">
                               <FileManager
                                 adapter={configsAdapter}
@@ -1089,6 +1084,14 @@ function EditInstanceConfigModal({
                                 getLinterSourceForFile={getLinterSource}
                               />
                             </div>
+                          </div>
+                          <div className={activeMainTab === 'operators' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+                            <OwnerAdminEditor
+                              serverCfgContent={serverCfgContent}
+                              accessTxtContent={accessTxtContent}
+                              onServerCfgChange={handleServerCfgOwnerChange}
+                              onAccessTxtChange={handleAccessTxtChange}
+                            />
                           </div>
                           <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
                             <SubfolderPluginNotice
