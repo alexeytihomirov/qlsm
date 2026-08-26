@@ -169,6 +169,7 @@ from ui.tasks import provision_host, destroy_host, \
     restart_host_task, rename_host_task, \
     setup_standalone_host_ansible, remove_standalone_host, \
     force_update_workshop_task, apply_plugin_updates_task, configure_host_auto_restart_task, configure_host_watchdog_task, \
+    configure_host_telemetry_relay_task, \
     resize_host_task, \
     rerun_host_setup_ansible, rerun_standalone_host_setup, \
     RERUN_CLOUD_SETUP_TIMEOUT, RERUN_SETUP_LOCK_RELEASE_BUFFER, \
@@ -1487,6 +1488,58 @@ def configure_watchdog_api(host_id):
     except Exception as e:
         current_app.logger.error(f"Error enqueuing watchdog config task for host {host_id}: {e}", exc_info=True)
         return jsonify({"error": {"message": "Failed to initiate ql-watchdog configuration"}}), 500
+
+
+@host_api_bp.route('/<int:host_id>/telemetry-relay', methods=['GET'], endpoint='get_telemetry_relay_api')
+@jwt_required()
+def get_telemetry_relay_api(host_id):
+    """Whether the ql-telemetry-relay sidecar is enabled for this host."""
+    from ui.telemetry_relay_settings import is_relay_enabled
+
+    host = get_host(host_id)
+    if not host:
+        return jsonify({"error": {"message": "Host not found"}}), 404
+    return jsonify({"data": {"enabled": is_relay_enabled(host_id)}})
+
+
+@host_api_bp.route('/<int:host_id>/telemetry-relay', methods=['POST'], endpoint='configure_telemetry_relay_api')
+@jwt_required()
+def configure_telemetry_relay_api(host_id):
+    """Enables/disables the ql-telemetry-relay sidecar for a host.
+
+    Instances still need their per-instance telemetry enabled separately
+    (POST /api/instances/<id>/telemetry) once this is on - that's what
+    reserves each instance's stats-hub server_id and points its cvars here.
+    """
+    current_app.logger.info(f"Received API request to configure telemetry relay for host ID: {host_id}")
+    host = get_host(host_id)
+    if not host:
+        return jsonify({"error": {"message": "Host not found"}}), 404
+
+    if host.status != HostStatus.ACTIVE:
+        return jsonify({"error": {"message": f"Host must be in ACTIVE state. Current state: {host.status.value}"}}), 400
+
+    data = request.get_json() or {}
+    enabled = bool(data.get('enabled', False))
+
+    try:
+        lock_token = str(uuid.uuid4())
+        if not acquire_lock('host', host.id, lock_token, ttl=180):
+            return jsonify({"error": {"message": f'Another operation is running on host "{host.name}". Please wait for it to complete.'}}), 409
+        try:
+            update_host(host.id, status=HostStatus.CONFIGURING)
+            enqueue_task(configure_host_telemetry_relay_task, host.id, enabled, lock_token=lock_token, on_failure=host_job_failure_handler)
+        except Exception:
+            release_lock('host', host.id, lock_token)
+            raise
+        current_app.logger.info(f"Telemetry relay config task enqueued for host ID: {host_id} via API.")
+        return jsonify({
+            "message": "Telemetry relay configuration process initiated.",
+            "data": {"enabled": enabled}
+        }), 202
+    except Exception as e:
+        current_app.logger.error(f"Error enqueuing telemetry relay config task for host {host_id}: {e}", exc_info=True)
+        return jsonify({"error": {"message": "Failed to initiate telemetry relay configuration"}}), 500
 
 
 @host_api_bp.route('/test-connection', methods=['POST'], endpoint='test_connection_api')
