@@ -1077,6 +1077,27 @@ export const configureTelemetryRelay = async (hostId, enabled) => {
   return response.data;
 };
 
+// Live sidecar health/reachability + instances currently routed through it.
+export const getTelemetryRelayStatus = async (hostId) => {
+  const response = await apiClient.get(`/hosts/${hostId}/telemetry-relay/status`);
+  return response.data.data;
+};
+
+// This host's stats-hub URL/ingest-token override (falls back to the global
+// Settings values when unset).
+export const getHostStatsHubOverride = async (hostId) => {
+  const response = await apiClient.get(`/hosts/${hostId}/telemetry-relay/stats-hub`);
+  return response.data.data;
+};
+
+export const updateHostStatsHubOverride = async (hostId, urlOverride, ingestTokenOverride) => {
+  const response = await apiClient.put(`/hosts/${hostId}/telemetry-relay/stats-hub`, {
+    url_override: urlOverride,
+    ingest_token_override: ingestTokenOverride,
+  });
+  return response.data;
+};
+
 // Instance telemetry (reserves a stats-hub server_id + wires cvars at the relay)
 export const getInstanceTelemetry = async (instanceId) => {
   const response = await apiClient.get(`/instances/${instanceId}/telemetry`);
