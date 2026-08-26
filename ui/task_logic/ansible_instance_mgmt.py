@@ -663,6 +663,16 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
 
             instance.status = final_status
             db.session.commit()
+
+            try:
+                from .telemetry_relay_instance import sync_instance_server_id_from_config
+                sync_instance_server_id_from_config(instance)
+            except Exception:
+                log.warning(
+                    "Telemetry-relay server_id sync failed for instance %s (non-fatal)",
+                    instance_id, exc_info=True,
+                )
+
             log.info(f"Finished task apply_instance_config for instance_id: {instance_id}. Status: {final_status.value}")
             return f"Instance {instance_id} config application successful. Status: {final_status.value}"
         else:

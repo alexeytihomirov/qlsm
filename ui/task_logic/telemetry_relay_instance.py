@@ -81,6 +81,64 @@ def strip_cvars_from_text(text, cvar_names):
     return '\n'.join(out) + ('\n' if out else '')
 
 
+def read_cvars_from_text(text, cvar_names):
+    """Returns {name: value} for whichever of `cvar_names` appear as
+    `set <name> "value"` lines. Last occurrence wins, matching how the
+    engine execs a cfg top to bottom."""
+    names = set(cvar_names)
+    found = {}
+    for line in text.splitlines():
+        m = re.match(r'^\s*set\s+([A-Za-z0-9_]+)\s+"(.*)"\s*$', line)
+        if m and m.group(1) in names:
+            found[m.group(1)] = m.group(2)
+    return found
+
+
+def sync_instance_server_id_from_config(instance):
+    """Keeps this instance's telemetry-relay routing entry
+    (`stats_hub_server_id:<instance_id>`, see telemetry_relay_settings.py)
+    in sync with whatever qlx_statsHubServerId/qlx_statsHubUnifiedEnabled
+    its server.cfg actually carries on disk.
+
+    Without this, an operator who wires telemetry purely through the
+    Plugins-tab cvar editor (set qlx_statsHubUnifiedEnabled + qlx_statsHubServerId
+    by hand, never calling enable_instance_telemetry_logic /
+    POST .../telemetry) ends up with a server.cfg that looks fully
+    configured while the relay's routing table stays empty on this host -
+    every POST is silently dropped as "no_route" even though the relay
+    sidecar, its stats-hub URL/token, and the plugin cvars are all
+    individually correct. Real incident, see
+    qlsm-telemetry-relay-server-id-db-desync in project memory. Call from
+    apply_instance_config_logic after every successful config apply, so any
+    path that ends up writing server.cfg (raw editor, Plugins tab, or the
+    assisted enable_instance_telemetry_logic flow itself) keeps this in
+    sync automatically, in whatever order the operator did the setup steps.
+    """
+    if not instance.host:
+        return
+    config_path = os.path.join('configs', instance.host.name, str(instance.id), 'server.cfg')
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except FileNotFoundError:
+        return
+
+    cvars = read_cvars_from_text(text, ('qlx_statsHubUnifiedEnabled', 'qlx_statsHubServerId'))
+    enabled = cvars.get('qlx_statsHubUnifiedEnabled') == '1'
+    try:
+        server_id = int(cvars.get('qlx_statsHubServerId') or 0)
+    except ValueError:
+        server_id = 0
+
+    effective_id = server_id if (enabled and server_id > 0) else None
+    if get_instance_server_id(instance.id) == effective_id:
+        return  # already in sync, don't push relay config for nothing
+
+    set_instance_server_id(instance.id, effective_id)
+    db.session.commit()
+    push_relay_config_logic(instance.host_id)
+
+
 def _finish(instance, ok, message):
     if instance is not None:
         instance.logs = f"{message}\n{instance.logs or ''}"
