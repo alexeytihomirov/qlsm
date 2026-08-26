@@ -206,6 +206,11 @@ class stream_telemetry_unified(minqlx.Plugin):
         self._frame_time_sum = 0.0
         self._frame_time_max = 0.0
         self._frame_time_samples = 0
+        # Last-checked (tripped, tripped, tripped, fail, fail, fail, errors) tuple
+        # for positions/items/session, used by _maybe_log_health to log only on
+        # a circuit transition or a new failure/error since the last check —
+        # not unconditionally every _HEALTH_LOG_SEC.
+        self._health_prev_state = (False, False, False, 0, 0, 0, 0)
 
         # --- fov/userinfo cache (audit proposal #2) ---
         self._fov_cache = FovCache(ttl_sec=self._FOV_CACHE_TTL_SEC)
@@ -628,31 +633,62 @@ class stream_telemetry_unified(minqlx.Plugin):
         if now - self._last_health_log < self._HEALTH_LOG_SEC:
             return
         self._last_health_log = now
-        frame_avg_ms = 0.0
-        if self._frame_time_samples:
-            frame_avg_ms = 1000.0 * self._frame_time_sum / self._frame_time_samples
-        frame_max_ms = 1000.0 * self._frame_time_max
-        self.logger.info(
-            "stream_telemetry_unified: health positions(ok=%s fail=%s circuit=%s) "
-            "items(ok=%s fail=%s queue=%s circuit=%s) "
-            "session(ok=%s fail=%s queue=%s circuit=%s) errors=%s "
-            "frame(avg=%.3fms max=%.3fms n=%s)",
-            self._positions_state.posts_ok,
-            self._positions_state.posts_fail,
-            "tripped" if self._positions_state.tripped else "ok",
-            self._items_state.posts_ok,
-            self._items_state.posts_fail,
-            len(self._items_queue),
-            "tripped" if self._items_state.tripped else "ok",
-            self._session_state.posts_ok,
-            self._session_state.posts_fail,
-            len(self._session_queue),
-            "tripped" if self._session_state.tripped else "ok",
-            self._handle_frame_errors,
-            frame_avg_ms,
-            frame_max_ms,
-            self._frame_time_samples,
+
+        positions_tripped = self._positions_state.tripped
+        items_tripped = self._items_state.tripped
+        session_tripped = self._session_state.tripped
+        positions_fail = self._positions_state.posts_fail
+        items_fail = self._items_state.posts_fail
+        session_fail = self._session_state.posts_fail
+        errors = self._handle_frame_errors
+
+        (prev_pt, prev_it, prev_st, prev_pf, prev_if, prev_sf, prev_err) = self._health_prev_state
+        self._health_prev_state = (
+            positions_tripped, items_tripped, session_tripped,
+            positions_fail, items_fail, session_fail, errors,
         )
+
+        # Only log on an actual change since the last check — a circuit tripping
+        # (or recovering), a new failure, or a new handle_frame error — never
+        # unconditionally, so a healthy server stays silent (was: one line/min
+        # forever regardless of state, pure log spam).
+        should_log = (
+            positions_tripped != prev_pt
+            or items_tripped != prev_it
+            or session_tripped != prev_st
+            or positions_fail > prev_pf
+            or items_fail > prev_if
+            or session_fail > prev_sf
+            or errors > prev_err
+        )
+
+        if should_log:
+            frame_avg_ms = 0.0
+            if self._frame_time_samples:
+                frame_avg_ms = 1000.0 * self._frame_time_sum / self._frame_time_samples
+            frame_max_ms = 1000.0 * self._frame_time_max
+            self.logger.info(
+                "stream_telemetry_unified: health positions(ok=%s fail=%s circuit=%s) "
+                "items(ok=%s fail=%s queue=%s circuit=%s) "
+                "session(ok=%s fail=%s queue=%s circuit=%s) errors=%s "
+                "frame(avg=%.3fms max=%.3fms n=%s)",
+                self._positions_state.posts_ok,
+                positions_fail,
+                "tripped" if positions_tripped else "ok",
+                self._items_state.posts_ok,
+                items_fail,
+                len(self._items_queue),
+                "tripped" if items_tripped else "ok",
+                self._session_state.posts_ok,
+                session_fail,
+                len(self._session_queue),
+                "tripped" if session_tripped else "ok",
+                errors,
+                frame_avg_ms,
+                frame_max_ms,
+                self._frame_time_samples,
+            )
+
         self._frame_time_sum = 0.0
         self._frame_time_max = 0.0
         self._frame_time_samples = 0
