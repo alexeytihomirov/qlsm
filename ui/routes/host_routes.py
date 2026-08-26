@@ -1502,6 +1502,90 @@ def get_telemetry_relay_api(host_id):
     return jsonify({"data": {"enabled": is_relay_enabled(host_id)}})
 
 
+@host_api_bp.route('/<int:host_id>/telemetry-relay/status', methods=['GET'], endpoint='get_telemetry_relay_status_api')
+@jwt_required()
+def get_telemetry_relay_status_api(host_id):
+    """Live sidecar health/reachability (SSH probe of 127.0.0.1:8190/health)
+    plus the instances currently routed through it. Slower than the plain
+    GET above (one SSH round-trip) - meant for an explicit status refresh,
+    not every page load."""
+    from ui.task_logic.ansible_telemetry_relay import get_relay_status_logic
+
+    host = get_host(host_id)
+    if not host:
+        return jsonify({"error": {"message": "Host not found"}}), 404
+
+    status = get_relay_status_logic(host_id)
+    if status is None:
+        return jsonify({"error": {"message": "Host not found"}}), 404
+    return jsonify({"data": status})
+
+
+@host_api_bp.route('/<int:host_id>/telemetry-relay/stats-hub', methods=['GET'], endpoint='get_host_stats_hub_api')
+@jwt_required()
+def get_host_stats_hub_api(host_id):
+    """This host's stats-hub URL/ingest-token override, plus the effective
+    (override-or-global) values actually in use."""
+    from ui.telemetry_relay_settings import (
+        get_effective_stats_hub_ingest_token,
+        get_effective_stats_hub_url,
+        get_host_stats_hub_ingest_token,
+        get_host_stats_hub_url,
+    )
+
+    host = get_host(host_id)
+    if not host:
+        return jsonify({"error": {"message": "Host not found"}}), 404
+
+    return jsonify({"data": {
+        'url_override': get_host_stats_hub_url(host_id),
+        'ingest_token_override': get_host_stats_hub_ingest_token(host_id),
+        'effective_url': get_effective_stats_hub_url(host_id),
+        'effective_ingest_token': get_effective_stats_hub_ingest_token(host_id),
+    }})
+
+
+@host_api_bp.route('/<int:host_id>/telemetry-relay/stats-hub', methods=['PUT'], endpoint='update_host_stats_hub_api')
+@jwt_required()
+def update_host_stats_hub_api(host_id):
+    """Sets (or clears, with an empty string) this host's stats-hub URL/
+    ingest-token override. If the relay is currently enabled on this host,
+    re-pushes its config so the change takes effect immediately."""
+    from ui.task_logic.ansible_telemetry_relay import push_relay_config_logic
+    from ui.telemetry_relay_settings import (
+        get_effective_stats_hub_ingest_token,
+        get_effective_stats_hub_url,
+        get_host_stats_hub_ingest_token,
+        get_host_stats_hub_url,
+        set_host_stats_hub_ingest_token,
+        set_host_stats_hub_url,
+    )
+
+    host = get_host(host_id)
+    if not host:
+        return jsonify({"error": {"message": "Host not found"}}), 404
+
+    data = request.get_json() or {}
+    url = data.get('url_override', '')
+    token = data.get('ingest_token_override', '')
+    if not isinstance(url, str) or not isinstance(token, str):
+        return jsonify({"error": {"message": "url_override and ingest_token_override must be strings."}}), 400
+
+    set_host_stats_hub_url(host_id, url)
+    set_host_stats_hub_ingest_token(host_id, token)
+    db.session.commit()
+    current_app.logger.info(f"Stats-hub override updated for host {host_id}.")
+
+    push_relay_config_logic(host_id)
+
+    return jsonify({"data": {
+        'url_override': get_host_stats_hub_url(host_id),
+        'ingest_token_override': get_host_stats_hub_ingest_token(host_id),
+        'effective_url': get_effective_stats_hub_url(host_id),
+        'effective_ingest_token': get_effective_stats_hub_ingest_token(host_id),
+    }, 'message': 'Stats-hub override updated.'})
+
+
 @host_api_bp.route('/<int:host_id>/telemetry-relay', methods=['POST'], endpoint='configure_telemetry_relay_api')
 @jwt_required()
 def configure_telemetry_relay_api(host_id):

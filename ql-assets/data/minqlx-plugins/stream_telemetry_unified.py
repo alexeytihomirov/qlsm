@@ -39,14 +39,24 @@
 # writeup this file implements (proposals #1, #2, #7).
 #
 # CVARs — reused as-is from the three plugins (same names/semantics/defaults, see their
-# header comments for the full list): qlx_statsHubUrl, qlx_statsHubToken,
-# qlx_statsHubInterval, qlx_statsHubIdleInterval, qlx_statsHubAccuracyInterval,
-# qlx_statsHubMatchId, qlx_statsHubServerId, qlx_statsHubTournamentId,
-# qlx_pickupTelemetryDebug. The three per-feed switches are this plugin's own
-# namespace now: qlx_statsHubFeedPositions (positions/accuracy),
+# header comments for the full list): qlx_statsHubInterval, qlx_statsHubIdleInterval,
+# qlx_statsHubAccuracyInterval, qlx_statsHubMatchId, qlx_statsHubServerId,
+# qlx_statsHubTournamentId, qlx_pickupTelemetryDebug. The three per-feed switches are
+# this plugin's own namespace now: qlx_statsHubFeedPositions (positions/accuracy),
 # qlx_statsHubFeedItems (item pickup/drop), qlx_statsHubFeedSession
 # (session/chat/vote/pause) — see the rename note above for the legacy-name
 # fallback.
+#
+# qlx_statsHubUrl/qlx_statsHubToken (host-scope change, DevInbox telemetry-relay
+# host-scoping task): qlsm no longer writes these into any instance's server.cfg,
+# and the Plugins tab no longer surfaces them as instance settings (see
+# stream_telemetry_unified.ql-plugin.json). qlx_statsHubUrl defaults to the fixed
+# local relay address (_LOCAL_RELAY_URL) - every instance on a host talks to the
+# same loopback sidecar, which is what actually holds the real stats-hub URL/
+# ingest token (qlsm per-host settings) and forwards upstream. qlx_statsHubToken
+# is no longer required for _base_ready() - the relay never validated it as
+# inbound auth (see relay.py do_POST) - but is still read/sent as-is if a cfg
+# hand-edit sets it, for a non-default direct-to-stats-hub setup.
 #
 # New in this file (the one deliberately-new cvar, per operator's "keep it minimal" ask):
 #   qlx_statsHubUnifiedEnabled "0" — master switch for this plugin only. Independent of
@@ -138,6 +148,13 @@ except ImportError:
 
 class stream_telemetry_unified(minqlx.Plugin):
     _COLOR_RE = re.compile(r"\^[0-9a-zA-Z]")
+    # Fixed address of the per-host ql-telemetry-relay sidecar (loopback
+    # only - see qlsm's ansible_telemetry_relay.RELAY_LOCAL_URL). A program
+    # constant, not per-instance config: every instance on a host talks to
+    # the same local relay, which is what actually holds the real
+    # stats-hub URL/ingest token (per-host settings in qlsm, not cvars
+    # here) and forwards upstream.
+    _LOCAL_RELAY_URL = "http://127.0.0.1:8190/api/ingest/telemetry"
     _ENABLE_GRACE_SEC = 2.0
     _CIRCUIT_FAIL_THRESHOLD = 10
     _HEALTH_LOG_SEC = 60.0
@@ -277,7 +294,7 @@ class stream_telemetry_unified(minqlx.Plugin):
         self.set_cvar_once("qlx_pickupTelemetryEnabled", "0")
         self.set_cvar_once("qlx_pickupTelemetryDebug", "0")
         self.set_cvar_once("qlx_sessionEventsEnabled", "0")
-        self.set_cvar_once("qlx_statsHubUrl", "")
+        self.set_cvar_once("qlx_statsHubUrl", self._LOCAL_RELAY_URL)
         self.set_cvar_once("qlx_statsHubToken", "")
         self.set_cvar_once("qlx_statsHubInterval", "0.1")
         self.set_cvar_once("qlx_statsHubIdleInterval", "1.0")
@@ -437,8 +454,6 @@ class stream_telemetry_unified(minqlx.Plugin):
         if self.get_cvar("qlx_statsHubUnifiedEnabled", bool) is False:
             result = False
         elif not (self.get_cvar("qlx_statsHubUrl") or "").strip():
-            result = False
-        elif not (self.get_cvar("qlx_statsHubToken") or "").strip():
             result = False
         else:
             result = True

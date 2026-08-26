@@ -40,12 +40,14 @@ import { useWorkshopUpdate } from '../hooks/useWorkshopUpdate';
 import { useCheckForUpdates } from '../hooks/useCheckForUpdates';
 import { useHostAutoRestart } from '../hooks/useHostAutoRestart';
 import { useHostWatchdog } from '../hooks/useHostWatchdog';
+import { useTelemetryRelay } from '../hooks/useTelemetryRelay';
 import { useHostResize } from '../hooks/useHostResize';
 import { rerunHostSetup } from '../services/api';
 import ForceUpdateWorkshopModal from '../components/hosts/ForceUpdateWorkshopModal';
 import CheckForUpdatesModal from '../components/hosts/CheckForUpdatesModal';
 import HostAutoRestartScheduleModal from '../components/hosts/HostAutoRestartScheduleModal';
 import HostWatchdogModal from '../components/hosts/HostWatchdogModal';
+import TelemetryRelayModal from '../components/hosts/TelemetryRelayModal';
 import ResizeHostModal from '../components/hosts/ResizeHostModal';
 import HostLogsModal from '../components/hosts/HostLogsModal';
 import { useHostLogsModal } from '../hooks/useHostLogsModal';
@@ -88,6 +90,7 @@ export default function ServersPage() {
     const { isUpdatesModalOpen, hostForUpdates, isChecking, checkResult, checkError, openUpdatesModal, closeUpdatesModal, handleApplyUpdates } = useCheckForUpdates(showSuccess, showError, () => refreshData(false));
     const { isAutoRestartModalOpen, hostForAutoRestart, openAutoRestartModal, closeAutoRestartModal, handleAutoRestartSubmit } = useHostAutoRestart(showSuccess, showError, () => refreshData(false));
     const { isWatchdogModalOpen, hostForWatchdog, openWatchdogModal, closeWatchdogModal, handleWatchdogSubmit } = useHostWatchdog(showSuccess, showError, () => refreshData(false));
+    const { isRelayModalOpen, hostForRelay, openRelayModal, closeRelayModal, handleRelaySubmit } = useTelemetryRelay(showSuccess, showError, () => refreshData(false));
     const { isResizeModalOpen, isResizeSubmitting, resizeError, hostForResize, openResizeModal, closeResizeModal, handleResizeSubmit } = useHostResize(showSuccess, showError, () => refreshData(false));
     const { isHostLogsModalOpen, hostForLogs, openHostLogs, closeHostLogs } = useHostLogsModal();
     const serverStatusMap = useServerStatus();
@@ -304,7 +307,7 @@ export default function ServersPage() {
                                     <QLFilterIndicator qlfilterStatus={host.qlfilter_status} />
                                 </div>
                                 <div className="host-actions-cell flex justify-end" onClick={(e) => e.stopPropagation()}>
-                                    <HostActionsMenu host={host} handleDelete={(id, name) => requestDeleteHost(id, name)} onOpenDrawer={handleOpenHostDrawer} onInstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'install')} onUninstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'uninstall')} onRequestRestart={handleRequestHostRestart} onOpenUpdateWorkshop={openWorkshopModal} onOpenCheckForUpdates={openUpdatesModal} onOpenAutoRestart={openAutoRestartModal} onOpenWatchdog={openWatchdogModal} onOpenResize={openResizeModal} onRerunSetup={handleRerunSetup} onOpenViewLogs={openHostLogs} />
+                                    <HostActionsMenu host={host} handleDelete={(id, name) => requestDeleteHost(id, name)} onOpenDrawer={handleOpenHostDrawer} onInstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'install')} onUninstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'uninstall')} onRequestRestart={handleRequestHostRestart} onOpenUpdateWorkshop={openWorkshopModal} onOpenCheckForUpdates={openUpdatesModal} onOpenAutoRestart={openAutoRestartModal} onOpenWatchdog={openWatchdogModal} onOpenTelemetryRelay={openRelayModal} onOpenResize={openResizeModal} onRerunSetup={handleRerunSetup} onOpenViewLogs={openHostLogs} />
                                 </div>
                             </div>
 
@@ -398,6 +401,7 @@ export default function ServersPage() {
             <CheckForUpdatesModal isOpen={isUpdatesModalOpen} onClose={closeUpdatesModal} onSubmit={handleApplyUpdates} host={hostForUpdates} isChecking={isChecking} checkResult={checkResult} checkError={checkError} />
             <HostAutoRestartScheduleModal isOpen={isAutoRestartModalOpen} onClose={closeAutoRestartModal} onSubmit={handleAutoRestartSubmit} host={hostForAutoRestart} />
             <HostWatchdogModal isOpen={isWatchdogModalOpen} onClose={closeWatchdogModal} onSubmit={handleWatchdogSubmit} host={hostForWatchdog} />
+            <TelemetryRelayModal isOpen={isRelayModalOpen} onClose={closeRelayModal} onSubmit={handleRelaySubmit} host={hostForRelay} />
             <ResizeHostModal isOpen={isResizeModalOpen} onClose={closeResizeModal} onSubmit={handleResizeSubmit} host={hostForResize} error={resizeError} isSubmitting={isResizeSubmitting} />
             <HostLogsModal isOpen={isHostLogsModalOpen} onClose={closeHostLogs} host={hostForLogs} />
             {rconInstance && (

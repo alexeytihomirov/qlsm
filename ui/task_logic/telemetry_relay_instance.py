@@ -1,8 +1,17 @@
 """Enables telemetry-relay wiring for a single QL instance:
-reserve a cluster-wide server_id from ql-stats-hub, point the instance's
-qlx_statsHub* cvars at the host's local relay, push the host's relay
-routes, and apply+restart the instance (same mechanism the Plugins tab
-config-save flow already uses)."""
+reserve a cluster-wide server_id from ql-stats-hub, flip
+qlx_statsHubUnifiedEnabled on, push the host's relay routes, and apply+
+restart the instance (same mechanism the Plugins tab config-save flow
+already uses).
+
+The instance itself never stores or sends the stats-hub URL/ingest token -
+those live only in per-host settings (ui/telemetry_relay_settings.py) and
+are read by the relay sidecar and by _reserve_server_id below. The
+stream_telemetry_unified plugin talks to a fixed local relay address
+(see ansible_telemetry_relay.RELAY_LOCAL_URL) hardcoded in its own
+qlx_statsHubUrl default - not per-instance data, so there is nothing left
+to write into server.cfg for it.
+"""
 import os
 import re
 
@@ -11,23 +20,27 @@ from flask import current_app
 
 from ui import db
 from ui.models import QLInstance
-from ui.task_logic.ansible_telemetry_relay import RELAY_LOCAL_URL, push_relay_config_logic
+from ui.task_logic.ansible_telemetry_relay import push_relay_config_logic
 from ui.telemetry_relay_settings import (
-    get_stats_hub_ingest_token,
-    get_stats_hub_url,
-    get_or_create_relay_local_token,
+    get_effective_stats_hub_ingest_token,
+    get_effective_stats_hub_url,
     get_instance_server_id,
     is_relay_enabled,
-    is_stats_hub_configured,
+    is_stats_hub_configured_for_host,
     set_instance_server_id,
 )
 
 _RESERVE_TIMEOUT_SEC = 10
+# Cvars the instance-level plugin used to have written into its server.cfg
+# directly (stats-hub URL / ingest token). Now host-only - stripped from any
+# server.cfg still carrying them from before this change so the file doesn't
+# keep advertising stale/duplicated secrets.
+_LEGACY_INSTANCE_CVARS = ('qlx_statsHubUrl', 'qlx_statsHubToken')
 
 
-def _reserve_server_id(label):
-    url = f"{get_stats_hub_url()}/api/admin/server-ids/reserve"
-    headers = {'Authorization': f'Bearer {get_stats_hub_ingest_token()}'}
+def _reserve_server_id(label, host_id):
+    url = f"{get_effective_stats_hub_url(host_id)}/api/admin/server-ids/reserve"
+    headers = {'Authorization': f'Bearer {get_effective_stats_hub_ingest_token(host_id)}'}
     resp = requests.post(url, json={'label': label}, headers=headers, timeout=_RESERVE_TIMEOUT_SEC)
     resp.raise_for_status()
     return int(resp.json()['server_id'])
@@ -54,6 +67,20 @@ def upsert_cvars_in_text(text, cvars):
     return '\n'.join(out) + '\n'
 
 
+def strip_cvars_from_text(text, cvar_names):
+    """Removes `set <cvar> ...` lines for the given cvar names entirely
+    (as opposed to upsert_cvars_in_text, which sets a value) - used to clean
+    up cvars a server.cfg should no longer carry at all."""
+    names = set(cvar_names)
+    out = []
+    for line in text.splitlines():
+        m = re.match(r'^\s*set\s+([A-Za-z0-9_]+)\s+"', line)
+        if m and m.group(1) in names:
+            continue
+        out.append(line)
+    return '\n'.join(out) + ('\n' if out else '')
+
+
 def _finish(instance, ok, message):
     if instance is not None:
         instance.logs = f"{message}\n{instance.logs or ''}"
@@ -67,15 +94,16 @@ def enable_instance_telemetry_logic(instance_id):
     if not instance or not instance.host:
         return False, "Instance or associated host not found."
 
-    if not is_stats_hub_configured():
-        return _finish(instance, False, "Configure the stats-hub URL/ingest token in Settings first.")
-    if not is_relay_enabled(instance.host_id):
+    host_id = instance.host_id
+    if not is_stats_hub_configured_for_host(host_id):
+        return _finish(instance, False, "Configure the stats-hub URL/ingest token (globally or for this host) in Settings first.")
+    if not is_relay_enabled(host_id):
         return _finish(instance, False, "Enable the telemetry relay for this host first.")
 
     server_id = get_instance_server_id(instance.id)
     if server_id is None:
         try:
-            server_id = _reserve_server_id(instance.name)
+            server_id = _reserve_server_id(instance.name, host_id)
         except (requests.RequestException, ValueError, KeyError) as exc:
             current_app.logger.error(
                 f"Failed to reserve stats-hub server_id for instance {instance.id}: {exc}"
@@ -91,17 +119,16 @@ def enable_instance_telemetry_logic(instance_id):
     except FileNotFoundError:
         text = ''
 
+    text = strip_cvars_from_text(text, _LEGACY_INSTANCE_CVARS)
     text = upsert_cvars_in_text(text, {
         'qlx_statsHubUnifiedEnabled': '1',
-        'qlx_statsHubUrl': RELAY_LOCAL_URL,
-        'qlx_statsHubToken': get_or_create_relay_local_token(instance.host_id),
         'qlx_statsHubServerId': str(server_id),
     })
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(text)
 
-    if not push_relay_config_logic(instance.host_id):
+    if not push_relay_config_logic(host_id):
         return _finish(instance, False, (
             f"server_id {server_id} reserved and server.cfg updated, but pushing the "
             "relay's routes to the host failed - re-run once the host is reachable."
