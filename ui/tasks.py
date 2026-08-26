@@ -20,6 +20,8 @@ from ui.task_logic.ansible_host_restart import restart_host_ansible_logic
 from ui.task_logic.ansible_host_rename import rename_host_logic
 from ui.task_logic.ansible_host_auto_restart import configure_host_auto_restart_logic
 from ui.task_logic.ansible_watchdog import configure_host_watchdog_logic
+from ui.task_logic.ansible_telemetry_relay import configure_host_telemetry_relay_logic
+from ui.task_logic.telemetry_relay_instance import enable_instance_telemetry_logic
 
 # Import Terraform task logic from new files
 from ui.task_logic.terraform_provision import provision_host_logic
@@ -37,7 +39,7 @@ from ui.task_logic.ansible_qlfilter_mgmt import (
     check_qlfilter_status_logic
 )
 from ui.task_logic.ansible_workshop_update import force_update_workshop_logic
-from ui.task_logic.ansible_plugin_update import update_common_plugins_logic
+from ui.task_logic.ansible_plugin_update import apply_plugin_updates_logic
 
 # Import RQ library
 from ui import rq
@@ -281,6 +283,29 @@ def configure_host_watchdog_task(host_id, enabled, config=None, lock_token=None)
             from ui.task_lock import release_lock
             release_lock('host', host_id, lock_token)
 
+@rq.job(timeout=120)
+@with_app_context
+def configure_host_telemetry_relay_task(host_id, enabled, lock_token=None):
+    """RQ task entry point for enabling/disabling ql-telemetry-relay on a host."""
+    try:
+        return configure_host_telemetry_relay_logic(host_id, enabled)
+    finally:
+        if lock_token:
+            from ui.task_lock import release_lock
+            release_lock('host', host_id, lock_token)
+
+@rq.job(timeout=300)
+@with_app_context
+def enable_instance_telemetry_task(instance_id, lock_token=None):
+    """RQ task entry point for reserving a stats-hub server_id and wiring an
+    instance's qlx_statsHub* cvars at the host's telemetry relay."""
+    try:
+        return enable_instance_telemetry_logic(instance_id)
+    finally:
+        if lock_token:
+            from ui.task_lock import release_lock
+            release_lock('instance', instance_id, lock_token)
+
 @rq.job(timeout=300)
 @with_app_context
 def rename_host_task(host_id, old_name, new_name, lock_token=None):
@@ -344,10 +369,11 @@ def force_update_workshop_task(host_id, workshop_id, restart_instance_ids, lock_
 
 @rq.job(timeout=300)
 @with_app_context
-def update_common_plugins_task(host_id, restart_instance_ids, lock_token=None):
-    """RQ task entry point for refreshing the common minqlx plugin pool on a host."""
+def apply_plugin_updates_task(host_id, apply_common_pool, instance_selections, restart_instance_ids, lock_token=None):
+    """RQ task entry point for applying operator-selected plugin updates
+    (common pool refresh and/or per-instance selected-plugin files)."""
     try:
-        return update_common_plugins_logic(host_id, restart_instance_ids)
+        return apply_plugin_updates_logic(host_id, apply_common_pool, instance_selections, restart_instance_ids)
     finally:
         if lock_token:
             from ui.task_lock import release_lock
