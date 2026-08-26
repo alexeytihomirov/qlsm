@@ -1430,8 +1430,8 @@ class stream_telemetry_unified(minqlx.Plugin):
             return
         ingest_url = self._item_events_url()
         token = (self.get_cvar("qlx_statsHubToken") or "").strip()
-        if not ingest_url or not token:
-            self.logger.warning("stream_telemetry_unified: missing stats hub url or token (items)")
+        if not ingest_url:
+            self.logger.warning("stream_telemetry_unified: missing stats hub url (items)")
             return
         batch = self._items_queue[: self._ITEMS_BATCH_SIZE]
         payload = {
