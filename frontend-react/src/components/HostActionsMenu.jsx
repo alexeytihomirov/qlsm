@@ -13,7 +13,7 @@ function HostActionsMenu({
   onUninstallQlfilter,
   onRequestRestart,
   onOpenUpdateWorkshop,
-  onOpenUpdatePlugins,
+  onOpenCheckForUpdates,
   onOpenAutoRestart,
   onOpenWatchdog,
   onOpenResize,
@@ -223,14 +223,14 @@ function HostActionsMenu({
                       <button
                         type="button"
                         onClick={() => {
-                          if (typeof onOpenUpdatePlugins === 'function') onOpenUpdatePlugins(host);
+                          if (typeof onOpenCheckForUpdates === 'function') onOpenCheckForUpdates(host);
                           closeMenu();
                         }}
                         disabled={!isHostReady || isQlFilterBusy}
                         className={`group flex rounded-md items-center w-full px-3 py-2 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-black/[0.04] dark:bg-white/[0.06] text-theme-primary' : 'text-theme-secondary'}`}
                       >
                         <PackageCheck size={15} className="mr-3 flex-shrink-0 text-theme-muted" />
-                        Update Plugins
+                        Check for Updates
                       </button>
                     )}
                   </Menu.Item>

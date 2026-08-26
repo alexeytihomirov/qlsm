@@ -37,7 +37,7 @@ from ui.task_logic.ansible_qlfilter_mgmt import (
     check_qlfilter_status_logic
 )
 from ui.task_logic.ansible_workshop_update import force_update_workshop_logic
-from ui.task_logic.ansible_plugin_update import update_common_plugins_logic
+from ui.task_logic.ansible_plugin_update import apply_plugin_updates_logic
 
 # Import RQ library
 from ui import rq
@@ -344,10 +344,11 @@ def force_update_workshop_task(host_id, workshop_id, restart_instance_ids, lock_
 
 @rq.job(timeout=300)
 @with_app_context
-def update_common_plugins_task(host_id, restart_instance_ids, lock_token=None):
-    """RQ task entry point for refreshing the common minqlx plugin pool on a host."""
+def apply_plugin_updates_task(host_id, apply_common_pool, instance_selections, restart_instance_ids, lock_token=None):
+    """RQ task entry point for applying operator-selected plugin updates
+    (common pool refresh and/or per-instance selected-plugin files)."""
     try:
-        return update_common_plugins_logic(host_id, restart_instance_ids)
+        return apply_plugin_updates_logic(host_id, apply_common_pool, instance_selections, restart_instance_ids)
     finally:
         if lock_token:
             from ui.task_lock import release_lock
