@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Copy, KeyRound, Loader2, AlertCircle, Trash2 } from 'lucide-react';
-import { getApiKey, regenerateApiKey, revokeApiKey, getVultrKeySetting, setVultrKeySetting } from '../services/api';
+import { getApiKey, regenerateApiKey, revokeApiKey, getVultrKeySetting, setVultrKeySetting, getStatsHubSetting, setStatsHubSetting } from '../services/api';
 import { useNotification } from '../components/NotificationProvider';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatDateTime } from '../utils/uiUtils';
@@ -16,6 +16,12 @@ function SettingsPage() {
   const [vultrKey, setVultrKey] = useState('');
   const [vultrKeyInput, setVultrKeyInput] = useState('');
   const [savingVultrKey, setSavingVultrKey] = useState(false);
+
+  const [statsHubUrl, setStatsHubUrl] = useState('');
+  const [statsHubUrlInput, setStatsHubUrlInput] = useState('');
+  const [statsHubToken, setStatsHubToken] = useState('');
+  const [statsHubTokenInput, setStatsHubTokenInput] = useState('');
+  const [savingStatsHub, setSavingStatsHub] = useState(false);
 
   const { showSuccess, showError } = useNotification();
 
@@ -56,6 +62,34 @@ function SettingsPage() {
       showError(err.error?.message || 'Failed to update Vultr API key.');
     } finally {
       setSavingVultrKey(false);
+    }
+  };
+
+  const fetchStatsHub = useCallback(async () => {
+    try {
+      const data = await getStatsHubSetting();
+      setStatsHubUrl(data.url || '');
+      setStatsHubUrlInput(data.url || '');
+      setStatsHubToken(data.ingest_token || '');
+      setStatsHubTokenInput(data.ingest_token || '');
+    } catch {
+      // Non-fatal — the rest of the page still works without this field.
+    }
+  }, []);
+
+  useEffect(() => { fetchStatsHub(); }, [fetchStatsHub]);
+
+  const handleSaveStatsHub = async () => {
+    setSavingStatsHub(true);
+    try {
+      const data = await setStatsHubSetting(statsHubUrlInput, statsHubTokenInput);
+      setStatsHubUrl(data.url || '');
+      setStatsHubToken(data.ingest_token || '');
+      showSuccess('Stats-hub target updated.');
+    } catch (err) {
+      showError(err.error?.message || 'Failed to update stats-hub target.');
+    } finally {
+      setSavingStatsHub(false);
     }
   };
 
@@ -215,6 +249,56 @@ function SettingsPage() {
             {savingVultrKey ? <Loader2 size={16} className="animate-spin" /> : null}
             <span>Save Vultr Key</span>
           </button>
+        </div>
+      </div>
+
+      {/* Stats Hub target */}
+      <div className="users-page-header" style={{ marginTop: '2rem' }}>
+        <div className="users-page-title-row">
+          <div className="users-page-title-wrapper">
+            <h2 className="users-page-title" style={{ fontSize: '20px' }}>Stats Hub</h2>
+          </div>
+        </div>
+      </div>
+      <div className="users-table-container">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '16px 20px' }}>
+          <p style={{ margin: 0, fontSize: '13px', opacity: 0.75 }}>
+            The ql-stats-hub base URL and its STATS_HUB_INGEST_TOKEN (not the dashboard/read
+            token) - used by every host's telemetry relay and to reserve a cluster-wide
+            server_id per instance.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <label htmlFor="stats-hub-url" className="sr-only">Stats Hub URL</label>
+            <input
+              id="stats-hub-url"
+              type="text"
+              value={statsHubUrlInput}
+              onChange={(e) => setStatsHubUrlInput(e.target.value)}
+              placeholder="http://stats-hub-host:8090"
+              className="input-base"
+              style={{ flex: 1, fontFamily: "'Share Tech Mono', monospace" }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <label htmlFor="stats-hub-token" className="sr-only">Stats Hub Ingest Token</label>
+            <input
+              id="stats-hub-token"
+              type="text"
+              value={statsHubTokenInput}
+              onChange={(e) => setStatsHubTokenInput(e.target.value)}
+              placeholder="STATS_HUB_INGEST_TOKEN"
+              className="input-base"
+              style={{ flex: 1, fontFamily: "'Share Tech Mono', monospace" }}
+            />
+            <button
+              onClick={handleSaveStatsHub}
+              disabled={savingStatsHub || (statsHubUrlInput === statsHubUrl && statsHubTokenInput === statsHubToken)}
+              className="users-add-btn"
+            >
+              {savingStatsHub ? <Loader2 size={16} className="animate-spin" /> : null}
+              <span>Save</span>
+            </button>
+          </div>
         </div>
       </div>
 
