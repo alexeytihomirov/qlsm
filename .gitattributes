@@ -1,3 +1,7 @@
+# Shell scripts: git archive on Windows (core.autocrlf=true) must export LF
+# blobs, not CRLF — broken shebang causes container exec failures.
+*.sh text eol=lf
+
 # Plugin source of truth: ql-assets/data/minqlx-plugins/ (the pool ansible
 # deploys to every host) is mirrored onto configs/presets/_builtin/default/scripts/
 # (the builtin default ConfigPreset) via `flask sync-plugin-pool`
