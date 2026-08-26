@@ -1082,7 +1082,7 @@ function EditInstanceConfigModal({
                           </div>
                         )}
 
-                        {/* Main tabs: Configuration Files | Scripts | Factories */}
+                        {/* Main tabs: Configuration Files | Scripts | Factories | Hooks */}
                         <div className="flex flex-shrink-0 border border-[var(--surface-border)] bg-[var(--surface-elevated)] rounded-t-xl overflow-hidden mb-0">
                           {[
                             { key: 'config', icon: Settings, label: 'Configuration Files' },
