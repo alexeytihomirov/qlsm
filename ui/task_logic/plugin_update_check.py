@@ -6,12 +6,21 @@
 #
 #  - host common pool (/home/ql/assets/common/minqlx-plugins/ on the VPS) —
 #    the shared baseline every instance backfills from on restart.
-#  - each instance's *selected* plugins (configs/{host}/{instance}/scripts/,
-#    local to the qlsm controller) — these are excluded from the common-pool
-#    backfill on purpose (an operator may have hand-edited one via the script
+#  - each instance's own plugin files (configs/{host}/{instance}/scripts/,
+#    local to the qlsm controller) — excluded from the common-pool backfill
+#    on purpose (an operator may have hand-edited one via the script
 #    editor), so they only ever went stale silently. This is the category
-#    that caused the match_restore.py incident: an instance-selected file
-#    with a real upstream fix, and no path for that fix to ever reach it.
+#    that caused the match_restore.py incident: an instance's copy with a
+#    real upstream fix, and no path for that fix to ever reach it.
+#
+#    This diff is intentionally full-pool, not limited to filenames the
+#    instance already has: an instance's scripts/ dir is normally a
+#    creation-time snapshot of a whole preset (see _seed_draft in
+#    draft_routes.py), so a pool file the instance is missing almost always
+#    means the pool grew that file *after* the instance was created — the
+#    exact match_restore.py scenario — not a plugin the operator opted out
+#    of (opt-out is qlx_plugins, a cvar list; it never removes the file).
+#    Reported as "added" and applied the same way as any other change.
 #
 # system-hooks (ql-assets/data/system-hooks/) is NOT checked here: that sync
 # task in sync_instance_configs_and_restart.yml runs unconditionally on every
@@ -51,15 +60,16 @@ def check_common_pool(host):
 
 
 def check_instance_selected_plugins(host, instance):
-    """Diffs ql-assets pool vs this instance's own selected-scripts snapshot
-    (configs/{host}/{instance}/scripts/) — purely local, no SSH needed."""
+    """Diffs ql-assets pool vs this instance's own scripts snapshot
+    (configs/{host}/{instance}/scripts/) — purely local, no SSH needed.
+    Full-pool diff, including files the instance doesn't have at all yet
+    (see module docstring) — those come back as "added" and are applied the
+    same way (a plain file copy in ansible_plugin_update.py), so there's no
+    manual docker cp needed to get a new default-preset plugin onto an
+    instance created before that plugin existed."""
     source = hash_local_tree(_pool_dir(), extensions=PLUGIN_EXTENSIONS)
     target = hash_local_tree(_instance_scripts_dir(host.name, instance.id), extensions=PLUGIN_EXTENSIONS)
-    # Only meaningful for files the instance actually selected — an instance
-    # not using a given plugin at all isn't "missing an update" for it.
-    target_names = set(target)
-    filtered_source = {name: h for name, h in source.items() if name in target_names}
-    return diff_trees(filtered_source, target)
+    return diff_trees(source, target)
 
 
 def check_host_updates(host):

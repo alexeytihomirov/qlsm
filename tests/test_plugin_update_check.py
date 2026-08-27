@@ -56,13 +56,13 @@ def test_check_common_pool_propagates_error(mock_adhoc, app, temp_config_dir):
     assert error == "unreachable"
 
 
-def test_check_instance_selected_plugins_only_flags_selected_files(app, temp_config_dir):
+def test_check_instance_selected_plugins_flags_modified_and_new_pool_files(app, temp_config_dir):
     pool_dir = os.path.abspath(MINQLX_PLUGINS_POOL_DIR)
     os.makedirs(pool_dir, exist_ok=True)
-    with open(os.path.join(pool_dir, 'selected.py'), 'w') as f:
+    with open(os.path.join(pool_dir, 'present.py'), 'w') as f:
         f.write('new version')
-    with open(os.path.join(pool_dir, 'not_selected.py'), 'w') as f:
-        f.write('also changed upstream')
+    with open(os.path.join(pool_dir, 'never_had.py'), 'w') as f:
+        f.write('added to the pool after this instance was created')
 
     with app.app_context():
         from ui.database import db
@@ -75,16 +75,18 @@ def test_check_instance_selected_plugins_only_flags_selected_files(app, temp_con
 
         scripts_dir = os.path.join('configs', host.name, str(inst.id), 'scripts')
         os.makedirs(scripts_dir, exist_ok=True)
-        with open(os.path.join(scripts_dir, 'selected.py'), 'w') as f:
+        with open(os.path.join(scripts_dir, 'present.py'), 'w') as f:
             f.write('stale local copy')
 
         changes = check_instance_selected_plugins(host, inst)
 
     names = {c["name"]: c["change"] for c in changes}
-    # selected.py: instance has it, pool content differs -> modified
-    assert names.get("selected.py") == "modified"
-    # not_selected.py: instance never picked this plugin -> not the instance's problem
-    assert "not_selected.py" not in names
+    # present.py: instance has it, pool content differs -> modified
+    assert names.get("present.py") == "modified"
+    # never_had.py: instance's scripts/ predates this pool file -> surfaced as
+    # "added" so it can be picked up via "Check for Updates" instead of a
+    # manual docker cp (the match_restore.py incident this check exists for)
+    assert names.get("never_had.py") == "added"
 
 
 @patch('ui.task_logic.plugin_update_check.run_host_ansible_adhoc')
