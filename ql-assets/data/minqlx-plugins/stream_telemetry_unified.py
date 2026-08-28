@@ -751,11 +751,15 @@ class stream_telemetry_unified(minqlx.Plugin):
 
     @staticmethod
     def _player_cs_active(player):
+        # connection_state is a ConnectionState enum (string-comparable), not an
+        # int - minqlx.CS_ACTIVE doesn't exist (CS_* are config-string indices,
+        # an unrelated constant family). "active" is the documented check
+        # (Player.connection_state's own docstring).
         conn = getattr(player, "connection_state", None)
         if conn is None:
             return True
         try:
-            return int(conn) == int(minqlx.CS_ACTIVE)
+            return conn == "active"
         except (TypeError, ValueError, AttributeError):
             return True
 

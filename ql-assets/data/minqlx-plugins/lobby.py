@@ -435,7 +435,7 @@ class lobby(minqlx.Plugin):
             self._auto_redirect(player)
         self._check_hub_notify_player(player)
 
-    def handle_team_switch_attempt(self, player, old_team, new_team):
+    def handle_team_switch_attempt(self, player, old_team, new_team, target):
         if not self.get_cvar("qlx_lobbyEnabled", bool):
             return
         if self.should_stay_on_lobby(player):
