@@ -119,14 +119,33 @@ typedef struct demo_scan_s {
     int gamestate_count;
 
     // How many times the server-time clock jumped BACKWARDS between two
-    // consecutive snapshots inside gamestate 0. Must be 0 for a cuttable
-    // file: demo_cut() selects messages by a plain "start <= t <= end"
-    // comparison (parser.cpp), so with two clock epochs in one file a window
-    // aimed at the later epoch also matches the earlier one and the cut is
-    // silently wrong rather than failing. Five of the eight real captures in
-    // Task 6a's corpus have exactly this (1077875 -> 7625 at message 267,
-    // with no gamestate and no command in between), so it is not theoretical.
+    // consecutive snapshots inside gamestate 0, counted over the WHOLE file.
+    // Non-zero here is common and often harmless on the current (v1.0.0,
+    // upstream Demo_Request-based) capture path: a raw file stays open and
+    // keeps accumulating across back-to-back matches on the same map with no
+    // client reconnect (see the "known limitation" comment on
+    // DemoMatch_Disarm in demo_match.c), and a soft server respawn between
+    // those matches resets the server clock WITHOUT sending a new gamestate -
+    // so a raw capture can legitimately hold a stale, already-consumed
+    // match's tail followed by a clock reset followed by the current match's
+    // own clean data. That leading, pre-arm portion is discarded by the cut
+    // regardless, so a reset confined to it must not veto the cut. Kept for
+    // diagnostics; callers must gate the cut on clock_resets_since_arm below,
+    // not this field.
     int clock_resets;
+
+    // Same count, but only for resets detected AT OR AFTER arm_ms was found
+    // (i.e. within the region demo_cut() will actually be asked to select).
+    // -1 when arm_seq was negative (arm_ms lookup skipped, so "since arm" is
+    // undefined). THIS is the field callers must check being 0 before
+    // trusting a cut of [arm_ms, last_ms]: demo_cut() selects messages by a
+    // plain "start <= t <= end" comparison (parser.cpp) with no notion of
+    // where in the file a message sits, so a reset still inside the window
+    // the cut will scan (from arm_ms's own message onward) means two clock
+    // epochs really do overlap the requested range and the cut would be
+    // silently wrong rather than failing - see clock_resets' own comment for
+    // where this was first measured (Task 6a corpus, message 267).
+    int clock_resets_since_arm;
 
     // Diagnostics. snapshot_count covers gamestate 0 only; message_count is
     // the whole file.

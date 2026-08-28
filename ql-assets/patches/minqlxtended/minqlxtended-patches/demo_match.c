@@ -151,12 +151,6 @@ extern serverStatic_t* svs; // defined in dllmain.c
 // demo_stage2_flush().
 #define DEMO_OUTLIER_WINDOW_MS 30000
 
-// "Cut to the end of the file." NOT -1: udtCutDemoFileByTime only queues a cut
-// when StartTimeMs < EndTimeMs, so a negative end silently produces zero cuts
-// and an empty output folder while still reporting success. demo_cut() rejects
-// start >= end for exactly this reason - see udt/bridge.h.
-#define DEMO_CUT_TO_END INT32_MAX
-
 // How long (wall seconds) DemoMatch_Disarm waits for a match's still-open
 // segments to come back through the completion queue before firing the
 // match-finalized marker anyway. A segment is closed by upstream on that
@@ -1154,25 +1148,39 @@ static void demo_stage1(const demo_finalize_job_t* job) {
         return; // p stays cuttable=0, source=capture: published as-is at flush.
     }
 
-    // Both of these break demo_cut()'s "start <= t <= end" message selection,
-    // which has no notion of gamestate boundaries or a clock that restarts.
-    // Upstream's capture cannot produce either (Demo_CaptureBody ends the
-    // segment and reopens on every gamestate), so hitting one means a stranded
-    // or hand-recovered file - copy it through rather than cut it wrongly.
+    // A multi-gamestate file breaks demo_cut()'s "start <= t <= end" message
+    // selection, which has no notion of gamestate boundaries (its
+    // GameStateIndex is pinned to 0) - hitting one means a stranded or
+    // hand-recovered file, copy it through rather than cut it wrongly.
     // Recorded even when the cut below fails: it is a property of the capture,
     // not of the trim, and a copy-through POV still gets an index.
     p->live_ms = scan.live_ms;
 
-    if (scan.gamestate_count != 1 || scan.clock_resets != 0) {
-        DebugPrint("demo: slot %d %s has %d gamestate(s) and %d clock reset(s); "
-                   "copying untrimmed\n",
-                   job->slot, job->raw_path, scan.gamestate_count, scan.clock_resets);
+    if (scan.gamestate_count != 1) {
+        DebugPrint("demo: slot %d %s has %d gamestate(s); copying untrimmed\n",
+                   job->slot, job->raw_path, scan.gamestate_count);
         return;
     }
     if (scan.arm_ms < 0) {
         DebugPrint("demo: slot %d no snapshot at/after arm_seq %d in %s "
                    "(%d snapshots, [%d,%d]); copying untrimmed\n",
                    job->slot, job->arm_seq, job->raw_path, scan.snapshot_count, scan.first_ms, scan.last_ms);
+        return;
+    }
+    // A raw capture stays open and keeps accumulating across back-to-back
+    // matches on the same map with no client reconnect (see the "known
+    // limitation" comment on DemoMatch_Disarm below), and a soft server
+    // respawn between those matches resets the server clock without ever
+    // sending a new gamestate - so scan.clock_resets (over the WHOLE file)
+    // is routinely non-zero on a perfectly healthy capture: a stale, already-
+    // consumed match's tail sits before our own arm point, discarded by the
+    // cut regardless of what it contains. Only a reset AT OR AFTER arm_ms -
+    // inside the region the cut below will actually select from - means two
+    // clock epochs really do overlap our window and the cut would be wrong.
+    if (scan.clock_resets_since_arm != 0) {
+        DebugPrint("demo: slot %d %s has %d clock reset(s) at/after arm_seq %d "
+                   "(%d total); copying untrimmed\n",
+                   job->slot, job->raw_path, scan.clock_resets_since_arm, job->arm_seq, scan.clock_resets);
         return;
     }
 
@@ -1184,7 +1192,15 @@ static void demo_stage1(const demo_finalize_job_t* job) {
         DebugPrint("demo: stage-1 scratch path too long for %s; copying untrimmed\n", job->raw_path);
         return;
     }
-    if (!demo_cut_into(job->raw_path, dir, scan.arm_ms, DEMO_CUT_TO_END, cut, sizeof(cut))) {
+    // end = scan.last_ms (this file's own true last snapshot), NOT
+    // DEMO_CUT_TO_END/INT32_MAX: a stale pre-arm epoch (see above) can carry
+    // HIGHER timestamps than our own match's (server time reset DOWNWARD
+    // between them), which would satisfy an unbounded "arm_ms <= t <= MAX"
+    // selection and smuggle that unrelated data into the cut. Bounding end to
+    // this scan's own last_ms costs nothing for the common single-epoch case
+    // (last_ms already IS the true end there) and excludes any pre-arm epoch
+    // whose range lies above it.
+    if (!demo_cut_into(job->raw_path, dir, scan.arm_ms, scan.last_ms, cut, sizeof(cut))) {
         demo_purge_dir(dir);
         DebugPrint("demo: slot %d stage 1 failed for %s; copying untrimmed\n", job->slot, job->raw_path);
         return;
@@ -1194,6 +1210,18 @@ static void demo_stage1(const demo_finalize_job_t* job) {
     if (demo_scan(cut, -1, &s1, err, (int)sizeof(err)) != 0 || s1.first_ms < 0) {
         DebugPrint("demo: slot %d stage-1 output %s unreadable (%s); copying untrimmed\n", job->slot, cut,
                    err);
+        demo_purge_dir(dir);
+        return;
+    }
+    // Defense in depth: if a pre-arm epoch's numeric range still overlapped
+    // ours despite the last_ms bound above (e.g. a THIRD epoch sitting
+    // between them), the cut output itself would show it as a clock reset or
+    // an extra gamestate. Refuse to publish a cut that isn't actually clean
+    // rather than trust the bound alone.
+    if (s1.gamestate_count != 1 || s1.clock_resets != 0) {
+        DebugPrint("demo: slot %d stage-1 output %s has %d gamestate(s) and %d clock reset(s) "
+                   "despite the arm/last_ms bound; copying untrimmed\n",
+                   job->slot, cut, s1.gamestate_count, s1.clock_resets);
         demo_purge_dir(dir);
         return;
     }

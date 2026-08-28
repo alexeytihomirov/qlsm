@@ -271,11 +271,12 @@ static int ScanWalk(const char* who, const char* in_path, int arm_seq, demo_scan
     }
 
     memset(out, 0, sizeof(*out));
-    out->first_ms   = -1;
-    out->last_ms    = -1;
-    out->arm_ms     = -1;
-    out->live_ms    = -1;
-    out->client_num = -1;
+    out->first_ms               = -1;
+    out->last_ms                = -1;
+    out->arm_ms                 = -1;
+    out->live_ms                = -1;
+    out->client_num             = -1;
+    out->clock_resets_since_arm = (arm_seq >= 0) ? 0 : -1;
 
     EnsureUdtInit();
 
@@ -406,6 +407,15 @@ static int ScanWalk(const char* who, const char* in_path, int arm_seq, demo_scan
                     out->first_ms = (int)t;
                 } else if((int)t < out->last_ms) {
                     out->clock_resets++;
+                    // arm_ms already set (in an earlier iteration) means this
+                    // backward jump sits inside [arm_ms, ...] - the exact
+                    // region demo_cut() will be asked to select from. A jump
+                    // still ahead of arm_ms is stale, pre-arm data the cut
+                    // discards regardless (see the field's own comment in
+                    // bridge.h) and must not veto it.
+                    if(out->arm_ms >= 0) {
+                        out->clock_resets_since_arm++;
+                    }
                 }
                 out->last_ms = (int)t;
                 out->snapshot_count++;
