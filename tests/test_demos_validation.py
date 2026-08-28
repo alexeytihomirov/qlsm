@@ -122,6 +122,37 @@ def test_list_sorts_newest_first_and_drops_malformed_entries():
     assert [d['name'] for d in demos] == ['new.dm_91', 'old.dm_91']
 
 
+def test_list_keeps_qlmatch_entries_alongside_dm91():
+    # native-demo's build_match_package() ships "{match_id}_{map}.qlmatch"
+    # next to the per-POV .dm_91 files in the same demos/ directory - the
+    # listing must not drop it.
+    from ui.task_logic.ansible_instance_demos import list_instance_demos
+
+    process = MagicMock()
+    process.communicate.return_value = (
+        'ok: [host] => {\n    "msg": '
+        '"[{\\"name\\": \\"20260827T170920Z_phrantic_p0_a3_1_1.dm_91\\", '
+        '\\"size\\": 10, \\"mtime\\": 1.0}, '
+        '{\\"name\\": \\"20260827T170920Z_phrantic.qlmatch\\", '
+        '\\"size\\": 20, \\"mtime\\": 2.0}]"\n}\n',
+        '',
+    )
+    process.returncode = 0
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), MagicMock(
+                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
+         patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=process):
+        success, demos, error = list_instance_demos(1)
+
+    assert success is True
+    assert error is None
+    assert [d['name'] for d in demos] == [
+        '20260827T170920Z_phrantic.qlmatch',
+        '20260827T170920Z_phrantic_p0_a3_1_1.dm_91',
+    ]
+
+
 def _get_download(client, instance_id, token, filename):
     return client.get(
         f'/api/instances/{instance_id}/demos/download',
@@ -256,6 +287,43 @@ def test_fetch_rejects_invalid_filename_without_touching_subprocess():
     assert files == {}
     assert 'Invalid demo filename' in error
     mock_popen.assert_not_called()
+
+
+def test_fetch_rejects_non_demo_extension_without_touching_subprocess():
+    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+        success, files, missing, error = fetch_instance_demos(1, ['a.zip'])
+    assert success is False
+    assert files == {}
+    assert 'Invalid demo filename' in error
+    mock_popen.assert_not_called()
+
+
+def test_fetch_accepts_qlmatch_filename():
+    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+
+    process = MagicMock()
+    process.communicate.return_value = ('', '')
+    process.returncode = 0
+
+    def fake_popen(cmd, **kwargs):
+        extravars_json = cmd[cmd.index('-e') + 1]
+        extravars = json.loads(extravars_json)
+        local_dir = extravars['local_dir']
+        with open(os.path.join(local_dir, 'match.qlmatch'), 'wb') as fh:
+            fh.write(b'zip-bytes')
+        return process
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), MagicMock(
+                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
+         patch(f'{FETCH_MODULE}.subprocess.Popen', side_effect=fake_popen):
+        success, files, missing, error = fetch_instance_demos(1, ['match.qlmatch'])
+
+    assert success is True
+    assert error is None
+    assert files == {'match.qlmatch': b'zip-bytes'}
+    assert missing == []
 
 
 def test_fetch_rejects_batch_over_limit_without_touching_subprocess():

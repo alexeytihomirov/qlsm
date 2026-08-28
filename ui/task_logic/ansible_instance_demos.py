@@ -4,9 +4,17 @@ minqlxtended's native demo-match capture (see ql-assets/patches/minqlxtended/
 minqlxtended-patches/demo_match.c) writes finished .dm_91 files under
 fs_homepath/sv_demoDir, which for a qlsm-managed instance is
 /home/ql/qlds-<port>/demos (sv_demoDir defaults to "demos" and is not
-overridden anywhere in this repo). This module lists those files so an
-operator can verify a manual demo-recording test actually produced a file,
-without SSHing into the host by hand.
+overridden anywhere in this repo). That per-POV .dm_91 output is the same
+directory the plain sv_demoRecord path already writes flat, single-file
+demos to, so both show up in the same listing here without any extra
+plumbing. demo_native_manifest.py additionally packages each match's set of
+per-POV .dm_91 files into one {match_id}_{map}.qlmatch zip (manifest.json +
+demos/*.dm_91 + index/*.snaps.json) in that same directory - listed and
+downloadable here too, since it is the one file an operator actually wants
+for a match instead of picking through N separate per-POV files by hand.
+This module lists those files so an operator can verify a manual
+demo-recording test actually produced a file, without SSHing into the host
+by hand.
 
 Kept separate from ansible_instance_mgmt.py for the same reason as
 ansible_server_log_archives.py: that file is already past the project's
@@ -27,13 +35,15 @@ from ui.task_logic.common import log
 ANSIBLE_TIMEOUT_SECONDS = 60
 FETCH_TIMEOUT_SECONDS = 180
 
-# Matches demo_build_pov_name()'s output in demo_match.c: sanitised to
-# [A-Za-z0-9_-] plus the literal ".dm_91" suffix. Anchored with \A/\Z (not
-# ^/$) for the same reason SERVER_LOG_FILENAME_RE in
-# ansible_server_log_archives.py is: this value reaches both a remote and a
-# local filesystem path built by string concatenation, and $ still matches
-# before a trailing newline under .fullmatch().
-DEMO_FILENAME_RE = re.compile(r'\A[A-Za-z0-9._-]+\.dm_91\Z')
+# Matches demo_build_pov_name()'s output in demo_match.c (sanitised to
+# [A-Za-z0-9_-] plus the literal ".dm_91" suffix) and
+# build_match_package()'s "{match_id}_{map}.qlmatch" zip in
+# demo_native_manifest.py. Anchored with \A/\Z (not ^/$) for the same reason
+# SERVER_LOG_FILENAME_RE in ansible_server_log_archives.py is: this value
+# reaches both a remote and a local filesystem path built by string
+# concatenation, and $ still matches before a trailing newline under
+# .fullmatch().
+DEMO_FILENAME_RE = re.compile(r'\A[A-Za-z0-9._-]+\.(?:dm_91|qlmatch)\Z')
 
 # Generous but bounded: a batch this large would already take minutes to
 # fetch one-by-one over SSH, so this is a sanity cap, not a realistic usage
@@ -71,7 +81,7 @@ def _resolve_instance(instance_id):
 
 
 def list_instance_demos(instance_id):
-    """List server-side demo files (.dm_91) recorded for an instance.
+    """List server-side demo files (.dm_91 and .qlmatch) recorded for an instance.
 
     Returns a tuple: (success: bool, demos: list[dict], error_msg: str or None)
     where each dict is {"name": str, "size": int, "mtime": float}, newest

@@ -21,7 +21,9 @@
     - name: Find demo files
       ansible.builtin.find:
         paths: "{{ demo_dir }}"
-        patterns: "*.dm_91"
+        patterns:
+          - "*.dm_91"
+          - "*.qlmatch"
         file_type: file
         recurse: false
       register: demo_find
@@ -33,7 +35,7 @@
       loop: "{{ demo_find.files | default([]) }}"
       when:
         - demo_dir_stat.stat.exists and demo_dir_stat.stat.isdir
-        - (item.path | basename) is match('^[A-Za-z0-9._-]+\\.dm_91\\Z')
+        - (item.path | basename) is match('^[A-Za-z0-9._-]+\\.(dm_91|qlmatch)\\Z')
 
     - name: Output demo entries to stdout for capture
       ansible.builtin.debug:
