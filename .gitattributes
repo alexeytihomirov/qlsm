@@ -13,3 +13,12 @@ ql-assets/data/minqlx-plugins/**/*.py text eol=lf
 ql-assets/data/minqlx-plugins/**/*.ql-plugin.json text eol=lf
 configs/presets/_builtin/default/scripts/**/*.py text eol=lf
 configs/presets/_builtin/default/scripts/**/*.ql-plugin.json text eol=lf
+
+# qlmatch-packer ships to Linux hosts (rsync from the container checkout);
+# keep its sources LF for determinism (Node tolerates CRLF, but the vendored
+# qldemo copy must diff cleanly against ql-stream-tools' own LF blobs).
+ql-assets/data/qlmatch-packer/**/*.js text eol=lf
+ql-assets/data/qlmatch-packer/**/*.mjs text eol=lf
+ql-assets/data/qlmatch-packer/**/*.json text eol=lf
+ql-assets/data/qlmatch-packer/**/*.md text eol=lf
+ql-assets/data/qlmatch-packer/**/*.txt text eol=lf

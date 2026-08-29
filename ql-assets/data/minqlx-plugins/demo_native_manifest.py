@@ -44,6 +44,30 @@ import os
 import zipfile
 from collections import Counter
 
+# Where ansible/playbooks/tasks/sync_qlmatch_packer.yml deploys the external
+# Node packer on every managed host. demo_native_autorecord.py prefers
+# launching that packer as a separate process (it adds name templating and
+# rclone delivery on top of this module's plain zip build) and falls back to
+# build_match_package() below only when the packer or node is missing.
+QLMATCH_PACKER_SCRIPT = "/home/ql/qlmatch-packer/pack.mjs"
+
+
+def packer_command(node, packer_script, demo_dir, match_id, map_name,
+                   name_template="", rclone_targets=""):
+    """argv for one external qlmatch-packer run. Pure/testable: no cvar
+    reads, no spawn — the plugin resolves node/cvars and passes them in.
+    Optional values are appended only when non-empty so the packer's own
+    defaults apply otherwise."""
+    cmd = [node, packer_script,
+           "--dir", demo_dir,
+           "--match-id", match_id,
+           "--map", map_name or "unknown"]
+    if name_template:
+        cmd += ["--name-template", name_template]
+    if rclone_targets:
+        cmd += ["--rclone-targets", rclone_targets]
+    return cmd
+
 DM91_SUFFIX = ".dm_91"
 INDEX_DIRNAME = "index"
 ZIP_DEMOS_DIR = "demos"

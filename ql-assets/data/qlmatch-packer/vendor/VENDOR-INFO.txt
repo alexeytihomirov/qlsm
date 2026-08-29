@@ -1,0 +1,3 @@
+source: ql-stream-tools/live-overlay/lib/qldemo (production parser)
+synced: 2026-08-29T03:19:44Z
+refresh: bash sync-vendor.sh (see header comment)

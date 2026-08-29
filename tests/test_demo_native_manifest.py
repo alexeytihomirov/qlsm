@@ -292,3 +292,34 @@ def test_build_match_package_with_no_matching_files_skips_zip(tmp_path):
     assert zip_path is None
     assert ordered == []
     assert manifest["demos"] == []
+
+
+def test_packer_command_builds_minimal_argv():
+    from demo_native_manifest import packer_command
+
+    cmd = packer_command("/usr/bin/node", "/home/ql/qlmatch-packer/pack.mjs",
+                         "/home/ql/qlds-27960/demos", MATCH_ID, MAP_NAME)
+    assert cmd == [
+        "/usr/bin/node", "/home/ql/qlmatch-packer/pack.mjs",
+        "--dir", "/home/ql/qlds-27960/demos",
+        "--match-id", MATCH_ID,
+        "--map", MAP_NAME,
+    ]
+
+
+def test_packer_command_appends_template_and_targets_only_when_set():
+    from demo_native_manifest import packer_command
+
+    cmd = packer_command("node", "pack.mjs", "/demos", MATCH_ID, MAP_NAME,
+                         name_template="{date}_{map}_{players}",
+                         rclone_targets="gdrive:demos,/mnt/archive")
+    assert cmd[-4:] == ["--name-template", "{date}_{map}_{players}",
+                       "--rclone-targets", "gdrive:demos,/mnt/archive"]
+    assert "--name-template" not in packer_command("node", "p", "/d", MATCH_ID, MAP_NAME)
+
+
+def test_packer_command_defaults_empty_map_to_unknown():
+    from demo_native_manifest import packer_command
+
+    cmd = packer_command("node", "pack.mjs", "/demos", MATCH_ID, "")
+    assert cmd[cmd.index("--map") + 1] == "unknown"

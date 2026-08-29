@@ -31,3 +31,9 @@
         mode: '0755'
 
     - ansible.builtin.import_tasks: tasks/sync_common_plugins.yml
+
+    # The external .qlmatch packer rides along with plugin updates so a
+    # packer fix reaches existing hosts through the same "Update Plugins"
+    # action (it is launched by demo_native_autorecord.py from the pool
+    # synced above, so the two must not drift apart).
+    - ansible.builtin.import_tasks: tasks/sync_qlmatch_packer.yml
