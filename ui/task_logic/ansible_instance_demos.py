@@ -36,14 +36,15 @@ ANSIBLE_TIMEOUT_SECONDS = 60
 FETCH_TIMEOUT_SECONDS = 180
 
 # Matches demo_build_pov_name()'s output in demo_match.c (sanitised to
-# [A-Za-z0-9_-] plus the literal ".dm_91" suffix) and
-# build_match_package()'s "{match_id}_{map}.qlmatch" zip in
-# demo_native_manifest.py. Anchored with \A/\Z (not ^/$) for the same reason
-# SERVER_LOG_FILENAME_RE in ansible_server_log_archives.py is: this value
-# reaches both a remote and a local filesystem path built by string
-# concatenation, and $ still matches before a trailing newline under
-# .fullmatch().
-DEMO_FILENAME_RE = re.compile(r'\A[A-Za-z0-9._-]+\.(?:dm_91|qlmatch)\Z')
+# [A-Za-z0-9_-] plus the literal ".dm_91" suffix), the .qlmatch packages
+# (external qlmatch-packer's templated names and the in-process fallback's
+# "{match_id}_{map}.qlmatch" - both sanitise to the same charset), and the
+# packer's per-match "{match_id}.packer.log". Anchored with \A/\Z (not ^/$)
+# for the same reason SERVER_LOG_FILENAME_RE in
+# ansible_server_log_archives.py is: this value reaches both a remote and a
+# local filesystem path built by string concatenation, and $ still matches
+# before a trailing newline under .fullmatch().
+DEMO_FILENAME_RE = re.compile(r'\A[A-Za-z0-9._-]+\.(?:dm_91|qlmatch|packer\.log)\Z')
 
 # Generous but bounded: a batch this large would already take minutes to
 # fetch one-by-one over SSH, so this is a sanity cap, not a realistic usage
@@ -81,7 +82,7 @@ def _resolve_instance(instance_id):
 
 
 def list_instance_demos(instance_id):
-    """List server-side demo files (.dm_91 and .qlmatch) recorded for an instance.
+    """List server-side demo files (.dm_91, .qlmatch, .packer.log) recorded for an instance.
 
     Returns a tuple: (success: bool, demos: list[dict], error_msg: str or None)
     where each dict is {"name": str, "size": int, "mtime": float}, newest

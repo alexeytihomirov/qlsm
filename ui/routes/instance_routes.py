@@ -1118,7 +1118,7 @@ def list_remote_minqlx_logs_api(instance_id):
 @instance_api_bp.route('/<int:instance_id>/demos', methods=['GET'], endpoint='list_instance_demos_api')
 @jwt_required()
 def list_instance_demos_api(instance_id):
-    """Lists server-side demo files (.dm_91 and .qlmatch) recorded on the remote QLDS instance."""
+    """Lists server-side demo files (.dm_91, .qlmatch, .packer.log) recorded on the remote QLDS instance."""
     from ui.task_logic.ansible_instance_demos import list_instance_demos
 
     instance = get_instance(instance_id)
@@ -1142,7 +1142,7 @@ def list_instance_demos_api(instance_id):
 @instance_api_bp.route('/<int:instance_id>/demos/download', methods=['GET'], endpoint='download_instance_demo_api')
 @jwt_required()
 def download_instance_demo_api(instance_id):
-    """Downloads a single demo file (.dm_91 or .qlmatch) from the remote QLDS instance."""
+    """Downloads a single demo file (.dm_91, .qlmatch or .packer.log) from the remote QLDS instance."""
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
 
     instance = get_instance(instance_id)
