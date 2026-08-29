@@ -127,7 +127,7 @@ class serverchecker(minqlx.Plugin):
 
     # ── Hooks ──────────────────────────────────────────────────────────────
 
-    def on_game_start(self, data):
+    def on_game_start(self):
         self._match_start_time = time.time()
         self._update_status_async()
 
@@ -135,7 +135,7 @@ class serverchecker(minqlx.Plugin):
         self._match_start_time = None
         self._update_status_async()
 
-    def on_player_connect(self, player):
+    def on_player_connect(self, player, is_bot):
         self._update_status_async()
 
     def on_player_disconnect(self, player, reason):

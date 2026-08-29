@@ -146,15 +146,16 @@ class chat_rcon(minqlx.Plugin):
             ",".join(DEFAULT_ADMIN_DENY),
         )
         # perm 0: handler enforces ref/admin tiers. Stock essentials also registers
-        # !rcon at perm 5; keep both, but PRI_HIGHEST makes the winner deterministic
-        # instead of depending on qlx_plugins load order. CommandInvoker checks
-        # priority buckets before per-bucket (load-order) position, and this
-        # handler always returns STOP_ALL, so it always runs first and essentials'
-        # !rcon never fires while this plugin is enabled — including for perm-5
-        # admins, so the deny-list (exec/vstr/quit/rconpassword/...) always applies.
+        # !rcon at perm 5; keep both, but Priority.HIGHEST makes the winner
+        # deterministic instead of depending on qlx_plugins load order.
+        # CommandInvoker checks priority buckets before per-bucket (load-order)
+        # position, and this handler always returns STOP_ALL, so it always runs
+        # first and essentials' !rcon never fires while this plugin is enabled —
+        # including for perm-5 admins, so the deny-list (exec/vstr/quit/
+        # rconpassword/...) always applies.
         self.add_command(
             "rcon", self.cmd_rcon, 0,
-            priority=minqlx.PRI_HIGHEST,
+            priority=minqlx.Priority.HIGHEST,
             usage="<command> [args...]",
         )
 
