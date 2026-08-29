@@ -234,6 +234,29 @@ function mapNameOf(parser) {
   return parser.gamestate.config.serverinfo?.mapname || "";
 }
 
+// Configstring bytes reach us latin-1-decoded: the vendored parser's
+// huffmanReadBigString maps every raw byte to one JS code point. Player
+// names from modern clients are UTF-8 on the wire, so a multibyte name
+// (e.g. Chinese) arrives as mojibake ("ä¸æµ·..."). Re-decode: code points
+// back to bytes, then strict UTF-8. A byte string that is NOT valid UTF-8
+// (a genuinely latin-1-era name) is left exactly as delivered.
+const UTF8_STRICT = new TextDecoder("utf-8", { fatal: true });
+function decodeQlString(s) {
+  s = String(s || "");
+  let hasHigh = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c > 255) return s; // already real decoded text, not a byte string
+    if (c > 127) hasHigh = true;
+  }
+  if (!hasHigh) return s;
+  try {
+    return UTF8_STRICT.decode(Uint8Array.from(s, (ch) => ch.charCodeAt(0)));
+  } catch {
+    return s;
+  }
+}
+
 const GAMETYPE_NAMES = {
   0: "ffa", 1: "duel", 2: "race", 3: "tdm", 4: "ca", 5: "ctf",
   6: "1f", 8: "har", 9: "ft", 10: "dom", 11: "ad", 12: "rr",
@@ -280,11 +303,11 @@ function main() {
     // is NOT used here: it keeps ghost entries for disconnected clients, and
     // on a slot-reuse capture that ghost belongs to a different player.
     const gs = parser.gamestate;
-    const name =
+    const name = decodeQlString(
       gs.players?.[clientNum]?.n ||
       gs.spectators?.[clientNum]?.n ||
       nameFromBasename(basename(path), args.matchId, args.map || mapNameOf(parser) || "") ||
-      String(clientNum);
+      String(clientNum));
     entries.push({ path, base: basename(path), bytes, index, parser, clientNum, name });
     log(
       `  ${basename(path)}: client_num ${clientNum} "${stripColors(name)}"` +
@@ -312,7 +335,7 @@ function main() {
     if (!mapName) mapName = gs.config.serverinfo?.mapname || "";
     for (const [k, row] of Object.entries(gs.players || {})) {
       const cn = parseInt(k, 10);
-      if (!roster.has(cn)) roster.set(cn, { name: row.n || String(cn), team: row.t ?? "" });
+      if (!roster.has(cn)) roster.set(cn, { name: decodeQlString(row.n) || String(cn), team: row.t ?? "" });
       else if (!roster.get(cn).team && row.t) roster.get(cn).team = row.t;
     }
   }

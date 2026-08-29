@@ -264,7 +264,7 @@ function ViewDemosModal({ isOpen, onClose, instance }) {
                                     <FolderOpen className="h-10 w-10 mb-4 text-theme-muted" strokeWidth={2} />
                                     <p className="font-display text-base font-bold uppercase tracking-wide text-theme-primary">No demos found</p>
                                     <p className="text-sm text-theme-secondary mt-2 max-w-md text-center">
-                                        No .dm_91 or .qlmatch files in this instance's demos/ directory. Recording
+                                        No .dm_91, .qlmatch or .packer.log files in this instance's demos/ directory. Recording
                                         needs sv_demoRecord or qlx_nativeDemoRecordEnabled set, and a match to arm
                                         the capture — check View MinQLX Logs / View Server Logs for "demo:" lines
                                         after a manual test.
