@@ -46,6 +46,7 @@ try:
         weapon_key_bit,
     )
     from restore import items as match_restore_items
+    from restore import qlmatch as restore_qlmatch
 except ImportError:
     from .restore import draft as restore_draft
     from .restore.codec import (
@@ -63,6 +64,7 @@ except ImportError:
         weapon_key_bit,
     )
     from .restore import items as match_restore_items
+    from .restore import qlmatch as restore_qlmatch
 
 try:
     import minqlxtended as minqlx
@@ -212,6 +214,7 @@ class match_restore(minqlx.Plugin):
         self._restorecp_slot_remap = {}
         self._restorecp_draft = restore_draft.empty_draft()
         self._restorecp_draft_quiet = False
+        self._qlmatch_list_cache = []
         self.set_cvar_once("qlx_matchRestoreLabEnabled", "1")
         self.set_cvar_once("qlx_matchRestoreNativeClock", "0")
         self.set_cvar_once("qlx_matchRestoreUnfreezeDelaySec", "4")
@@ -219,7 +222,8 @@ class match_restore(minqlx.Plugin):
             ("restorecp", "restorecheckpoint"),
             self.cmd_restorecp,
             5,
-            usage="export | test [name] | quiet | loud | clear | time | map | player | item | apply | verify | show | players [slot:cid...]",
+            usage="export | test [name] | quiet | loud | clear | time | map | player | item | apply | verify | show "
+                  "| players [slot:cid...] | qlmatch list [filter] | qlmatch <N> <mm:ss>",
             client_cmd_pass=False,
         )
         self.add_hook("map", self._on_map)
@@ -1304,6 +1308,8 @@ class match_restore(minqlx.Plugin):
             return self._cmd_restorecp_export(player, channel)
         if sub == "test":
             return self._cmd_restorecp_test(player, channel, msg[2:])
+        if sub == "qlmatch":
+            return self._cmd_restorecp_qlmatch(player, channel, msg[2:])
         if sub in restore_draft.DRAFT_SUBCOMMANDS:
             return self._cmd_restorecp_draft(player, channel, sub, msg[2:])
         return minqlx.Return.USAGE
@@ -1396,6 +1402,145 @@ class match_restore(minqlx.Plugin):
                 )
         else:
             self._reply(player, channel, "^1restorecp test failed^7: {}".format(detail))
+        return minqlx.Return.STOP_ALL
+
+    def _qlmatch_demo_dir(self):
+        """Same directory the .qlmatch packer and native demo capture write
+        to: fs_homepath/sv_demoDir, exactly like demo_native_autorecord.py's
+        own _demo_dir() (kept as a private copy — plugins don't share
+        instance state, and this is the one cvar pair minqlxtended's own
+        demo_match.c uses for its final_path construction, not a guess)."""
+        homepath = (self.get_cvar("fs_homepath") or "").strip()
+        subdir = (self.get_cvar("sv_demoDir") or "").strip() or "demos"
+        if not homepath:
+            return None
+        return os.path.join(homepath, subdir)
+
+    def _cmd_restorecp_qlmatch(self, player, channel, tail):
+        if not tail:
+            self._reply(
+                player, channel,
+                "^1restorecp qlmatch^7: usage ^3qlmatch list [filter]^7 | ^3qlmatch <N> <mm:ss>^7",
+            )
+            return minqlx.Return.STOP_ALL
+        head = str(tail[0]).strip().lower()
+        if head == "list":
+            return self._cmd_restorecp_qlmatch_list(player, channel, tail[1:])
+        return self._cmd_restorecp_qlmatch_apply(player, channel, tail)
+
+    def _cmd_restorecp_qlmatch_list(self, player, channel, tail):
+        demo_dir = self._qlmatch_demo_dir()
+        if not demo_dir:
+            self._reply(
+                player, channel,
+                "^1restorecp qlmatch list^7: fs_homepath cvar empty, cannot locate demo dir",
+            )
+            return minqlx.Return.STOP_ALL
+        filter_substr = " ".join(str(t) for t in tail).strip() or None
+        rows = restore_qlmatch.list_packs(demo_dir, filter_substr)
+        # Cached so `qlmatch <N> <mm:ss>` resolves N against THIS listing,
+        # not a directory rescan — numbering is only stable within one
+        # list -> act pair (a new match finishing between the two calls
+        # shifts everyone's index since packs are sorted newest-first).
+        self._qlmatch_list_cache = rows
+        suffix = " matching '{}'".format(filter_substr) if filter_substr else ""
+        if not rows:
+            self._reply(
+                player, channel,
+                "^3restorecp qlmatch list^7: no .qlmatch packs found in {}{}".format(demo_dir, suffix),
+            )
+            return minqlx.Return.STOP_ALL
+        self._reply(player, channel, "^2restorecp qlmatch list^7: {} pack(s){}".format(len(rows), suffix))
+        for row in rows[:20]:
+            self._reply(
+                player, channel,
+                "  ^3{}^7. {} map={} players={}".format(
+                    row["index"], row["match_id"], row["map"] or "?",
+                    ",".join(row["players"][:8]) or "?",
+                ),
+            )
+        if len(rows) > 20:
+            self._reply(player, channel, "  ^7... and {} more (narrow with a filter)".format(len(rows) - 20))
+        return minqlx.Return.STOP_ALL
+
+    def _cmd_restorecp_qlmatch_apply(self, player, channel, tail):
+        if len(tail) < 2:
+            self._reply(
+                player, channel,
+                "^1restorecp qlmatch^7: usage ^3<N> <mm:ss>^7 (run ^3restorecp qlmatch list^7 first)",
+            )
+            return minqlx.Return.STOP_ALL
+        pack = restore_qlmatch.resolve_pack_by_index(self._qlmatch_list_cache, tail[0])
+        if pack is None:
+            self._reply(
+                player, channel,
+                "^1restorecp qlmatch^7: no pack #{} in the last list — run ^3restorecp qlmatch list^7 again".format(
+                    tail[0]
+                ),
+            )
+            return minqlx.Return.STOP_ALL
+        try:
+            target_ms = restore_qlmatch.parse_clock_to_ms(tail[1])
+        except ValueError as exc:
+            self._reply(player, channel, "^1restorecp qlmatch^7: {}".format(exc))
+            return minqlx.Return.STOP_ALL
+
+        map_key = self._map_key()
+        pack_map_key = normalize_map_key(pack["map"])
+        if map_key and pack_map_key and pack_map_key != map_key:
+            self._reply(
+                player, channel,
+                "^1restorecp qlmatch^7: need map ^3{}^7 (server ^3{}^7). ^2map {}^7 first.".format(
+                    pack["map"], map_key, pack["map"]
+                ),
+            )
+            return minqlx.Return.STOP_ALL
+
+        demo_dir = self._qlmatch_demo_dir()
+        if not demo_dir:
+            self._reply(player, channel, "^1restorecp qlmatch^7: fs_homepath cvar empty, cannot locate demo dir")
+            return minqlx.Return.STOP_ALL
+        sidecar_path = restore_qlmatch.sidecar_path_for(demo_dir, pack["match_id"], pack["map"])
+        if not os.path.isfile(sidecar_path):
+            self._reply(
+                player, channel,
+                "^1restorecp qlmatch^7: no replay sidecar for {} ({}) — {} does not exist yet "
+                "(the .qlmatch replay/merge step has not produced it for this pack)".format(
+                    pack["match_id"], pack["map"], os.path.basename(sidecar_path)
+                ),
+            )
+            return minqlx.Return.STOP_ALL
+        try:
+            sidecar = restore_qlmatch.load_sidecar(sidecar_path)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._reply(player, channel, "^1restorecp qlmatch^7: could not read sidecar: {}".format(exc))
+            return minqlx.Return.STOP_ALL
+
+        try:
+            doc, warning, snap_t = restore_qlmatch.build_checkpoint_doc(
+                sidecar, target_ms, self._map_spawns_table(), map_key or pack_map_key, time.time(),
+            )
+            cp = canonicalize(doc)
+        except (ValueError, KeyError, TypeError) as exc:
+            self._reply(player, channel, "^1restorecp qlmatch^7: {}".format(exc))
+            return minqlx.Return.STOP_ALL
+
+        gen_version = (sidecar.get("meta") or {}).get("generator_version")
+        self._reply(
+            player, channel,
+            "^2restorecp qlmatch^7: {} map={} t={}ms (snapshot t={}ms) gen={} — {} players, {} items".format(
+                pack["match_id"], pack["map"], target_ms, snap_t, gen_version or "?",
+                len(cp.get("players") or []), len(cp.get("items") or []),
+            ),
+        )
+        if warning:
+            self._reply(player, channel, warning)
+
+        ok, detail = self._apply_checkpoint(player, cp)
+        if ok:
+            self._reply(player, channel, "^2restorecp qlmatch OK^7: {}".format(detail))
+        else:
+            self._reply(player, channel, "^1restorecp qlmatch failed^7: {}".format(detail))
         return minqlx.Return.STOP_ALL
 
     def _reset_restorecp_draft(self):
