@@ -21,10 +21,29 @@
 # - this file stays a thin wrapper: parse hook args, track match/player
 # metadata minqlx already gives cheap access to, call into that module.
 #
+# Packaging itself is delegated to the external qlmatch-packer
+# (ql-assets/data/qlmatch-packer/, deployed to /home/ql/qlmatch-packer/ by
+# ansible), launched here as a SEPARATE process per finished match — it adds
+# filename templating and rclone delivery, and keeps the zip/parse work out
+# of the QLDS process entirely, per the .qlmatch contract's "separate
+# process / worker, never on the QLDS frame" requirement. When the packer or
+# node is missing on the host, the old in-process zip build
+# (demo_native_manifest.build_match_package) still runs as a fallback so a
+# match never silently loses its .qlmatch.
+#
 # CVARs:
 #   qlx_nativeDemoRecordEnabled  "0"  - opt-in per instance
+#   qlx_qlmatchNameTemplate      ""   - output name template, no extension
+#                                       (placeholders: see qlmatch-packer
+#                                       README; empty = {match_id}_{map})
+#   qlx_qlmatchRcloneTargets     ""   - comma-separated rclone destinations
+#                                       for the finished .qlmatch (empty =
+#                                       no delivery, file stays local only)
+#   qlx_qlmatchPackerPath        "/home/ql/qlmatch-packer/pack.mjs"
 
 import os
+import shutil
+import subprocess
 import time
 
 try:
@@ -33,14 +52,23 @@ except ImportError:
     import minqlx
 
 try:
-    from demo_native_manifest import build_match_package
+    from demo_native_manifest import QLMATCH_PACKER_SCRIPT, build_match_package, packer_command
 except ImportError:
-    from .demo_native_manifest import build_match_package
+    from .demo_native_manifest import QLMATCH_PACKER_SCRIPT, build_match_package, packer_command
+
+# One packer run covers parsing N POVs + zipping + rclone uploads; the
+# packer's own internal rclone timeout is 10 min per target, so give the
+# whole run comfortably more before declaring it hung. This wait happens on
+# the @minqlx.thread worker below, never on the game thread.
+PACKER_TIMEOUT_SEC = 30 * 60
 
 
 class demo_native_autorecord(minqlx.Plugin):
     def __init__(self):
         self.set_cvar_once("qlx_nativeDemoRecordEnabled", "0")
+        self.set_cvar_once("qlx_qlmatchNameTemplate", "")
+        self.set_cvar_once("qlx_qlmatchRcloneTargets", "")
+        self.set_cvar_once("qlx_qlmatchPackerPath", QLMATCH_PACKER_SCRIPT)
 
         self.add_hook("game_countdown", self.on_game_countdown, priority=minqlx.Priority.LOWEST)
         self.add_hook("game_end", self.on_game_end, priority=minqlx.Priority.LOWEST)
@@ -186,12 +214,17 @@ class demo_native_autorecord(minqlx.Plugin):
     # 5's report), so this Python handler runs synchronously on minqlx's
     # dispatch of that event, off the game thread already. It still must
     # not block whatever's calling it (the finalize thread has its own
-    # work to get back to), so the actual glob/read-N-files/zip work is
+    # work to get back to), so the actual work - spawning + waiting on the
+    # external packer process, or the fallback glob/read-N-files/zip - is
     # offloaded again, one more hop, via @minqlx.thread - the same
     # established pattern this codebase already uses for I/O-bound plugin
     # work (see demo_hook_autorecord.py's own _post()).
     @minqlx.thread
     def _build_package(self, demo_dir, match_id, map_name, names_by_path):
+        if self._run_external_packer(demo_dir, match_id, map_name):
+            return
+        # Fallback: the old in-process zip build (no templating/delivery),
+        # so a host without the deployed packer still gets its .qlmatch.
         try:
             manifest, zip_path, ordered = build_match_package(demo_dir, match_id, map_name, names_by_path)
         except Exception as exc:
@@ -207,3 +240,66 @@ class demo_native_autorecord(minqlx.Plugin):
             "demo_native_autorecord: wrote %s (%d POV(s), window %s)",
             zip_path, len(ordered), manifest["window"],
         )
+
+    def _run_external_packer(self, demo_dir, match_id, map_name):
+        """Runs the external qlmatch-packer as a separate process. Returns
+        True when the packer was actually launched (whatever its outcome -
+        the packer owns pack/deliver error handling and its exit code is
+        logged here); False only when it isn't runnable on this host and the
+        caller should use the in-process fallback. Only ever called from the
+        @minqlx.thread worker above, never on the game thread."""
+        packer = (self.get_cvar("qlx_qlmatchPackerPath") or "").strip()
+        if not packer or not os.path.isfile(packer):
+            self.logger.warning(
+                "demo_native_autorecord: qlmatch-packer not found at %r, using in-process fallback build",
+                packer)
+            return False
+        node = shutil.which("node")
+        if not node:
+            self.logger.warning(
+                "demo_native_autorecord: node not in PATH, using in-process fallback build")
+            return False
+
+        cmd = packer_command(
+            node, packer, demo_dir, match_id, map_name,
+            name_template=(self.get_cvar("qlx_qlmatchNameTemplate") or "").strip(),
+            rclone_targets=(self.get_cvar("qlx_qlmatchRcloneTargets") or "").strip(),
+        )
+        log_path = os.path.join(demo_dir, "%s.packer.log" % match_id)
+        try:
+            # subprocess.run waits AND reaps (kills on timeout, then reaps);
+            # stdout/stderr go to a per-match log file next to the demos so
+            # a bad pack/delivery is inspectable after the fact.
+            with open(log_path, "ab") as log_fh:
+                result = subprocess.run(cmd, stdout=log_fh, stderr=subprocess.STDOUT,
+                                        timeout=PACKER_TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            self.logger.warning(
+                "demo_native_autorecord: qlmatch-packer timed out after %ds for match %s (log: %s)",
+                PACKER_TIMEOUT_SEC, match_id, log_path)
+            return True
+        except OSError as exc:
+            self.logger.warning(
+                "demo_native_autorecord: could not launch qlmatch-packer (%s), using in-process fallback build",
+                exc)
+            return False
+
+        # Packer exit codes (see qlmatch-packer/pack.mjs header): 0 ok,
+        # 2 window validation failed (no zip, BY CONTRACT - never fall back
+        # to building a desynced pack in-process), 3 no POV files, 4 pack ok
+        # but >=1 rclone delivery failed, 5 usage/IO error - only that last
+        # one means the packer never really ran, so only it falls back.
+        if result.returncode == 0:
+            self.logger.info(
+                "demo_native_autorecord: qlmatch-packer finished for match %s (log: %s)",
+                match_id, log_path)
+        elif result.returncode == 5:
+            self.logger.warning(
+                "demo_native_autorecord: qlmatch-packer exited 5 (usage/IO) for match %s "
+                "(log: %s), using in-process fallback build", match_id, log_path)
+            return False
+        else:
+            self.logger.warning(
+                "demo_native_autorecord: qlmatch-packer exited %d for match %s (log: %s)",
+                result.returncode, match_id, log_path)
+        return True

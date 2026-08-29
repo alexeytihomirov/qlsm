@@ -516,6 +516,10 @@
   #######################################################################
     - ansible.builtin.import_tasks: tasks/sync_common_plugins.yml
 
+    # External .qlmatch packer + Node runtime (launched per finished match
+    # by demo_native_autorecord.py; see the task file's header).
+    - ansible.builtin.import_tasks: tasks/sync_qlmatch_packer.yml
+
   #######################################################################
   # 6a. Configure Redis Unix Socket
   #######################################################################
