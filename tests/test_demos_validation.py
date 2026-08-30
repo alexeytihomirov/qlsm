@@ -1,18 +1,18 @@
 """Validation tests for the demo-listing and demo-download endpoints.
 
 Guards GET /api/instances/<id>/demos: missing instance/host state is
-classified before any Ansible execution, a successful list is returned
-sorted newest-first, and malformed ansible output degrades to an empty list
-rather than a 500. Also guards GET .../demos/download and
-POST .../demos/download-batch: filename validation happens before any
-Ansible execution, and a missing file is a 404, not a 500.
+classified before any SFTP session is opened, a successful list is returned
+sorted newest-first, and a missing demos/ directory degrades to an empty
+list rather than a 500. Also guards GET .../demos/download and
+POST .../demos/download-batch: filename validation happens before any SFTP
+session is opened, and a missing file is a 404, not a 500.
 """
 import io
-import json
-import os
+import stat
 import zipfile
 from unittest.mock import MagicMock, patch
 
+import paramiko
 from flask_jwt_extended import create_access_token
 
 from ui import db
@@ -50,6 +50,28 @@ def _headers(token):
 
 def _get_demos(client, instance_id, token):
     return client.get(f'/api/instances/{instance_id}/demos', headers=_headers(token))
+
+
+def _fake_host():
+    return MagicMock(
+        name='demo-host', ssh_key_path='/fake/key', ssh_user='ansible',
+        ssh_port=22, ip_address='10.0.0.1', provider='vultr',
+    )
+
+
+def _attr(name, size, mtime, is_dir=False):
+    entry = paramiko.SFTPAttributes()
+    entry.filename = name
+    entry.st_size = size
+    entry.st_mtime = mtime
+    entry.st_mode = (stat.S_IFDIR if is_dir else stat.S_IFREG) | 0o644
+    return entry
+
+
+def _mock_ssh_client(sftp):
+    client = MagicMock()
+    client.open_sftp.return_value = sftp
+    return client
 
 
 def test_missing_instance_returns_404_before_task_logic(client, app):
@@ -91,30 +113,43 @@ def test_list_failure_returns_500(mock_list, client, app):
 
 def test_list_unexpected_exception_returns_generic_error():
     from ui.task_logic.ansible_instance_demos import list_instance_demos
-    with patch(f'{FETCH_MODULE}._resolve_instance', side_effect=OSError('boom')):
+    with patch(f'{FETCH_MODULE}._resolve_instance', side_effect=RuntimeError('boom')):
         success, demos, error = list_instance_demos(1)
     assert success is False
     assert demos == []
     assert error == "Failed to list demos."
 
 
+def test_list_missing_directory_returns_empty_list_not_error():
+    from ui.task_logic.ansible_instance_demos import list_instance_demos
+
+    sftp = MagicMock()
+    sftp.listdir_attr.side_effect = FileNotFoundError()
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, demos, error = list_instance_demos(1)
+
+    assert success is True
+    assert demos == []
+    assert error is None
+
+
 def test_list_sorts_newest_first_and_drops_malformed_entries():
     from ui.task_logic.ansible_instance_demos import list_instance_demos
 
-    process = MagicMock()
-    process.communicate.return_value = (
-        'ok: [host] => {\n    "msg": '
-        '"[{\\"name\\": \\"old.dm_91\\", \\"size\\": 10, \\"mtime\\": 1.0}, '
-        '{\\"name\\": \\"new.dm_91\\", \\"size\\": 20, \\"mtime\\": 2.0}, '
-        '\\"not-a-dict\\"]"\n}\n',
-        '',
-    )
-    process.returncode = 0
+    sftp = MagicMock()
+    sftp.listdir_attr.return_value = [
+        _attr('old.dm_91', 10, 1.0),
+        _attr('new.dm_91', 20, 2.0),
+        _attr('some-dir', 0, 3.0, is_dir=True),
+        _attr('not-a-demo.txt', 5, 4.0),
+    ]
 
     with patch(f'{FETCH_MODULE}._resolve_instance',
-               return_value=(MagicMock(port=27960), MagicMock(
-                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
-         patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=process):
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
         success, demos, error = list_instance_demos(1)
 
     assert success is True
@@ -122,35 +157,46 @@ def test_list_sorts_newest_first_and_drops_malformed_entries():
     assert [d['name'] for d in demos] == ['new.dm_91', 'old.dm_91']
 
 
-def test_list_keeps_qlmatch_entries_alongside_dm91():
+def test_list_keeps_qlmatch_and_replay_sidecar_entries_alongside_dm91():
     # native-demo's build_match_package() ships "{match_id}_{map}.qlmatch"
-    # next to the per-POV .dm_91 files in the same demos/ directory - the
-    # listing must not drop it.
+    # next to the per-POV .dm_91 files, and qlmatch-packer additionally
+    # drops "{match_id}_{map}.replay.json.gz" in the same demos/ directory -
+    # the listing must not drop either.
     from ui.task_logic.ansible_instance_demos import list_instance_demos
 
-    process = MagicMock()
-    process.communicate.return_value = (
-        'ok: [host] => {\n    "msg": '
-        '"[{\\"name\\": \\"20260827T170920Z_phrantic_p0_a3_1_1.dm_91\\", '
-        '\\"size\\": 10, \\"mtime\\": 1.0}, '
-        '{\\"name\\": \\"20260827T170920Z_phrantic.qlmatch\\", '
-        '\\"size\\": 20, \\"mtime\\": 2.0}]"\n}\n',
-        '',
-    )
-    process.returncode = 0
+    sftp = MagicMock()
+    sftp.listdir_attr.return_value = [
+        _attr('20260827T170920Z_phrantic_p0_a3_1_1.dm_91', 10, 1.0),
+        _attr('20260827T170920Z_phrantic.qlmatch', 20, 2.0),
+        _attr('20260827T170920Z_phrantic.replay.json.gz', 30, 3.0),
+    ]
 
     with patch(f'{FETCH_MODULE}._resolve_instance',
-               return_value=(MagicMock(port=27960), MagicMock(
-                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
-         patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=process):
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
         success, demos, error = list_instance_demos(1)
 
     assert success is True
     assert error is None
     assert [d['name'] for d in demos] == [
+        '20260827T170920Z_phrantic.replay.json.gz',
         '20260827T170920Z_phrantic.qlmatch',
         '20260827T170920Z_phrantic_p0_a3_1_1.dm_91',
     ]
+
+
+def test_list_ssh_failure_returns_error_not_exception():
+    from ui.task_logic.ansible_instance_demos import list_instance_demos
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
+        mock_cls.return_value.connect.side_effect = paramiko.SSHException('unreachable')
+        success, demos, error = list_instance_demos(1)
+
+    assert success is False
+    assert demos == []
+    assert error == "Failed to list demos from remote host."
 
 
 def _get_download(client, instance_id, token, filename):
@@ -266,58 +312,48 @@ def test_batch_failure_returns_500(mock_fetch, client, app):
 
 
 # Direct coverage of fetch_instance_demos itself: filename validation must
-# reject before ever constructing an ansible-playbook command.
+# reject before ever opening an SFTP session.
 
 
-def test_fetch_rejects_empty_filenames_without_touching_subprocess():
+def test_fetch_rejects_empty_filenames_without_touching_ssh():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
-    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+    with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(1, [])
     assert success is False
     assert files == {}
     assert 'non-empty list' in error
-    mock_popen.assert_not_called()
+    mock_cls.assert_not_called()
 
 
-def test_fetch_rejects_invalid_filename_without_touching_subprocess():
+def test_fetch_rejects_invalid_filename_without_touching_ssh():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
-    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+    with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(1, ['../../../etc/passwd'])
     assert success is False
     assert files == {}
     assert 'Invalid demo filename' in error
-    mock_popen.assert_not_called()
+    mock_cls.assert_not_called()
 
 
-def test_fetch_rejects_non_demo_extension_without_touching_subprocess():
+def test_fetch_rejects_non_demo_extension_without_touching_ssh():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
-    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+    with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(1, ['a.zip'])
     assert success is False
     assert files == {}
     assert 'Invalid demo filename' in error
-    mock_popen.assert_not_called()
+    mock_cls.assert_not_called()
 
 
 def test_fetch_accepts_qlmatch_filename():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
 
-    process = MagicMock()
-    process.communicate.return_value = ('', '')
-    process.returncode = 0
-
-    def fake_popen(cmd, **kwargs):
-        extravars_json = cmd[cmd.index('-e') + 1]
-        extravars = json.loads(extravars_json)
-        local_dir = extravars['local_dir']
-        with open(os.path.join(local_dir, 'match.qlmatch'), 'wb') as fh:
-            fh.write(b'zip-bytes')
-        return process
+    sftp = MagicMock()
+    sftp.open.return_value.__enter__.return_value.read.return_value = b'zip-bytes'
 
     with patch(f'{FETCH_MODULE}._resolve_instance',
-               return_value=(MagicMock(port=27960), MagicMock(
-                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
-         patch(f'{FETCH_MODULE}.subprocess.Popen', side_effect=fake_popen):
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
         success, files, missing, error = fetch_instance_demos(1, ['match.qlmatch'])
 
     assert success is True
@@ -326,63 +362,69 @@ def test_fetch_accepts_qlmatch_filename():
     assert missing == []
 
 
-def test_fetch_rejects_batch_over_limit_without_touching_subprocess():
+def test_fetch_accepts_replay_sidecar_filename():
+    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+
+    sftp = MagicMock()
+    sftp.open.return_value.__enter__.return_value.read.return_value = b'gz-bytes'
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, files, missing, error = fetch_instance_demos(1, ['match_map.replay.json.gz'])
+
+    assert success is True
+    assert error is None
+    assert files == {'match_map.replay.json.gz': b'gz-bytes'}
+    assert missing == []
+
+
+def test_fetch_rejects_batch_over_limit_without_touching_ssh():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos, MAX_DEMO_BATCH
-    with patch(f'{FETCH_MODULE}.subprocess.Popen') as mock_popen:
+    with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(
             1, [f'{i}.dm_91' for i in range(MAX_DEMO_BATCH + 1)])
     assert success is False
     assert files == {}
     assert 'Cannot fetch more than' in error
-    mock_popen.assert_not_called()
+    mock_cls.assert_not_called()
 
 
-def test_fetch_dedupes_filenames_before_running_ansible():
+def test_fetch_dedupes_filenames_before_running_sftp():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
 
-    process = MagicMock()
-    process.communicate.return_value = ('', '')
-    process.returncode = 0
-
-    captured = {}
-
-    def fake_popen(cmd, **kwargs):
-        captured['cmd'] = cmd
-        return process
+    sftp = MagicMock()
+    sftp.open.return_value.__enter__.return_value.read.return_value = b'hello'
 
     with patch(f'{FETCH_MODULE}._resolve_instance',
-               return_value=(MagicMock(port=27960), MagicMock(
-                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
-         patch(f'{FETCH_MODULE}.subprocess.Popen', side_effect=fake_popen):
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
         success, files, missing, error = fetch_instance_demos(1, ['a.dm_91', 'a.dm_91'])
 
     assert success is True
     assert error is None
-    assert missing == ['a.dm_91']  # nothing was actually written to local_dir by the mock
-    extravars_json = captured['cmd'][captured['cmd'].index('-e') + 1]
-    assert '"a.dm_91"' in extravars_json
-    assert extravars_json.count('a.dm_91') == 1
+    assert files == {'a.dm_91': b'hello'}
+    assert missing == []
+    sftp.open.assert_called_once()
 
 
 def test_fetch_returns_bytes_for_found_files_and_lists_missing():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
 
-    process = MagicMock()
-    process.communicate.return_value = ('', '')
-    process.returncode = 0
+    def fake_open(path, mode):
+        cm = MagicMock()
+        if path.endswith('a.dm_91'):
+            cm.__enter__.return_value.read.return_value = b'hello'
+        else:
+            raise FileNotFoundError()
+        return cm
 
-    def fake_popen(cmd, **kwargs):
-        extravars_json = cmd[cmd.index('-e') + 1]
-        extravars = json.loads(extravars_json)
-        local_dir = extravars['local_dir']
-        with open(os.path.join(local_dir, 'a.dm_91'), 'wb') as fh:
-            fh.write(b'hello')
-        return process
+    sftp = MagicMock()
+    sftp.open.side_effect = fake_open
 
     with patch(f'{FETCH_MODULE}._resolve_instance',
-               return_value=(MagicMock(port=27960), MagicMock(
-                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
-         patch(f'{FETCH_MODULE}.subprocess.Popen', side_effect=fake_popen):
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
         success, files, missing, error = fetch_instance_demos(1, ['a.dm_91', 'b.dm_91'])
 
     assert success is True
@@ -391,18 +433,15 @@ def test_fetch_returns_bytes_for_found_files_and_lists_missing():
     assert missing == ['b.dm_91']
 
 
-def test_fetch_surfaces_nonzero_rc_as_error_not_fake_success():
+def test_fetch_ssh_failure_returns_error_not_exception():
     from ui.task_logic.ansible_instance_demos import fetch_instance_demos
 
-    process = MagicMock()
-    process.communicate.return_value = ('', 'boom stderr')
-    process.returncode = 2
-
     with patch(f'{FETCH_MODULE}._resolve_instance',
-               return_value=(MagicMock(port=27960), MagicMock(
-                   ssh_key_path='/fake/key', ssh_user='ansible', ip_address='10.0.0.1'), None)), \
-         patch(f'{FETCH_MODULE}.subprocess.Popen', return_value=process):
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
+        mock_cls.return_value.connect.side_effect = paramiko.AuthenticationException('nope')
         success, files, missing, error = fetch_instance_demos(1, ['a.dm_91'])
 
     assert success is False
-    assert 'RC: 2' in error
+    assert files == {}
+    assert error == "Failed to fetch demos from remote host."

@@ -5,12 +5,12 @@ import { listInstanceDemos, downloadInstanceDemo, downloadInstanceDemosBatch } f
 
 /**
  * Modal for viewing server-side demo files (.dm_91, plus .qlmatch - the
- * native-demo addon's zipped multi-POV match package) recorded by
- * minqlxtended on the remote QLDS instance. Ground truth is the demos/
- * directory on disk (fs_homepath/sv_demoDir) fetched over the same
- * ansible-playbook find pattern used by the MinQLX/server log listers, so
- * the result reflects what the engine actually wrote, not what a plugin or
- * cvar claims.
+ * native-demo addon's zipped multi-POV match package - and its
+ * .replay.json.gz merged-replay sidecar) recorded by minqlxtended on the
+ * remote QLDS instance. Ground truth is the demos/ directory on disk
+ * (fs_homepath/sv_demoDir) fetched directly over SFTP, so the result
+ * reflects what the engine actually wrote, not what a plugin or cvar
+ * claims.
  */
 
 function formatBytes(bytes) {
@@ -264,10 +264,10 @@ function ViewDemosModal({ isOpen, onClose, instance }) {
                                     <FolderOpen className="h-10 w-10 mb-4 text-theme-muted" strokeWidth={2} />
                                     <p className="font-display text-base font-bold uppercase tracking-wide text-theme-primary">No demos found</p>
                                     <p className="text-sm text-theme-secondary mt-2 max-w-md text-center">
-                                        No .dm_91, .qlmatch or .packer.log files in this instance's demos/ directory. Recording
-                                        needs sv_demoRecord or qlx_nativeDemoRecordEnabled set, and a match to arm
-                                        the capture — check View MinQLX Logs / View Server Logs for "demo:" lines
-                                        after a manual test.
+                                        No .dm_91, .qlmatch, .packer.log or .replay.json.gz files in this instance's demos/
+                                        directory. Recording needs sv_demoRecord or qlx_nativeDemoRecordEnabled set, and a
+                                        match to arm the capture — check View MinQLX Logs / View Server Logs for "demo:"
+                                        lines after a manual test.
                                     </p>
                                 </div>
                             ) : filteredDemos.length === 0 ? (
