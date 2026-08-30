@@ -324,6 +324,43 @@ class SnapshotAndCheckpointTests(unittest.TestCase):
         self.assertIn("am", row)
         self.assertEqual(row["am"], {"rl": 10, "lg": 60})  # bfg not an AMMO_KEYS entry -> dropped
 
+    def test_inventory_bitmask_and_ammo_array_shapes_from_packer_sidecar(self):
+        # The shapes qlmatch-to-replay.mjs actually writes: `weapons` is the
+        # raw STAT_WEAPONS bitmask (bit i = dm_91 weapon index i, which is
+        # bit-identical to codec.WEAPON_ORDER's loadout mask) and `ammo` is
+        # the ps.ammo array indexed by the same weapon indices, where 65535
+        # is the unsigned view of -1 (infinite, e.g. gauntlet).
+        weapons_mask = (1 << 1) | (1 << 2) | (1 << 5)  # g + mg + rl
+        ammo = [0] * 16
+        ammo[1] = 65535  # gauntlet: infinite -> dropped
+        ammo[2] = 100    # mg
+        ammo[5] = 25     # rl
+        events = [
+            {
+                "event": "positions", "game_time_ms": 0,
+                "players": [
+                    {
+                        "clientNum": 0, "x": 0.0, "y": 0.0, "z": 0.0,
+                        "health": 100, "armor": 50,
+                        "weapons": weapons_mask,
+                        "ammo": ammo,
+                    },
+                ],
+            },
+        ]
+        sidecar = {"meta": {"generator_version": 1}, "events": events}
+        doc, _warning, _snap_t = qlmatch.build_checkpoint_doc(
+            sidecar, 0, {}, "bloodrun", wall_now=1000.0,
+        )
+        row = doc["players"][0]
+        self.assertEqual(row["lo"], weapons_mask)
+        # Zeros are kept on purpose: an owned weapon shot dry must restore to
+        # 0, not to whatever the live player happens to carry.
+        self.assertEqual(
+            row["am"],
+            {"mg": 100, "rl": 25, "sg": 0, "gl": 0, "lg": 0, "rg": 0, "pg": 0, "cg": 0},
+        )
+
     def test_raises_when_no_snapshot_before_target(self):
         sidecar = {"meta": {}, "events": self._events()}
         with self.assertRaises(ValueError):

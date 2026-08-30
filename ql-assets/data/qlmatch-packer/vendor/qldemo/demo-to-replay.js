@@ -1,4 +1,14 @@
-import { ET_ITEM, ET_MISSILE, ET_PLAYER, MAX_CLIENTS, STAT_ARMOR, STAT_HEALTH, TEAM_SPECTATOR } from "./constants.js";
+import {
+  ET_ITEM,
+  ET_MISSILE,
+  ET_PLAYER,
+  MAX_CLIENTS,
+  STAT_ARMOR,
+  STAT_HEALTH,
+  STAT_HOLDABLE_ITEM,
+  STAT_WEAPONS,
+  TEAM_SPECTATOR,
+} from "./constants.js";
 import {
   EF_DEAD,
   EF_FIRING,
@@ -538,6 +548,12 @@ function playerRowFromPs(ps, rosterByClient, serverTime, clientNum, lastVitals, 
   row.yaw = yawFromViewangles(ps.viewangles);
   row = withCarriedVitals(row, clientNum, lastVitals, ps);
   if (poseState) row = applyPovDeathFreeze(row, clientNum, ps, poseState);
+  // Only ever available for the recording player's own playerState (chase-cam
+  // entities never carry ammo/stats) - future !restorecp qlmatch needs this
+  // instead of guessing inventory from pickup history.
+  row.ammo = ps.ammo ? ps.ammo.slice() : undefined;
+  row.weapons = ps.stats?.[STAT_WEAPONS];
+  row.holdable = ps.stats?.[STAT_HOLDABLE_ITEM] || undefined;
   return row;
 }
 
@@ -548,7 +564,12 @@ function playerRowFromPs(ps, rosterByClient, serverTime, clientNum, lastVitals, 
 export function demoToReplay(parser, options = {}) {
   const map = normalizeMapKey(parser.mapName());
   const rosterByClient = parser.gamestate.players;
-  const povClientNum = parser.gamestate.clientNum ?? options.povClientNum ?? null;
+  // options.povClientNum wins when the caller already resolved the correct
+  // live identity (e.g. match-to-replay.js via identity.js's
+  // liveClientNumFromParser) - parser.gamestate.clientNum can still be a
+  // leftover previous occupant's slot for a recorder-slot file with a
+  // mid-file serverTime reset (see match-set.js).
+  const povClientNum = options.povClientNum ?? parser.gamestate.clientNum ?? null;
   const mapTable = options.mapTable ?? loadMapPickupTable(map);
   const includePickups = options.includePickups !== false;
   const rosterSet = new Set(
@@ -734,8 +755,10 @@ export function demoToReplay(parser, options = {}) {
         t: wallT,
         event: "death",
         game_time_ms: gameTimeMs,
+        victim_clientNum: death.victim_clientNum,
         victim_name: death.victim_name,
         victim_steam_id64: death.victim_steam_id64,
+        killer_clientNum: death.killer_clientNum,
         killer_name: death.killer_name,
         killer_steam_id64: death.killer_steam_id64,
         weapon: death.weapon_slug,
@@ -808,6 +831,9 @@ export function demoToReplay(parser, options = {}) {
           vz: p.vz,
           powerups: p.powerups,
           alive: p.alive !== false,
+          ammo: p.ammo,
+          weapons: p.weapons,
+          holdable: p.holdable,
         })),
       });
     }

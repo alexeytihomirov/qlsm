@@ -1,0 +1,550 @@
+// Merges N per-POV .dm_91 demos from one .qlmatch pack into a single
+// deduplicated replay-v2 feed ({ meta, events }), the same schema
+// demoToReplay() produces for a single demo. Consumed identically downstream
+// by replayForOverlay()/archiveFromDemoReplay() - see
+// docs/superpowers/specs/2026-08-29-qlmatch-unified-replay-feed-research.md
+// for why this merges at the replay-event level (reusing demoToReplay's own
+// per-POV vitals/item-tracker/LG-beam logic, which already can't be shared
+// meaningfully across POVs) instead of UDT-merging the raw .dm_91 files
+// (rejected: no cross-POV vitals, "corpses win" over live players, item
+// pickups never merged - see the research doc section 6).
+
+import { QLDemoParser } from "./demo-parser.js?v=20260712b";
+import { demoToReplay } from "./demo-to-replay.js?v=20260829a";
+import { liveClientNumFromParser, liveSnapRange } from "./identity.js?v=20260829a";
+import { loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260712b";
+import { unpackQlMatch } from "./qlmatch-pack.js?v=20260829a";
+
+/** Bump when the merge algorithm changes so a stale sidecar can be detected and regenerated. */
+export const MATCH_REPLAY_GENERATOR_VERSION = 1;
+
+// All POVs of one match sit on the same 25 ms server snapshot grid (sv_fps
+// 40) - see research doc section 4.
+const GAME_TICK_MS = 25;
+// A player's own-POV position row is carried forward across small recording
+// gaps (segment boundary, brief packet loss) but dropped once stale, so a POV
+// that stops recording (disconnect, outlier POV trimmed early) doesn't leave
+// a zombie player frozen on the map for the rest of the merged replay.
+const POSITION_STALE_MS = 500;
+const DEATH_WINDOW_MS = 50;
+const PICKUP_WINDOW_MS = 2000;
+const IMPACT_WINDOW_MS = 60;
+// Impact/beam positions differ slightly per POV (aim-synthesized LG beam,
+// extrapolated entity position) - round to a coarse grid before keying so
+// near-identical observations of the same event still dedup.
+const IMPACT_POS_GRID = 48;
+const PROJECTILE_STALE_MS = 200;
+
+function roundToGrid(ms, grid = GAME_TICK_MS) {
+  return Math.round(ms / grid) * grid;
+}
+
+function median(nums) {
+  const s = nums.filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  if (!s.length) return null;
+  return s[Math.floor(s.length / 2)];
+}
+
+function itemKey(classname, x, y, z) {
+  return classname + "@" + Math.round(x) + "," + Math.round(y) + "," + Math.round(z);
+}
+
+function posGridKey(x, y, z, grid = IMPACT_POS_GRID) {
+  return Math.round(x / grid) + "," + Math.round(y / grid) + "," + Math.round(z / grid);
+}
+
+/** Parse every POV .dm_91 in a .qlmatch buffer with the canonical parser. */
+export async function parsePovsFromQlMatch(bytesLike) {
+  const pack = await unpackQlMatch(bytesLike);
+  const povs = pack.demos.map((d) => {
+    const parser = new QLDemoParser(d.bytes);
+    parser.parseAll();
+    // Filename pov_index/client_num and the file's own (possibly leftover)
+    // gamestate.clientNum are not reliable player identity - same reasoning
+    // as demo-editor/lib/match-set.js's povFromParser().
+    const clientNum = liveClientNumFromParser(parser);
+    // The pack's .dm_91 bytes can still carry a leftover-occupant prefix even
+    // when the manifest/index metadata itself was already trimmed (seen on
+    // the real 8-POV OVERKILL sample: 5 of 8 POVs have a raw first snapshot
+    // *after* their raw last snapshot - a previous recorder-slot occupant).
+    // parser.snapshots[0].serverTime is not safe to use as this POV's
+    // recording start; liveSnapRange's reset-aware first live snapshot is.
+    const liveRange = liveSnapRange(d.index, parser);
+    return {
+      fileName: d.fileName,
+      name: d.name,
+      povIndex: d.povIndex,
+      clientNum,
+      liveFirstServerTime: liveRange.first,
+      parser,
+    };
+  });
+  return { pack, povs };
+}
+
+/** povs: [{ clientNum, parser, fileName? }] already-parsed QLDemoParser instances. */
+export function matchPovsToReplay(povs, options = {}) {
+  if (!povs || !povs.length) throw new Error("matchPovsToReplay: no POVs");
+  const map = normalizeMapKey(options.mapOverride || povs[0].parser.mapName());
+  const mapTable = options.mapTable ?? loadMapPickupTable(map);
+  const povReplays = povs.map((p) => ({
+    clientNum: p.clientNum,
+    fileName: p.fileName,
+    liveFirstServerTime: p.liveFirstServerTime,
+    replay: demoToReplay(p.parser, { mapTable, povClientNum: p.clientNum, includePickups: true }),
+  }));
+  return mergeReplays(povReplays);
+}
+
+export async function matchBufferToReplay(bytesLike, options = {}) {
+  const { povs } = await parsePovsFromQlMatch(bytesLike);
+  return matchPovsToReplay(povs, options);
+}
+
+/**
+ * Memory-lean variant of matchBufferToReplay for Node CLIs: POVs are parsed
+ * and folded into per-POV replays ONE AT A TIME, each parser's decoded
+ * snapshot list released before the next demo is opened. parseAll() of a
+ * full match holds every decoded snapshot (hundreds of MB per POV), so
+ * parsing all N POVs of an 8-player pack at once - what
+ * parsePovsFromQlMatch does - blows Node's default ~4 GB heap; per-POV
+ * replays are tiny by comparison. Output is identical to
+ * matchPovsToReplay on the same pack (same per-POV inputs to
+ * mergeReplays, in the same order).
+ * options.loadMapTable(mapKey) lets a Node caller supply the pickup table
+ * lazily once the first POV reveals the map name (see
+ * map-item-resolve.node.js's loadMapPickupTableFromDisk).
+ */
+export async function matchBufferToReplaySequential(bytesLike, options = {}) {
+  const pack = await unpackQlMatch(bytesLike);
+  let mapTable = options.mapTable;
+  const povReplays = [];
+  for (const d of pack.demos) {
+    let parser = new QLDemoParser(d.bytes);
+    parser.parseAll();
+    if (mapTable == null) {
+      const map = normalizeMapKey(options.mapOverride || parser.mapName());
+      mapTable = options.loadMapTable ? options.loadMapTable(map) : loadMapPickupTable(map);
+    }
+    const clientNum = liveClientNumFromParser(parser);
+    const liveRange = liveSnapRange(d.index, parser);
+    povReplays.push({
+      clientNum,
+      fileName: d.fileName,
+      liveFirstServerTime: liveRange.first,
+      replay: demoToReplay(parser, { mapTable, povClientNum: clientNum, includePickups: true }),
+    });
+    parser = null;
+    d.bytes = null;
+  }
+  return mergeReplays(povReplays);
+}
+
+// ---------------------------------------------------------------------------
+// Core merge: povReplays = [{ clientNum, replay: <demoToReplay() output> }]
+// ---------------------------------------------------------------------------
+
+export function mergeReplays(povReplays) {
+  const valid = (povReplays || []).filter((p) => p?.replay?.meta && p.replay.events);
+  if (!valid.length) throw new Error("mergeReplays: no usable POV replays");
+
+  const mergedFightStartMs = median(valid.map((p) => p.replay.meta.match_start_server_time)) ?? 0;
+  // Prefer each POV's reset-aware live-window start (liveFirstServerTime, set
+  // by parsePovsFromQlMatch via identity.js's liveSnapRange) over
+  // demoToReplay's own recording_start_server_time, which is just
+  // parser.snapshots[0].serverTime and can still be a leftover-occupant
+  // prefix's timestamp (see parsePovsFromQlMatch's liveRange comment) - a
+  // single contaminated POV would otherwise be able to drag the merged
+  // countdown_lead_ms/duration_wall_ms/t clock to a nonsense value via Math.min.
+  const recordingStarts = valid
+    .map((p) => (Number.isFinite(p.liveFirstServerTime) ? p.liveFirstServerTime : p.replay.meta.recording_start_server_time))
+    .filter(Number.isFinite);
+  const mergedRecordingStartMs = recordingStarts.length ? Math.min(...recordingStarts) : mergedFightStartMs;
+  const mergedCountdownLeadMs = Math.max(0, mergedFightStartMs - mergedRecordingStartMs);
+
+  // Normalize every POV's own game_time_ms (relative to that POV's own
+  // fightStartMs) onto the shared axis. In practice offsetMs is 0 for every
+  // POV of a real match (research doc section 4) - this just makes the merge
+  // robust to a POV whose fight-start detection landed one snapshot off.
+  for (const p of valid) {
+    const povFightStart = p.replay.meta.match_start_server_time;
+    p.offsetMs = Number.isFinite(povFightStart) ? povFightStart - mergedFightStartMs : 0;
+  }
+
+  const map = valid[0].replay.meta.map_name;
+  const gametype = valid[0].replay.meta.gametype;
+  const roster = mergeRoster(valid);
+
+  const events = [];
+  events.push(...mergeLifecycleEvents(mergedCountdownLeadMs, map, gametype));
+  events.push(...mergePositions(valid));
+  const deaths = mergeDeaths(valid);
+  events.push(...deaths.events);
+  events.push(...mergePickups(valid));
+  const projectiles = mergeProjectiles(valid);
+  events.push(...projectiles.events);
+  const impacts = mergeImpacts(valid);
+  events.push(...impacts.events);
+  const beams = mergeBeams(valid);
+  events.push(...beams.events);
+
+  // t is the merged-feed "wall clock": 0 at the earliest POV's recording
+  // start, same relationship demoToReplay() uses per-POV (t = game_time_ms +
+  // countdownLeadMs), just anchored to the merged clock instead of one file's.
+  for (const ev of events) ev.t = ev.game_time_ms + mergedCountdownLeadMs;
+  events.sort((a, b) => a.game_time_ms - b.game_time_ms || eventTypeRank(a.event) - eventTypeRank(b.event));
+
+  const maxGameTimeMs = events.length ? Math.max(...events.map((e) => e.game_time_ms)) : 0;
+  const errors = valid.flatMap((p) =>
+    (p.replay.meta.errors || []).map((e) => "[pov " + p.clientNum + "] " + e),
+  );
+
+  return {
+    meta: {
+      map_name: map,
+      gametype,
+      source: "qlmatch",
+      format: "json",
+      schema: "replay-v2",
+      generator_version: MATCH_REPLAY_GENERATOR_VERSION,
+      pov_client_num: null,
+      pov_count: valid.length,
+      povs: valid.map((p) => ({ clientNum: p.clientNum, fileName: p.fileName || null })),
+      roster,
+      snapshot_count: valid.reduce((n, p) => n + (p.replay.meta.snapshot_count || 0), 0),
+      match_start_server_time: mergedFightStartMs,
+      recording_start_server_time: mergedRecordingStartMs,
+      countdown_lead_ms: mergedCountdownLeadMs,
+      duration_wall_ms: maxGameTimeMs + mergedCountdownLeadMs,
+      score_updates: pickScoreUpdates(valid, mergedCountdownLeadMs),
+      player_count: roster.length,
+      projectile_frames: projectiles.frames,
+      impact_frames: impacts.frames,
+      beam_frames: beams.frames,
+      death_events: deaths.events.length,
+      errors,
+      seen_items: mergeSeenItems(valid),
+    },
+    events,
+  };
+}
+
+const EVENT_TYPE_RANK = {
+  countdown_start: 0,
+  match_start: 1,
+  positions: 2,
+  death: 3,
+  pickup: 4,
+  projectiles: 5,
+  impacts: 6,
+  beams: 7,
+};
+
+function eventTypeRank(event) {
+  return EVENT_TYPE_RANK[event] ?? 8;
+}
+
+function mergeRoster(povs) {
+  const byClient = new Map();
+  for (const p of povs) {
+    for (const row of p.replay.meta.roster || []) {
+      if (row.clientNum == null) continue;
+      const prev = byClient.get(row.clientNum);
+      if (!prev || (!prev.name && row.name)) byClient.set(row.clientNum, row);
+    }
+  }
+  return [...byClient.values()].sort((a, b) => a.clientNum - b.clientNum);
+}
+
+function mergeSeenItems(povs) {
+  const seen = new Map();
+  for (const p of povs) {
+    for (const it of p.replay.meta.seen_items || []) {
+      const key = itemKey(it.classname, it.x, it.y, it.z);
+      if (!seen.has(key)) seen.set(key, it);
+    }
+  }
+  return [...seen.values()];
+}
+
+function mergeLifecycleEvents(countdownLeadMs, map, gametype) {
+  const events = [];
+  if (countdownLeadMs > 0) {
+    events.push({ event: "countdown_start", game_time_ms: -countdownLeadMs });
+  }
+  events.push({ event: "match_start", game_time_ms: 0, map_name: map, gametype });
+  return events;
+}
+
+/** Duel-only scores_duel servercommand (same scope as demoToReplay's collectDuelScoreUpdates). */
+function pickScoreUpdates(povs, mergedCountdownLeadMs) {
+  let best = null;
+  for (const p of povs) {
+    const list = p.replay.meta.score_updates || [];
+    if (!best || list.length > best.list.length) best = { list, offsetMs: p.offsetMs };
+  }
+  if (!best || !best.list.length) return [];
+  return best.list.map((u) => {
+    const gameTimeMs = u.gameTimeMs + best.offsetMs;
+    return { ...u, gameTimeMs, wallT: gameTimeMs + mergedCountdownLeadMs };
+  });
+}
+
+// ---- positions: own-POV row wins per clientNum, other POVs fill gaps ----
+
+function playerRowKey(p) {
+  return p.clientNum + ":" + Math.round(p.x) + "," + Math.round(p.y) + "," + Math.round(p.z) + ":" + Math.round(p.yaw ?? 0);
+}
+
+function mergePositions(povs) {
+  const streams = povs.map((p) => ({
+    povClientNum: p.clientNum,
+    events: p.replay.events
+      .filter((e) => e.event === "positions")
+      .map((e) => ({ ...e, game_time_ms: e.game_time_ms + p.offsetMs }))
+      .sort((a, b) => a.game_time_ms - b.game_time_ms),
+  }));
+
+  const tickSet = new Set();
+  for (const s of streams) for (const e of s.events) tickSet.add(roundToGrid(e.game_time_ms));
+  const ticks = [...tickSet].sort((a, b) => a - b);
+
+  const idx = streams.map(() => 0);
+  // Per source POV: clientNum -> last row observed + the tick it was seen at.
+  const lastRowByStream = streams.map(() => new Map());
+
+  const events = [];
+  let lastKey = "";
+  for (const tick of ticks) {
+    streams.forEach((s, si) => {
+      while (idx[si] < s.events.length && roundToGrid(s.events[idx[si]].game_time_ms) <= tick) {
+        const ev = s.events[idx[si]];
+        for (const row of ev.players || []) lastRowByStream[si].set(row.clientNum, { row, lastSeenTick: tick });
+        idx[si]++;
+      }
+    });
+
+    const byClient = new Map();
+    for (let si = 0; si < streams.length; si++) {
+      const povCn = streams[si].povClientNum;
+      for (const [cn, rec] of lastRowByStream[si]) {
+        if (tick - rec.lastSeenTick > POSITION_STALE_MS) continue;
+        const isOwn = cn === povCn;
+        const existing = byClient.get(cn);
+        // Own-POV row (accurate health/armor/yaw from playerState) always
+        // wins over an entity-derived row from someone else's POV - see
+        // withCarriedVitals()/playerRowFromEntity() in demo-to-replay.js.
+        if (!existing || (isOwn && !existing.own)) byClient.set(cn, { row: rec.row, own: isOwn });
+      }
+    }
+    if (!byClient.size) continue;
+
+    const players = [...byClient.values()].map((v) => v.row).sort((a, b) => a.clientNum - b.clientNum);
+    const key = players.map(playerRowKey).join("|");
+    if (key === lastKey) continue;
+    lastKey = key;
+    events.push({ event: "positions", game_time_ms: tick, players });
+  }
+  return events;
+}
+
+// ---- death: dedup broadcast EV_OBITUARY seen by every POV ----
+
+function mergeDeaths(povs) {
+  const all = [];
+  for (const p of povs) {
+    for (const ev of p.replay.events) {
+      if (ev.event !== "death") continue;
+      all.push({ ...ev, game_time_ms: ev.game_time_ms + p.offsetMs, _povClientNum: p.clientNum });
+    }
+  }
+  all.sort((a, b) => a.game_time_ms - b.game_time_ms);
+
+  const used = new Array(all.length).fill(false);
+  const events = [];
+  for (let i = 0; i < all.length; i++) {
+    if (used[i]) continue;
+    const base = all[i];
+    used[i] = true;
+    const cluster = [base];
+    for (let j = i + 1; j < all.length; j++) {
+      if (used[j]) continue;
+      const cand = all[j];
+      if (cand.game_time_ms - base.game_time_ms > DEATH_WINDOW_MS) break;
+      if (cand.victim_clientNum !== base.victim_clientNum) continue;
+      if (cand.killer_clientNum !== base.killer_clientNum) continue;
+      if (cand.weapon !== base.weapon) continue;
+      cluster.push(cand);
+      used[j] = true;
+    }
+    // Prefer the victim's own POV recording - most accurate position of the
+    // victim at the moment of death (own playerState, not extrapolated entity).
+    const winner = cluster.find((c) => c._povClientNum === c.victim_clientNum) || cluster[0];
+    const { _povClientNum, ...clean } = winner;
+    events.push(clean);
+  }
+  return { events };
+}
+
+// ---- pickup: union across POVs (PVS coverage grows with more POVs) ----
+
+function mergePickups(povs) {
+  const all = [];
+  for (const p of povs) {
+    for (const ev of p.replay.events) {
+      if (ev.event !== "pickup") continue;
+      all.push({ ...ev, game_time_ms: ev.game_time_ms + p.offsetMs, _povClientNum: p.clientNum });
+    }
+  }
+  all.sort((a, b) => a.game_time_ms - b.game_time_ms);
+
+  const used = new Array(all.length).fill(false);
+  const events = [];
+  for (let i = 0; i < all.length; i++) {
+    if (used[i]) continue;
+    const base = all[i];
+    used[i] = true;
+    const key = itemKey(base.item, base.x, base.y, base.z);
+    const cluster = [base];
+    for (let j = i + 1; j < all.length; j++) {
+      if (used[j]) continue;
+      const cand = all[j];
+      if (cand.game_time_ms - base.game_time_ms > PICKUP_WINDOW_MS) break;
+      if (cand.action !== base.action) continue;
+      if (itemKey(cand.item, cand.x, cand.y, cand.z) !== key) continue;
+      cluster.push(cand);
+      used[j] = true;
+    }
+    let winner = cluster[0];
+    if (base.action === "pickup") {
+      // Prefer the picker's own POV (nickname/clientNum resolved from its
+      // own roster view, not guessed from "nearest visible player").
+      winner = cluster.find((c) => c._povClientNum === c.clientNum) || cluster[0];
+    }
+    const { _povClientNum, ...clean } = winner;
+    events.push(clean);
+  }
+  return events;
+}
+
+// ---- projectiles: dedup by server-authoritative entity id (eid) ----
+
+function mergeProjectiles(povs) {
+  const streams = povs.map((p) => ({
+    events: p.replay.events
+      .filter((e) => e.event === "projectiles")
+      .map((e) => ({ ...e, game_time_ms: e.game_time_ms + p.offsetMs }))
+      .sort((a, b) => a.game_time_ms - b.game_time_ms),
+  }));
+
+  const tickSet = new Set();
+  for (const s of streams) for (const e of s.events) tickSet.add(roundToGrid(e.game_time_ms));
+  const ticks = [...tickSet].sort((a, b) => a - b);
+
+  const idx = streams.map(() => 0);
+  const byEid = new Map();
+  const events = [];
+  let frames = 0;
+  let hadAny = false;
+
+  for (const tick of ticks) {
+    streams.forEach((s, si) => {
+      while (idx[si] < s.events.length && roundToGrid(s.events[idx[si]].game_time_ms) <= tick) {
+        for (const proj of s.events[idx[si]].projectiles || []) {
+          byEid.set(proj.eid, { data: proj, lastSeenTick: tick });
+        }
+        idx[si]++;
+      }
+    });
+    for (const [eid, rec] of byEid) {
+      if (tick - rec.lastSeenTick > PROJECTILE_STALE_MS) byEid.delete(eid);
+    }
+    const projectiles = [...byEid.values()].map((r) => r.data);
+    // Emit one empty frame right after the last projectile disappears, same
+    // as demoToReplay(), so the overlay's tracked eid actually gets pruned.
+    if (projectiles.length || hadAny) {
+      frames++;
+      events.push({ event: "projectiles", game_time_ms: tick, projectiles });
+    }
+    hadAny = projectiles.length > 0;
+  }
+  return { events, frames };
+}
+
+// ---- impacts / beams: dedup transient per-tick effects ----
+
+function preferOwnPov(cluster) {
+  return cluster.find((c) => c.item.clientNum != null && c.item.clientNum === c._povClientNum);
+}
+
+function mergeFrameItems(povs, eventName, itemsField, keyFn, windowMs) {
+  const all = [];
+  for (const p of povs) {
+    for (const ev of p.replay.events) {
+      if (ev.event !== eventName) continue;
+      const gtm = ev.game_time_ms + p.offsetMs;
+      for (const item of ev[itemsField] || []) all.push({ item, game_time_ms: gtm, _povClientNum: p.clientNum });
+    }
+  }
+  all.sort((a, b) => a.game_time_ms - b.game_time_ms);
+
+  const used = new Array(all.length).fill(false);
+  const deduped = [];
+  for (let i = 0; i < all.length; i++) {
+    if (used[i]) continue;
+    const base = all[i];
+    used[i] = true;
+    const baseKey = keyFn(base.item);
+    const cluster = [base];
+    for (let j = i + 1; j < all.length; j++) {
+      if (used[j]) continue;
+      const cand = all[j];
+      if (cand.game_time_ms - base.game_time_ms > windowMs) break;
+      if (keyFn(cand.item) !== baseKey) continue;
+      cluster.push(cand);
+      used[j] = true;
+    }
+    const winner = preferOwnPov(cluster) || cluster[0];
+    deduped.push({ game_time_ms: winner.game_time_ms, item: winner.item });
+  }
+  return deduped;
+}
+
+function groupIntoFrames(deduped, eventName, itemsField) {
+  const byTick = new Map();
+  for (const d of deduped) {
+    const tick = roundToGrid(d.game_time_ms);
+    if (!byTick.has(tick)) byTick.set(tick, []);
+    byTick.get(tick).push(d.item);
+  }
+  const ticks = [...byTick.keys()].sort((a, b) => a - b);
+  return ticks.map((tick) => ({ event: eventName, game_time_ms: tick, [itemsField]: byTick.get(tick) }));
+}
+
+function mergeImpacts(povs) {
+  const deduped = mergeFrameItems(
+    povs,
+    "impacts",
+    "impacts",
+    (it) => it.kind + "|" + (it.clientNum ?? "") + "|" + posGridKey(it.x, it.y, it.z),
+    IMPACT_WINDOW_MS,
+  );
+  const events = groupIntoFrames(deduped, "impacts", "impacts");
+  return { events, frames: events.length };
+}
+
+function mergeBeams(povs) {
+  // Keyed on shooter origin (x0,y0,z0), not the endpoint - LG beam endpoints
+  // vary per POV with aim-synthesis/hit-detection precision (see
+  // lgBeamHitDistance() in demo-to-replay.js) while the shooter's own
+  // position at that tick is effectively identical everywhere it's observed.
+  const deduped = mergeFrameItems(
+    povs,
+    "beams",
+    "beams",
+    (it) => it.clientNum + "|" + it.weapon_slug + "|" + posGridKey(it.x0, it.y0, it.z0),
+    IMPACT_WINDOW_MS,
+  );
+  const events = groupIntoFrames(deduped, "beams", "beams");
+  return { events, frames: events.length };
+}

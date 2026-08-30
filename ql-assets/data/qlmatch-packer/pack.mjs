@@ -2,7 +2,9 @@
 // qlmatch packer — builds one {name}.qlmatch (zip, STORE) per finished match
 // out of the trimmed per-player POV .dm_91 files + index/*.snaps.json that
 // minqlxtended's native demo capture (demo_match.c, vendored in
-// ql-assets/patches/minqlxtended/) leaves in the instance demo directory.
+// ql-assets/patches/minqlxtended/) leaves in the instance demo directory,
+// then generates the {match_id}_{map}.replay.json.gz merged-replay sidecar
+// next to the pack (qlmatch-to-replay.mjs child process).
 //
 // Contract: ql-demo-recorder/docs/superpowers/prompts/
 // 2026-08-17-sv-demorecord-multi-pov-AGENT-PROMPT.md, section
@@ -35,6 +37,7 @@ const DM91 = ".dm_91";
 // is meaningless and the contract says fail the pack rather than ship it.
 const DEFAULT_MIN_WINDOW_MS = 5000;
 const RCLONE_TIMEOUT_MS = 10 * 60 * 1000;
+const SIDECAR_TIMEOUT_MS = 10 * 60 * 1000;
 
 function log(...args) {
   console.log("packer:", ...args);
@@ -407,6 +410,29 @@ function main() {
   renameSync(partPath, outPath);
   const size = statSync(outPath).size;
   log(`wrote ${outPath} (${entries.length} POV(s), ${size} bytes, gametype ${ctx.gametype})`);
+
+  // Replay sidecar: merge the N POVs into one deduplicated replay-v2 JSON
+  // ({match_id}_{map}.replay.json.gz next to the pack, never inside the zip
+  // - the .qlmatch contract forbids decoded dumps in the package). This is
+  // what !restorecp qlmatch (restore/qlmatch.py sidecar_path_for) and the
+  // dashboard's #/demo view read. Child process, not in-process: parsing
+  // every POV in full is the memory-heavy part this packer deliberately
+  // avoids, and a merge failure must not lose an already-written pack. A
+  // failure is logged (it lands in <match_id>.packer.log) but does not
+  // change the exit code - the sidecar is re-generatable by hand:
+  //   node qlmatch-to-replay.mjs <pack.qlmatch> -o <sidecar>
+  const sidecarPath = join(outDir, `${args.matchId}_${mapName}.replay.json.gz`);
+  const sidecarScript = fileURLToPath(new URL("./qlmatch-to-replay.mjs", import.meta.url));
+  const sc = spawnSync(process.execPath, [sidecarScript, outPath, "-o", sidecarPath], {
+    encoding: "utf8",
+    timeout: SIDECAR_TIMEOUT_MS,
+  });
+  if (sc.error || sc.status !== 0) {
+    const why = sc.error ? String(sc.error.message || sc.error) : `exit ${sc.status}: ${(sc.stderr || "").trim().slice(-500)}`;
+    console.error(`packer: replay sidecar FAILED (${why}) — pack is intact, regenerate with qlmatch-to-replay.mjs`);
+  } else {
+    for (const line of (sc.stdout || "").trim().split("\n")) log("sidecar:", line);
+  }
 
   // Delivery: rclone copy into every configured target. One target failing
   // must not block the others or delete the local pack.

@@ -9,14 +9,13 @@
 #     read via the zip central directory only, never demos/*.dm_91 or
 #     index/*.snaps.json (those stay untouched and unopened here).
 #   - {match_id}_{map}.replay.json.gz next to the pack — a gzipped
-#     replay-v2 JSON ({meta, events}) sidecar. As of this writing nothing in
-#     the repo produces this file yet (see docs/superpowers/specs/
-#     2026-08-29-qlmatch-unified-replay-feed-research.md and the DevInbox
-#     ticket for the match-to-replay merge module/CLI) — this module is
-#     written against the documented contract (per-player inventory folded
-#     into each "positions" player row: ammo/weapons/holdables, plus a
-#     meta.generator_version field) so restore is ready the moment that
-#     sidecar exists. Every inventory field is read defensively: if the
+#     replay-v2 JSON ({meta, events}) sidecar, produced by the packer's
+#     qlmatch-to-replay.mjs (pack.mjs spawns it after every pack; see
+#     docs/superpowers/specs/2026-08-29-qlmatch-unified-replay-feed-research.md
+#     for the merge design). Per-player inventory is folded into each
+#     "positions" player row (ammo/weapons/holdable, raw playerState shapes
+#     — see _extract_inventory) and meta.generator_version tracks the merge
+#     algorithm. Every inventory field is still read defensively: if the
 #     merge module ships a different shape, only weapon/ammo restore
 #     degrades — position/health/armor/items still work off the parts of
 #     the contract implemented here (positions events, pickup events).
@@ -30,10 +29,10 @@ import re
 import zipfile
 
 try:
-    from restore.codec import AMMO_KEYS, loadout_to_mask
+    from restore.codec import AMMO_KEYS, WEAPON_ORDER, loadout_to_mask, mask_weapon_keys
     from restore.items import export_item_row
 except ImportError:
-    from .codec import AMMO_KEYS, loadout_to_mask
+    from .codec import AMMO_KEYS, WEAPON_ORDER, loadout_to_mask, mask_weapon_keys
     from .items import export_item_row
 
 PACK_EXT = ".qlmatch"
@@ -200,13 +199,21 @@ def nearest_positions_event(events, target_ms):
 
 def _extract_inventory(row):
     """Best-effort weapons/ammo/holdable extraction from a positions player
-    row. These fields do not exist in any sidecar today (see module
-    docstring) — when present, (loadout_keys, ammo, holdable) are returned;
-    any field the row doesn't carry comes back None so the caller omits it
+    row. The qlmatch-packer's replay sidecar (qlmatch-to-replay.mjs) carries
+    the raw playerState shapes: `weapons` is the STAT_WEAPONS bitmask where
+    bit i = dm_91 weapon index i — bit-identical to codec.WEAPON_ORDER's
+    loadout mask (bit idx+1: 1=g, 2=mg, ... 14=hmg) — and `ammo` is the
+    ps.ammo array indexed by the same weapon indices, with -1/65535 meaning
+    infinite (gauntlet). Dict/list shapes are kept for other producers. Any
+    field the row doesn't carry comes back None so the caller omits it
     instead of forcing an empty/zeroed value onto the checkpoint."""
     weapons = row.get("weapons")
     loadout_keys = None
-    if isinstance(weapons, dict):
+    if isinstance(weapons, bool):
+        weapons = None
+    if isinstance(weapons, int):
+        loadout_keys = {k: 1 for k in mask_weapon_keys(weapons)}
+    elif isinstance(weapons, dict):
         loadout_keys = {
             WEAPON_KEY_ALIASES.get(str(k).strip().lower(), str(k).strip().lower()): 1
             for k, v in weapons.items()
@@ -217,7 +224,27 @@ def _extract_inventory(row):
             WEAPON_KEY_ALIASES.get(str(k).strip().lower(), str(k).strip().lower()): 1
             for k in weapons
         }
-    ammo = row.get("ammo") if isinstance(row.get("ammo"), dict) else None
+    ammo = row.get("ammo")
+    if isinstance(ammo, (list, tuple)):
+        converted = {}
+        for idx, value in enumerate(ammo):
+            # ammo[0] is WP_NONE; WEAPON_ORDER[idx - 1] is the key for
+            # weapon index idx ("hands" is not a real weapon slot).
+            if idx < 1 or idx - 1 >= len(WEAPON_ORDER):
+                continue
+            key = WEAPON_ORDER[idx - 1]
+            if key == "hands":
+                continue
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                continue
+            if value < 0 or value >= 0xFFFF:
+                continue
+            converted[key] = value
+        ammo = converted or None
+    elif not isinstance(ammo, dict):
+        ammo = None
     holdable = row.get("holdable") or row.get("holdables") or None
     return loadout_keys, ammo, holdable
 

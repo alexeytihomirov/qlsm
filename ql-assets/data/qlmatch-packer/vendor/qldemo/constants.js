@@ -51,6 +51,8 @@ export const CS_STRING_MAP = {
 };
 
 export const STAT_HEALTH = 0;
-/** dm_91 (UDT LifeStats_73p): armor is stats[4], not stats[1]. */
+/** QL statIndex_t (quake_common.h): STAT_HOLDABLE_ITEM=1, STAT_WEAPONS=3, STAT_ARMOR=4. */
+export const STAT_HOLDABLE_ITEM = 1;
+export const STAT_WEAPONS = 3;
 export const STAT_ARMOR = 4;
 export const STAT_WEAPON = 2;

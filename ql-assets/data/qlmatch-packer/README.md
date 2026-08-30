@@ -42,6 +42,29 @@ Exit codes: 0 ok; 2 window validation failed (empty/short POV overlap — no
 zip written, raw files left in place); 3 no POV files for the match; 4 pack
 written but >= 1 rclone delivery failed; 5 usage/IO error.
 
+## Replay sidecar
+
+After writing a pack, `pack.mjs` spawns `qlmatch-to-replay.mjs` (child
+process) to merge the N POV demos into one deduplicated replay-v2 JSON and
+write it as `{match_id}_{map}.replay.json.gz` **next to** the pack — never
+inside the zip (the `.qlmatch` contract forbids decoded dumps in the
+package). Consumers: `!restorecp qlmatch` (`restore/qlmatch.py`
+`sidecar_path_for()` — the filename is `{match_id}_{map}`, not the pack's
+templated name) and the dashboard `#/demo` view. A sidecar failure is
+logged to `<match_id>.packer.log` but never fails the pack; regenerate any
+sidecar by hand (idempotent — byte-identical output for the same pack):
+
+```
+node qlmatch-to-replay.mjs <pack.qlmatch> [-o out.replay.json.gz]
+```
+
+Without `-o` the sidecar lands next to the pack named after the pack's own
+basename; pass `-o` with `{match_id}_{map}.replay.json.gz` when the pack
+filename template differs, or `!restorecp qlmatch` will not find it.
+`meta.generator_version` in the JSON tracks the merge algorithm
+(`MATCH_REPLAY_GENERATOR_VERSION` in `vendor/qldemo/match-to-replay.js`) so
+stale sidecars can be detected and regenerated after upgrades.
+
 ## Filename template placeholders
 
 Every substitution is stripped of QL color codes and sanitized to
@@ -68,5 +91,11 @@ exists, `_{match_id}` is appended instead of overwriting the previous match.
 Verbatim copy of the **production** demo parser
 `ql-stream-tools/live-overlay/lib/qldemo/` (not the stale
 `_tmp/overkilldemos/qldemo-nquery` snapshot the first prototype used).
-Refresh with `bash sync-vendor.sh` from a monorepo workspace whenever
-lib/qldemo changes, and commit the result — see `vendor/VENDOR-INFO.txt`.
+`maps/entities/` is vendored the same way from
+`ql-stream-tools/live-overlay/maps/entities/` — the sidecar merge needs the
+per-map pickup tables to resolve item classnames on the game host
+(`map-item-resolve.node.js` resolves them relative to this directory).
+Refresh both with `bash sync-vendor.sh` from a monorepo workspace (or
+`bash sync-vendor.sh /path/to/ql-stream-tools` from anywhere, e.g. a qlsm
+git worktree) whenever lib/qldemo changes, and commit the result — see
+`vendor/VENDOR-INFO.txt`.
