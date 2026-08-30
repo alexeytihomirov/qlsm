@@ -9,14 +9,14 @@
 // (rejected: no cross-POV vitals, "corpses win" over live players, item
 // pickups never merged - see the research doc section 6).
 
-import { QLDemoParser } from "./demo-parser.js?v=20260712b";
-import { demoToReplay } from "./demo-to-replay.js?v=20260830a";
+import { QLDemoParser } from "./demo-parser.js?v=20260830b";
+import { demoToReplay } from "./demo-to-replay.js?v=20260830b";
 import { liveClientNumFromParser, liveSnapRange } from "./identity.js?v=20260829a";
 import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260830a";
 import { unpackQlMatch } from "./qlmatch-pack.js?v=20260829a";
 
 /** Bump when the merge algorithm changes so a stale sidecar can be detected and regenerated. */
-export const MATCH_REPLAY_GENERATOR_VERSION = 2;
+export const MATCH_REPLAY_GENERATOR_VERSION = 3;
 
 // All POVs of one match sit on the same 25 ms server snapshot grid (sv_fps
 // 40) - see research doc section 4.
@@ -434,12 +434,17 @@ function mergePickups(povs) {
     }
     let winner = cluster[0];
     if (base.action === "pickup") {
-      // Prefer a playerState-event pickup (server-authoritative picker and
-      // timing), then the picker's own POV (nickname/clientNum resolved
-      // from its own roster view, not guessed from "nearest visible
-      // player"), then whoever saw it first.
+      // Prefer an exact, non-heuristic pickup (source "ps" - the picker's
+      // own playerState ring - or "entity" - the same broadcast event seen
+      // on the picker's entity by another POV in PVS, see EV_ITEM_PICKUP
+      // comment in demo-to-replay.js; "ps" wins between the two when both
+      // exist since it carries the picker's own exact ps.origin rather than
+      // an extrapolated entity position), then the picker's own POV
+      // (nickname/clientNum resolved from its own roster view, not guessed
+      // from "nearest visible player"), then whoever saw it first.
       winner =
         cluster.find((c) => c.source === "ps") ||
+        cluster.find((c) => c.source === "entity") ||
         cluster.find((c) => c._povClientNum === c.clientNum) ||
         cluster[0];
     }

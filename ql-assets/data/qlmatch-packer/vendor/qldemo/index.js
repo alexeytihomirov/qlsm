@@ -1,9 +1,9 @@
-export { parseDemoBuffer, QLDemoParser } from "./demo-parser.js?v=20260712b";
-export { demoToReplay, replaySummary } from "./demo-to-replay.js?v=20260830a";
+export { parseDemoBuffer, QLDemoParser } from "./demo-parser.js?v=20260830b";
+export { demoToReplay, replaySummary } from "./demo-to-replay.js?v=20260830b";
 export {
   matchBufferToReplay,
   matchPovsToReplay,
   parsePovsFromQlMatch,
   mergeReplays,
   MATCH_REPLAY_GENERATOR_VERSION,
-} from "./match-to-replay.js?v=20260830a";
+} from "./match-to-replay.js?v=20260830b";

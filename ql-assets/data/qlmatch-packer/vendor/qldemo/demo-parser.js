@@ -22,7 +22,7 @@ import {
   readDeltaEntity,
   readDeltaPlayerState,
 } from "./delta.js?v=20260712b";
-import { isNewEntityEvent } from "./entity-events.js?v=20260712b";
+import { isNewEntityEvent } from "./entity-events.js?v=20260830b";
 import {
   createDemoMsgHuffman,
   createMsgReader,

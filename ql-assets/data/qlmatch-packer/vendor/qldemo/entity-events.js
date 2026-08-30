@@ -11,6 +11,14 @@ export const EV_MISSILE_MISS = 48;
 export const EV_MISSILE_MISS_METAL = 49;
 export const EV_RAIL_TRAIL = 50;
 export const EV_OBITUARY = 58;
+// Shared entity_event_t ids (bg_public.h): the same EV_ITEM_PICKUP /
+// EV_GLOBAL_ITEM_PICKUP fire both on the picker's own playerState ring
+// (ps.events/ps.eventParms, consumed by demo-to-replay.js's own-POV path)
+// AND, independently, on the picker's ET_PLAYER entityState (.event /
+// .eventParm) - the latter is what every OTHER POV that has the picker in
+// PVS actually observes.
+export const EV_ITEM_PICKUP = 15;
+export const EV_GLOBAL_ITEM_PICKUP = 16;
 
 /** Raw dm_91/protocol-73p meansOfDeath (UDT MeansOfDeath_73p) -> weapon slug. */
 const MOD_WEAPON_SLUG = {

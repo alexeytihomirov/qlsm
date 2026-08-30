@@ -23,6 +23,8 @@ import {
 import {
   ET_EVENTS,
   ET_GENERAL,
+  EV_GLOBAL_ITEM_PICKUP,
+  EV_ITEM_PICKUP,
   EV_OBITUARY,
   EV_RAIL_TRAIL,
   PROJECTILE_WEAPONS,
@@ -35,7 +37,7 @@ import {
   isBulletImpactEvent,
   isMissileImpactEvent,
   meanOfDeathWeaponSlug,
-} from "./entity-events.js?v=20260712b";
+} from "./entity-events.js?v=20260830b";
 import { parseMatchClock } from "./demo-match-clock.js?v=20260712b";
 import {
   itemFamilyKey,
@@ -51,16 +53,21 @@ import { weaponSlug } from "./weapons.js?v=20260712b";
 /** Emit positions at most every N ms (demo has ~25 ms snapshots). */
 const POSITION_EMIT_MS = 50;
 
-// The recording client's own item pickups arrive as predictable events in
-// its playerState - a 2-slot ring (ps.events/ps.eventParms) advanced by
-// ps.eventSequence, consumed exactly like cgame's CG_CheckPlayerstateEvents
-// does: EV_ITEM_PICKUP / EV_GLOBAL_ITEM_PICKUP with the bg_itemlist item
-// index in the parm. Server-authoritative for WHO picked WHAT and WHEN,
-// unlike the item-left-PVS disappearance heuristic below, which guesses the
-// picker by proximity. Event ids per wolfcamql bg_public.h (dm_91).
-const PS_EV_ITEM_PICKUP = 15;
-const PS_EV_GLOBAL_ITEM_PICKUP = 16;
-/** EV_EVENT_BITS - repeat-toggle bits, not part of the event id. */
+// Item pickups arrive as EV_ITEM_PICKUP / EV_GLOBAL_ITEM_PICKUP
+// (entity_event_t, wolfcamql bg_public.h) via two independent, both
+// server-authoritative wire paths - unlike the item-left-PVS disappearance
+// heuristic below, neither guesses the picker by proximity:
+// 1. The picker's own playerState - a 2-slot ring (ps.events/ps.eventParms)
+//    advanced by ps.eventSequence, consumed exactly like cgame's
+//    CG_CheckPlayerstateEvents does. Only ever present in the picker's OWN
+//    POV demo (chase-cam/other-POV entities never carry playerState).
+// 2. The picker's ET_PLAYER entityState (.event/.eventParm) - the same
+//    G_AddEvent() call that seeds the ring above also stamps the picker's
+//    own networked entity, so every OTHER POV that has the picker in PVS at
+//    pickup time observes it too (see the entity loop below). This is what
+//    lets a pickup by a player with no POV demo of their own still resolve
+//    exactly instead of falling back to the disappearance heuristic.
+// Both paths resolve to the same bg_itemlist item index in the parm.
 const PS_EVENT_BITS = 0x300;
 const MAX_PS_EVENTS = 2;
 // The pickup event fires the same server frame the player touches the item,
@@ -335,6 +342,48 @@ class StaticItemTracker {
     }
     return { pickups, respawns };
   }
+}
+
+/**
+ * Resolve an exact (non-heuristic) pickup event's item classname/position:
+ * snap to the PVS-heuristic's own registry spot when a same-family item is
+ * within PS_PICKUP_MATCH_RADIUS, so both paths name and place the same
+ * physical pickup identically (the merge's exact-key dedup then applies, and
+ * the heuristic itself skips it via seenPickups - see StaticItemTracker
+ * above); otherwise fall back to the map's own spawn table, then to the raw
+ * event position. Shared by both the playerState-ring and entity-event
+ * pickup paths below.
+ */
+function resolveExactPickupItem(canonical, x, y, z, staticItems, mapTable) {
+  const match = staticItems.nearestFamilyMatch(canonical, x, y, z);
+  if (match) {
+    staticItems.seenPickups.add(match.key);
+    return { item: match, approxPos: false };
+  }
+  const spawn = resolvePickupRowAt(mapTable, x, y, z, PS_PICKUP_MATCH_RADIUS);
+  const item = spawn
+    ? { classname: toRestoreClassname(spawn.classname) || canonical, x: spawn.x, y: spawn.y, z: spawn.z }
+    : { classname: canonical, x, y, z };
+  return { item, approxPos: true };
+}
+
+function buildExactPickupEvent(wallT, gameTimeMs, item, clientNum, nickname, source, approxPos) {
+  const ev = {
+    t: wallT,
+    event: "pickup",
+    item: item.classname,
+    x: round1(item.x),
+    y: round1(item.y),
+    z: round1(item.z),
+    action: "pickup",
+    game_time_ms: gameTimeMs,
+    clientNum,
+    nickname,
+    respawn_sec: respawnSec(item.classname),
+    source,
+  };
+  if (approxPos) ev.approx_pos = true;
+  return ev;
 }
 
 function collectDuelScoreUpdates(parser, clock, povClientNum, rosterClients) {
@@ -657,6 +706,18 @@ export function demoToReplay(parser, options = {}) {
   const staticItems = new StaticItemTracker();
   const lastVitals = new Map();
   const povPoseState = new Map();
+  // Raw entityState.event byte (id + toggle bits, see EV_ITEM_PICKUP comment
+  // above) last observed per OTHER player's clientNum - a change from the
+  // stored value is this POV's signal that that entity just fired a new
+  // event, mirroring the ring-sequence check the ps.events path below does
+  // for the POV's own player. Entity events here don't get demo-parser's
+  // isNewEntityEvent()/EVENT_VALID_MSEC treatment - that debounce is scoped
+  // to eType>=ET_EVENTS broadcast temp entities (EV_OBITUARY/EV_RAIL_TRAIL/
+  // impacts), which recycle entity-number slots and have no stable "previous
+  // value" to diff against; a player's own entity number is stable for the
+  // whole demo, so a plain raw-value comparison is the correct (and
+  // simpler) check here - same technique real cgame uses.
+  const lastPlayerEventRaw = new Map();
   let fightItemsReady = false;
   let lastEmitMs = -POSITION_EMIT_MS;
   let lastEmitKey = "";
@@ -711,6 +772,30 @@ export function demoToReplay(parser, options = {}) {
           x: row.x, y: row.y, z: row.z,
           pitch: ent.apos.trBase[0], yaw: ent.apos.trBase[1],
         });
+      }
+
+      // Other players' pickups, observed via their own entity's broadcast
+      // event (see EV_ITEM_PICKUP comment near the top of this file) instead
+      // of guessed from PVS disappearance. gameTimeMs>=0 and the "seen a
+      // prior raw value first" check mirror the ps.events path's own
+      // gameTimeMs/psPrevEventSeq guards - a pre-fight or first-PVS-sighting
+      // raw event value is stale carry-over, not a fresh pickup.
+      if (includePickups && gameTimeMs >= 0) {
+        const rawEvent = ent.event | 0;
+        const prevRaw = lastPlayerEventRaw.get(clientNum);
+        lastPlayerEventRaw.set(clientNum, rawEvent);
+        if (prevRaw !== undefined && rawEvent !== 0 && rawEvent !== prevRaw) {
+          const evId = entityEventId(ent);
+          if (evId === EV_ITEM_PICKUP || evId === EV_GLOBAL_ITEM_PICKUP) {
+            const canonical = QL91_ITEM_CLASSNAMES[ent.eventParm | 0];
+            if (canonical) {
+              const { item, approxPos } = resolveExactPickupItem(canonical, row.x, row.y, row.z, staticItems, mapTable);
+              events.push(
+                buildExactPickupEvent(wallT, gameTimeMs, item, clientNum, row.nickname, "entity", approxPos),
+              );
+            }
+          }
+        }
       }
     }
 
@@ -834,46 +919,24 @@ export function demoToReplay(parser, options = {}) {
         for (let i = Math.max(psPrevEventSeq, seq - MAX_PS_EVENTS); i < seq; i++) {
           const slot = i & (MAX_PS_EVENTS - 1);
           const ev = (ps.events?.[slot] | 0) & ~PS_EVENT_BITS;
-          if (ev !== PS_EV_ITEM_PICKUP && ev !== PS_EV_GLOBAL_ITEM_PICKUP) continue;
+          if (ev !== EV_ITEM_PICKUP && ev !== EV_GLOBAL_ITEM_PICKUP) continue;
           if (gameTimeMs < 0) continue;
           const canonical = QL91_ITEM_CLASSNAMES[ps.eventParms?.[slot] | 0];
           if (!canonical) continue;
           const [px, py, pz] = ps.origin || [];
           if (!Number.isFinite(px)) continue;
-          const match = staticItems.nearestFamilyMatch(canonical, px, py, pz);
-          if (match) staticItems.seenPickups.add(match.key);
-          // Snap to the registry spot when known (the same name/coords the
-          // PVS heuristic uses, so cross-POV dedup stays exact); else to the
-          // nearest map-spawn row (BSP coords - what !restorecp matches its
-          // map_entities against); else keep the canonical bg_itemlist name
-          // at the player's own position. Both fallbacks are flagged
-          // approx_pos: their coords can differ from another POV's
-          // entity-derived coords for the same spot (droptofloor z, player
-          // offset), so the merge dedups them by family + radius instead of
-          // the exact position key.
-          let item = match;
-          if (!item) {
-            const spawn = resolvePickupRowAt(mapTable, px, py, pz, PS_PICKUP_MATCH_RADIUS);
-            item = spawn
-              ? { classname: toRestoreClassname(spawn.classname) || canonical, x: spawn.x, y: spawn.y, z: spawn.z }
-              : { classname: canonical, x: px, y: py, z: pz };
-          }
-          const pickupEvent = {
-            t: wallT,
-            event: "pickup",
-            item: item.classname,
-            x: round1(item.x),
-            y: round1(item.y),
-            z: round1(item.z),
-            action: "pickup",
-            game_time_ms: gameTimeMs,
-            clientNum: psClientNum,
-            nickname: playersByCn.get(psClientNum)?.nickname,
-            respawn_sec: respawnSec(item.classname),
-            source: "ps",
-          };
-          if (!match) pickupEvent.approx_pos = true;
-          events.push(pickupEvent);
+          const { item, approxPos } = resolveExactPickupItem(canonical, px, py, pz, staticItems, mapTable);
+          events.push(
+            buildExactPickupEvent(
+              wallT,
+              gameTimeMs,
+              item,
+              psClientNum,
+              playersByCn.get(psClientNum)?.nickname,
+              "ps",
+              approxPos,
+            ),
+          );
         }
       }
       psPrevEventSeq = seq;
