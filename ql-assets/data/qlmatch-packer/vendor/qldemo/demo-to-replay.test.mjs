@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ET_PLAYER, MAX_CLIENTS } from "./constants.js";
-import { createEntityState, TR_STATIONARY } from "./entity-state.js";
+import { ET_ITEM, ET_PLAYER, MAX_CLIENTS } from "./constants.js";
+import { createEntityState, TR_INTERPOLATE, TR_STATIONARY } from "./entity-state.js";
 import { demoToReplay } from "./demo-to-replay.js";
 
 // EV_ITEM_PICKUP=15 with one toggle-bit (bit 8) set, matching how the real
@@ -18,6 +18,14 @@ function otherPlayerEntity({ clientNum, x, y, z, event = 0, eventParm = 0 }) {
   ent.health = 100;
   ent.event = event;
   ent.eventParm = eventParm;
+  return ent;
+}
+
+function itemEntity({ x, y, z, trType = TR_STATIONARY }) {
+  const ent = createEntityState();
+  ent.eType = ET_ITEM;
+  ent.pos.trType = trType;
+  ent.pos.trBase = [x, y, z];
   return ent;
 }
 
@@ -105,4 +113,57 @@ test("a stale non-zero event on an entity's first sighting is not mistaken for a
   const replay = demoToReplay(parser, { povClientNum: 0, mapTable: [], includePickups: true });
   const pickups = replay.events.filter((e) => e.event === "pickup");
   assert.equal(pickups.length, 0);
+});
+
+const ARMOR_SPAWN_MAP_TABLE = [{ classname: "item_armor_body", x: 0, y: 0, z: 0 }];
+
+test("PVS heuristic still tracks a real stationary item spawn (regression check for the trType filter below)", () => {
+  const parser = fakeParser([
+    {
+      serverTime: 1000,
+      entities: [
+        itemEntity({ x: 30, y: 0, z: 0, trType: TR_STATIONARY }),
+        otherPlayerEntity({ clientNum: 1, x: 10, y: 0, z: 0 }),
+      ],
+    },
+    // Item entity gone from the snapshot - still a live player nearby.
+    { serverTime: 1025, entities: [otherPlayerEntity({ clientNum: 1, x: 10, y: 0, z: 0 })] },
+  ]);
+
+  const replay = demoToReplay(parser, {
+    povClientNum: 0,
+    mapTable: ARMOR_SPAWN_MAP_TABLE,
+    includePickups: true,
+  });
+  const pickups = replay.events.filter((e) => e.event === "pickup");
+  assert.equal(pickups.length, 1);
+  assert.equal(pickups[0].item, "item_armor_body");
+  assert.equal(pickups[0].source, undefined, "heuristic pickups carry no source tag");
+});
+
+test("a dropped (non-stationary) item near a real spawn is never registered by the PVS heuristic, even within the position-match radius", () => {
+  const parser = fakeParser([
+    {
+      serverTime: 1000,
+      entities: [
+        // 30 units from the item_armor_body spawn at (0,0,0) - well inside
+        // resolvePickupAt()'s 64-unit tolerance, so without the trType guard
+        // this would get misnamed "item_armor_body" by pure proximity (the
+        // real bug: gamestate.models is empty for every real .dm_91 capture
+        // seen so far, so modelPathToClassname always falls through to that
+        // position-only lookup).
+        itemEntity({ x: 30, y: 0, z: 0, trType: TR_INTERPOLATE }),
+        otherPlayerEntity({ clientNum: 1, x: 10, y: 0, z: 0 }),
+      ],
+    },
+    { serverTime: 1025, entities: [otherPlayerEntity({ clientNum: 1, x: 10, y: 0, z: 0 })] },
+  ]);
+
+  const replay = demoToReplay(parser, {
+    povClientNum: 0,
+    mapTable: ARMOR_SPAWN_MAP_TABLE,
+    includePickups: true,
+  });
+  const pickups = replay.events.filter((e) => e.event === "pickup");
+  assert.equal(pickups.length, 0, "a moving/dropped item must never produce a false pickup of a nearby spawn");
 });

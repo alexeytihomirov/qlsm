@@ -9,14 +9,14 @@
 // (rejected: no cross-POV vitals, "corpses win" over live players, item
 // pickups never merged - see the research doc section 6).
 
-import { QLDemoParser } from "./demo-parser.js?v=20260830b";
-import { demoToReplay } from "./demo-to-replay.js?v=20260830b";
+import { QLDemoParser } from "./demo-parser.js?v=20260830c";
+import { demoToReplay } from "./demo-to-replay.js?v=20260830c";
 import { liveClientNumFromParser, liveSnapRange } from "./identity.js?v=20260829a";
 import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260830a";
 import { unpackQlMatch } from "./qlmatch-pack.js?v=20260829a";
 
 /** Bump when the merge algorithm changes so a stale sidecar can be detected and regenerated. */
-export const MATCH_REPLAY_GENERATOR_VERSION = 3;
+export const MATCH_REPLAY_GENERATOR_VERSION = 4;
 
 // All POVs of one match sit on the same 25 ms server snapshot grid (sv_fps
 // 40) - see research doc section 4.

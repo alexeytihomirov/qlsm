@@ -15,6 +15,7 @@ import {
   EF_FIRING,
   EF_NODRAW,
   TR_GRAVITY,
+  TR_STATIONARY,
   entityOriginAt,
   entityVelocity,
   isSaneWorldOrigin,
@@ -835,6 +836,24 @@ export function demoToReplay(parser, options = {}) {
     const deaths = [];
     for (const ent of snap.entities || []) {
       if (ent.eType === ET_ITEM) {
+        // A real map-spawned pickup is settled onto the floor server-side at
+        // level load, before any client ever sees a snapshot of it - every
+        // ET_ITEM this parser can observe over the wire is already
+        // TR_STATIONARY. A dropped/in-flight item (weapon or ammo dropped on
+        // death, a thrown holdable) instead arrives with a moving trajectory
+        // (TR_GRAVITY while falling, TR_INTERPOLATE once settling) and its
+        // own distinct entity number. Registering it into the static
+        // registry at all is the root cause of a real observed bug: with
+        // `gamestate.models` empty for every real .dm_91 capture seen so far
+        // (models[] configstrings apparently never make it into the demo -
+        // separate finding, not fixed here), modelPathToClassname() always
+        // falls through to resolvePickupAt()'s pure position lookup, so a
+        // drop landing within its 64-unit tolerance of an unrelated spawn
+        // (e.g. red armor) got misnamed as that spawn's item and reported as
+        // a false pickup of it once the drop later disappeared or was
+        // picked up. Skipping non-stationary entities here closes that at
+        // the source, independent of whether models[] ever gets populated.
+        if (ent.pos.trType !== TR_STATIONARY) continue;
         const [x, y, z] = entityOriginAt(ent, snap.serverTime);
         const modelPath = ent.modelindex ? parser.gamestate.models[ent.modelindex] || "" : "";
         const classname = modelPathToClassname(modelPath, mapTable, x, y, z);
