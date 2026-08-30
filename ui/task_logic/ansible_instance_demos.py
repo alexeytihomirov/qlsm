@@ -11,55 +11,59 @@ plumbing. demo_native_manifest.py additionally packages each match's set of
 per-POV .dm_91 files into one {match_id}_{map}.qlmatch zip (manifest.json +
 demos/*.dm_91 + index/*.snaps.json) in that same directory - listed and
 downloadable here too, since it is the one file an operator actually wants
-for a match instead of picking through N separate per-POV files by hand.
+for a match instead of picking through N separate per-POV files by hand. The
+qlmatch-packer additionally drops a {match_id}_{map}.replay.json.gz merged
+replay sidecar next to each pack (see ql-assets/data/qlmatch-packer/pack.mjs)
+- also listed and downloadable here, since it's the input the dashboard's
+demo/replay view and !restorecp qlmatch both read.
 This module lists those files so an operator can verify a manual
 demo-recording test actually produced a file, without SSHing into the host
 by hand.
+
+Listing and fetching both talk directly to the host over SFTP (paramiko),
+the same key-authenticated, no-persisted-host-key management channel as
+service_runtime.py's runtime probe and rcon_transport.py's live rcon - not
+ansible-playbook: these are simple stat/read operations with no templating
+or privilege escalation to justify Ansible's overhead, so a plain SFTP
+listdir + open is both faster and simpler to reason about than shelling out
+to ansible-playbook for a two-line remote operation.
 
 Kept separate from ansible_instance_mgmt.py for the same reason as
 ansible_server_log_archives.py: that file is already past the project's
 file-size guideline.
 """
-import json
 import os
 import re
-import shutil
-import subprocess
-import tempfile
+import stat as stat_module
+
+import paramiko
 
 from ui import db
 from ui.models import QLInstance
-from ui.task_logic.ansible_instance_mgmt import _extract_ansible_debug_msg
+from ui.rcon_transport import rcon_target_for_host
 from ui.task_logic.common import log
 
-ANSIBLE_TIMEOUT_SECONDS = 60
-FETCH_TIMEOUT_SECONDS = 180
+SSH_CONNECT_TIMEOUT_SECONDS = 10
+# Covers a whole batch fetch, not just one file - mirrors the old Ansible
+# fetch module's FETCH_TIMEOUT_SECONDS budget.
+SSH_IO_TIMEOUT_SECONDS = 180
 
 # Matches demo_build_pov_name()'s output in demo_match.c (sanitised to
 # [A-Za-z0-9_-] plus the literal ".dm_91" suffix), the .qlmatch packages
 # (external qlmatch-packer's templated names and the in-process fallback's
-# "{match_id}_{map}.qlmatch" - both sanitise to the same charset), and the
-# packer's per-match "{match_id}.packer.log". Anchored with \A/\Z (not ^/$)
+# "{match_id}_{map}.qlmatch" - both sanitise to the same charset), the
+# packer's per-match "{match_id}.packer.log", and the packer's merged-replay
+# sidecar "{match_id}_{map}.replay.json.gz". Anchored with \A/\Z (not ^/$)
 # for the same reason SERVER_LOG_FILENAME_RE in
 # ansible_server_log_archives.py is: this value reaches both a remote and a
 # local filesystem path built by string concatenation, and $ still matches
 # before a trailing newline under .fullmatch().
-DEMO_FILENAME_RE = re.compile(r'\A[A-Za-z0-9._-]+\.(?:dm_91|qlmatch|packer\.log)\Z')
+DEMO_FILENAME_RE = re.compile(r'\A[A-Za-z0-9._-]+\.(?:dm_91|qlmatch|packer\.log|replay\.json\.gz)\Z')
 
 # Generous but bounded: a batch this large would already take minutes to
-# fetch one-by-one over SSH, so this is a sanity cap, not a realistic usage
+# fetch one-by-one over SFTP, so this is a sanity cap, not a realistic usage
 # ceiling.
 MAX_DEMO_BATCH = 200
-
-
-def _ansible_env():
-    env = os.environ.copy()
-    env['ANSIBLE_PIPELINING'] = 'True'
-    env['ANSIBLE_REMOTE_TMP'] = '/tmp'
-    env['ANSIBLE_BECOME_FLAGS'] = '-H -S -n'
-    env['ANSIBLE_ALLOW_WORLD_READABLE_TMPFILES'] = 'True'
-    env['ANSIBLE_NOCOLOR'] = 'True'
-    return env
 
 
 def _resolve_instance(instance_id):
@@ -81,74 +85,89 @@ def _resolve_instance(instance_id):
     return instance, host, None
 
 
+def _demo_dir(instance):
+    return f"/home/ql/qlds-{instance.port}/demos"
+
+
+def _open_sftp(host):
+    """Open a key-authenticated SFTP session to a managed host.
+
+    Same target resolution and no-persisted-host-key trust model as the
+    other direct-SSH management paths in this codebase (service_runtime.py's
+    runtime probe, rcon_transport.py's live rcon) - this is a QLSM-internal
+    channel to hosts QLSM itself provisioned, not a user-facing endpoint.
+    Caller is responsible for closing the returned client (which also closes
+    the sftp session).
+    """
+    target = rcon_target_for_host(host)
+    if not target:
+        raise OSError("Could not resolve an SSH target for this host.")
+
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=target,
+            port=host.ssh_port,
+            username=host.ssh_user,
+            key_filename=os.path.abspath(host.ssh_key_path),
+            timeout=SSH_CONNECT_TIMEOUT_SECONDS,
+            banner_timeout=SSH_CONNECT_TIMEOUT_SECONDS,
+            auth_timeout=SSH_CONNECT_TIMEOUT_SECONDS,
+            allow_agent=False,
+            look_for_keys=False,
+        )
+        sftp = client.open_sftp()
+        sftp.get_channel().settimeout(SSH_IO_TIMEOUT_SECONDS)
+    except Exception:
+        client.close()
+        raise
+    return client, sftp
+
+
 def list_instance_demos(instance_id):
-    """List server-side demo files (.dm_91, .qlmatch, .packer.log) recorded for an instance.
+    """List server-side demo files (.dm_91, .qlmatch, .packer.log,
+    .replay.json.gz) recorded for an instance.
 
     Returns a tuple: (success: bool, demos: list[dict], error_msg: str or None)
     where each dict is {"name": str, "size": int, "mtime": float}, newest
     first.
     """
-    process = None
-
+    client = None
     try:
         instance, host, instance_error = _resolve_instance(instance_id)
         if instance_error:
             log.error(f"Cannot list demos for instance {instance_id}: {instance_error}")
             return False, [], instance_error
 
-        playbook_path = os.path.abspath('ansible/playbooks/list_demos.yml')
-        inventory_path = os.path.abspath('ansible/inventory/')
-
-        extravars = {
-            'port': instance.port,
-            'ansible_ssh_user': host.ssh_user,
-            'ansible_ssh_private_key_file': os.path.abspath(host.ssh_key_path),
-        }
-
-        cmd = ['ansible-playbook', playbook_path, '-i', inventory_path,
-               '-l', host.name, '-e', json.dumps(extravars)]
-
+        demo_dir = _demo_dir(instance)
         log.info(f"Listing demos for instance {instance_id} on host {host.name}...")
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   text=True, env=_ansible_env())
-        stdout, stderr = process.communicate(timeout=ANSIBLE_TIMEOUT_SECONDS)
-        rc = process.returncode
-
-        if rc != 0:
-            log.error(f"Ansible failed to list demos for instance {instance_id}. "
-                      f"RC: {rc}. stderr: {stderr[-500:]}")
-            return False, [], f"Failed to list demos (RC: {rc})."
-
-        msg_content = _extract_ansible_debug_msg(stdout)
-        if not msg_content:
-            log.warning(f"No 'msg' found in ansible output for instance {instance_id}.")
-            return True, [], None
-
+        client, sftp = _open_sftp(host)
         try:
-            demos = json.loads(msg_content)
-        except json.JSONDecodeError as e:
-            log.error(f"Failed to parse demo file list JSON for instance {instance_id}: {e}")
-            return False, [], "Failed to parse demo file list."
+            entries = sftp.listdir_attr(demo_dir)
+        except FileNotFoundError:
+            entries = []
 
-        if not isinstance(demos, list):
-            log.warning(f"Parsed demos msg is not a list: {type(demos)}")
-            return True, [], None
+        demos = [
+            {'name': entry.filename, 'size': entry.st_size, 'mtime': entry.st_mtime}
+            for entry in entries
+            if entry.st_mode is not None and stat_module.S_ISREG(entry.st_mode)
+            and DEMO_FILENAME_RE.fullmatch(entry.filename)
+        ]
+        demos.sort(key=lambda d: d.get('mtime') or 0, reverse=True)
+        return True, demos, None
 
-        valid_demos = [d for d in demos if isinstance(d, dict) and isinstance(d.get('name'), str)
-                       and DEMO_FILENAME_RE.fullmatch(d['name'])]
-        valid_demos.sort(key=lambda d: d.get('mtime') or 0, reverse=True)
-        return True, valid_demos, None
-
-    except subprocess.TimeoutExpired:
-        if process is not None:
-            process.kill()
-            process.communicate()
-        log.error(f"Timeout listing demos for instance {instance_id}")
-        return False, [], "Timeout while listing demos from remote host."
+    except (paramiko.AuthenticationException, paramiko.SSHException, OSError) as exc:
+        log.error(f"SSH failure listing demos for instance {instance_id}: {exc}")
+        return False, [], "Failed to list demos from remote host."
     except Exception as e:
         log.exception(f"Exception listing demos for instance {instance_id}: {e}")
         return False, [], "Failed to list demos."
+    finally:
+        if client is not None:
+            client.close()
 
 
 def fetch_instance_demos(instance_id, filenames):
@@ -161,9 +180,8 @@ def fetch_instance_demos(instance_id, filenames):
     as a failure, since the files that WERE found are still worth returning.
 
     Filenames are validated against DEMO_FILENAME_RE before anything else,
-    the same guard-before-ansible pattern as fetch_instance_server_log: this
-    value reaches both a remote `src` path and a local `dest` path built by
-    string concatenation in fetch_demos.yml.
+    the same guard-before-transport pattern as fetch_instance_server_log:
+    this value reaches a remote path built by string concatenation.
     """
     if not isinstance(filenames, list) or not filenames:
         return False, {}, [], "filenames must be a non-empty list."
@@ -178,65 +196,36 @@ def fetch_instance_demos(instance_id, filenames):
             deduped.append(name)
     filenames = deduped
 
-    process = None
-    local_dir = None
-
+    client = None
     try:
         instance, host, instance_error = _resolve_instance(instance_id)
         if instance_error:
             log.error(f"Cannot fetch demos for instance {instance_id}: {instance_error}")
             return False, {}, [], instance_error
 
-        local_dir = tempfile.mkdtemp(prefix='qlsm-demos-')
-
-        playbook_path = os.path.abspath('ansible/playbooks/fetch_demos.yml')
-        inventory_path = os.path.abspath('ansible/inventory/')
-
-        extravars = {
-            'port': instance.port,
-            'ansible_ssh_user': host.ssh_user,
-            'ansible_ssh_private_key_file': os.path.abspath(host.ssh_key_path),
-            'filenames': filenames,
-            'local_dir': local_dir,
-        }
-
-        cmd = ['ansible-playbook', playbook_path, '-i', inventory_path,
-               '-l', host.name, '-e', json.dumps(extravars)]
-
+        demo_dir = _demo_dir(instance)
         log.info(f"Fetching {len(filenames)} demo(s) for instance {instance_id} on host {host.name}...")
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   text=True, env=_ansible_env())
-        stdout, stderr = process.communicate(timeout=FETCH_TIMEOUT_SECONDS)
-        rc = process.returncode
-
-        if rc != 0:
-            log.error(f"Ansible failed to fetch demos for instance {instance_id}. "
-                      f"RC: {rc}. stderr: {stderr[-500:]}")
-            return False, {}, [], f"Failed to fetch demos (RC: {rc})."
+        client, sftp = _open_sftp(host)
 
         files = {}
         missing = []
         for name in filenames:
-            local_path = os.path.join(local_dir, name)
-            if os.path.isfile(local_path):
-                with open(local_path, 'rb') as fh:
+            try:
+                with sftp.open(f"{demo_dir}/{name}", 'rb') as fh:
                     files[name] = fh.read()
-            else:
+            except FileNotFoundError:
                 missing.append(name)
 
         log.info(f"Fetched {len(files)}/{len(filenames)} demo(s) for instance {instance_id}")
         return True, files, missing, None
 
-    except subprocess.TimeoutExpired:
-        if process is not None:
-            process.kill()
-            process.communicate()
-        log.error(f"Timeout fetching demos for instance {instance_id}")
-        return False, {}, [], "Timeout while fetching demos from remote host."
+    except (paramiko.AuthenticationException, paramiko.SSHException, OSError) as exc:
+        log.error(f"SSH failure fetching demos for instance {instance_id}: {exc}")
+        return False, {}, [], "Failed to fetch demos from remote host."
     except Exception as e:
         log.exception(f"Exception fetching demos for instance {instance_id}: {e}")
         return False, {}, [], "Failed to fetch demos."
     finally:
-        if local_dir:
-            shutil.rmtree(local_dir, ignore_errors=True)
+        if client is not None:
+            client.close()
