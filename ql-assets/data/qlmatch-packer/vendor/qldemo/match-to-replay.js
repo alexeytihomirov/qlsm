@@ -10,13 +10,13 @@
 // pickups never merged - see the research doc section 6).
 
 import { QLDemoParser } from "./demo-parser.js?v=20260712b";
-import { demoToReplay } from "./demo-to-replay.js?v=20260829a";
+import { demoToReplay } from "./demo-to-replay.js?v=20260830a";
 import { liveClientNumFromParser, liveSnapRange } from "./identity.js?v=20260829a";
-import { loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260712b";
+import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260830a";
 import { unpackQlMatch } from "./qlmatch-pack.js?v=20260829a";
 
 /** Bump when the merge algorithm changes so a stale sidecar can be detected and regenerated. */
-export const MATCH_REPLAY_GENERATOR_VERSION = 1;
+export const MATCH_REPLAY_GENERATOR_VERSION = 2;
 
 // All POVs of one match sit on the same 25 ms server snapshot grid (sv_fps
 // 40) - see research doc section 4.
@@ -28,6 +28,9 @@ const GAME_TICK_MS = 25;
 const POSITION_STALE_MS = 500;
 const DEATH_WINDOW_MS = 50;
 const PICKUP_WINDOW_MS = 2000;
+// Radius for "same physical pickup spot" across POVs/sources (entity origin
+// vs map-spawn origin vs picker position differ by droptofloor/touch range).
+const PICKUP_MATCH_DIST = 128;
 const IMPACT_WINDOW_MS = 60;
 // Impact/beam positions differ slightly per POV (aim-synthesized LG beam,
 // extrapolated entity position) - round to a coarse grid before keying so
@@ -404,22 +407,41 @@ function mergePickups(povs) {
     if (used[i]) continue;
     const base = all[i];
     used[i] = true;
+    // Same physical pickup: normally the exact classname@x,y,z key (all
+    // registry/entity-derived observations of one spot share server
+    // coords, and e.g. the 3 shards of an armor-shard group are distinct
+    // spots only a few dozen units apart - a radius alone would wrongly
+    // fuse them). A ps-event pickup that missed the item registry
+    // (approx_pos) carries the picker's position and bg_itemlist canon
+    // naming instead, so only THOSE fall back to family + radius matching
+    // (see itemFamilyKey).
     const key = itemKey(base.item, base.x, base.y, base.z);
+    const family = itemFamilyKey(base.item);
     const cluster = [base];
     for (let j = i + 1; j < all.length; j++) {
       if (used[j]) continue;
       const cand = all[j];
       if (cand.game_time_ms - base.game_time_ms > PICKUP_WINDOW_MS) break;
       if (cand.action !== base.action) continue;
-      if (itemKey(cand.item, cand.x, cand.y, cand.z) !== key) continue;
+      const exact = itemKey(cand.item, cand.x, cand.y, cand.z) === key;
+      const fuzzy =
+        (cand.approx_pos || base.approx_pos) &&
+        itemFamilyKey(cand.item) === family &&
+        Math.hypot(cand.x - base.x, cand.y - base.y, cand.z - base.z) <= PICKUP_MATCH_DIST;
+      if (!exact && !fuzzy) continue;
       cluster.push(cand);
       used[j] = true;
     }
     let winner = cluster[0];
     if (base.action === "pickup") {
-      // Prefer the picker's own POV (nickname/clientNum resolved from its
-      // own roster view, not guessed from "nearest visible player").
-      winner = cluster.find((c) => c._povClientNum === c.clientNum) || cluster[0];
+      // Prefer a playerState-event pickup (server-authoritative picker and
+      // timing), then the picker's own POV (nickname/clientNum resolved
+      // from its own roster view, not guessed from "nearest visible
+      // player"), then whoever saw it first.
+      winner =
+        cluster.find((c) => c.source === "ps") ||
+        cluster.find((c) => c._povClientNum === c.clientNum) ||
+        cluster[0];
     }
     const { _povClientNum, ...clean } = winner;
     events.push(clean);
