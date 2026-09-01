@@ -55,20 +55,29 @@ import { weaponSlug } from "./weapons.js?v=20260712b";
 const POSITION_EMIT_MS = 50;
 
 // Item pickups arrive as EV_ITEM_PICKUP / EV_GLOBAL_ITEM_PICKUP
-// (entity_event_t, wolfcamql bg_public.h) via two independent, both
+// (entity_event_t, wolfcamql bg_public.h) via three independent, all
 // server-authoritative wire paths - unlike the item-left-PVS disappearance
-// heuristic below, neither guesses the picker by proximity:
+// heuristic below, none of them guesses the picker by proximity:
 // 1. The picker's own playerState - a 2-slot ring (ps.events/ps.eventParms)
 //    advanced by ps.eventSequence, consumed exactly like cgame's
 //    CG_CheckPlayerstateEvents does. Only ever present in the picker's OWN
 //    POV demo (chase-cam/other-POV entities never carry playerState).
-// 2. The picker's ET_PLAYER entityState (.event/.eventParm) - the same
-//    G_AddEvent() call that seeds the ring above also stamps the picker's
+// 2. The picker's own playerState again, via ps.externalEvent/
+//    ps.externalEventParm - a single-value field, NOT part of the ring
+//    above, that the real client checks first and separately (same
+//    cg_playerstate.c: `if (ps->externalEvent != ops->externalEvent)`
+//    runs before the ring loop). Confirmed empirically on real production
+//    demos that at least mega health and yellow armor pickups can land
+//    ONLY here with nothing in the ring at all - this is why the actual
+//    game client always shows every pickup correctly scrubbing a demo, and
+//    why relying on the ring alone silently drops some real pickups.
+// 3. The picker's ET_PLAYER entityState (.event/.eventParm) - the same
+//    G_AddEvent() call that seeds path 1/2 above also stamps the picker's
 //    own networked entity, so every OTHER POV that has the picker in PVS at
 //    pickup time observes it too (see the entity loop below). This is what
 //    lets a pickup by a player with no POV demo of their own still resolve
 //    exactly instead of falling back to the disappearance heuristic.
-// Both paths resolve to the same bg_itemlist item index in the parm.
+// All three resolve to the same bg_itemlist item index in the parm.
 const PS_EVENT_BITS = 0x300;
 const MAX_PS_EVENTS = 2;
 // The pickup event fires the same server frame the player touches the item,
@@ -731,6 +740,10 @@ export function demoToReplay(parser, options = {}) {
   // seeds it (events already sitting in the ring at recording start predate
   // the demo and must not be replayed - same as cgame's first-snap handling).
   let psPrevEventSeq = null;
+  // ps.externalEvent of the previous snapshot - see the ps.externalEvent
+  // pickup block below for why this is a second, independent own-POV pickup
+  // source alongside the events[] ring.
+  let psPrevExternalEvent = undefined;
 
   for (const snap of parser.snapshots) {
     const wallT = snap.serverTime - recordingStartMs;
@@ -959,6 +972,50 @@ export function demoToReplay(parser, options = {}) {
         }
       }
       psPrevEventSeq = seq;
+
+      // Second, independent own-POV pickup source: ps.externalEvent /
+      // ps.externalEventParm. Confirmed empirically against real production
+      // demos (bloodrun match 20260829T225720Z): a mega health and a yellow
+      // armor pickup were both real (health/armor jumped by exactly the
+      // item's value) but produced NO events[]/eventParms[] ring entry at
+      // all - the only place the server recorded them was externalEvent/
+      // externalEventParm, encoded identically (EV_ITEM_PICKUP id + the same
+      // bg_itemlist parm). This matches CG_CheckPlayerstateEvents in the
+      // real client (wasm-build/vendor/wolfcamql/code/cgame/cg_playerstate.c):
+      // it checks `ps->externalEvent != ops->externalEvent` as a SEPARATE
+      // step before the predictable-events ring loop - both mechanisms
+      // coexist and the game client relies on both, which is exactly why
+      // "just watch the demo" always shows every pickup correctly. Not a
+      // ring, so no sequence bookkeeping - just a changed-since-last-tick
+      // comparison, same technique as the entity-event path above.
+      const extRaw = ps.externalEvent | 0;
+      if (
+        psPrevExternalEvent !== undefined &&
+        extRaw !== 0 &&
+        extRaw !== psPrevExternalEvent &&
+        gameTimeMs >= 0
+      ) {
+        const extEv = extRaw & ~PS_EVENT_BITS;
+        if (extEv === EV_ITEM_PICKUP || extEv === EV_GLOBAL_ITEM_PICKUP) {
+          const canonical = QL91_ITEM_CLASSNAMES[ps.externalEventParm | 0];
+          const [px, py, pz] = ps.origin || [];
+          if (canonical && Number.isFinite(px)) {
+            const { item, approxPos } = resolveExactPickupItem(canonical, px, py, pz, staticItems, mapTable);
+            events.push(
+              buildExactPickupEvent(
+                wallT,
+                gameTimeMs,
+                item,
+                psClientNum,
+                playersByCn.get(psClientNum)?.nickname,
+                "ps",
+                approxPos,
+              ),
+            );
+          }
+        }
+      }
+      psPrevExternalEvent = extRaw;
     }
 
     if (includePickups && gameTimeMs >= 0) {

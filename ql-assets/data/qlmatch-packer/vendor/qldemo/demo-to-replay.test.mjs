@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ET_ITEM, ET_PLAYER, MAX_CLIENTS } from "./constants.js";
+import { createPlayerState } from "./delta.js";
 import { createEntityState, TR_INTERPOLATE, TR_STATIONARY } from "./entity-state.js";
 import { demoToReplay } from "./demo-to-replay.js";
 
@@ -8,6 +9,16 @@ import { demoToReplay } from "./demo-to-replay.js";
 // wire delta looks (see entity-events.js's ES_EVENT_BITS=0x300 comment).
 const EV_ITEM_PICKUP_RAW = 15 | 0x100;
 const ITEM_ARMOR_BODY_INDEX = 3; // QL91_ITEM_CLASSNAMES[3] (constants.js)
+const ITEM_HEALTH_MEGA_INDEX = 8; // QL91_ITEM_CLASSNAMES[8] (constants.js)
+
+function ownPlayerState({ x, y, z, externalEvent = 0, externalEventParm = 0 }) {
+  const ps = createPlayerState();
+  ps.clientNum = 0;
+  ps.origin = [x, y, z];
+  ps.externalEvent = externalEvent;
+  ps.externalEventParm = externalEventParm;
+  return ps;
+}
 
 function otherPlayerEntity({ clientNum, x, y, z, event = 0, eventParm = 0 }) {
   const ent = createEntityState();
@@ -166,4 +177,40 @@ test("a dropped (non-stationary) item near a real spawn is never registered by t
   });
   const pickups = replay.events.filter((e) => e.event === "pickup");
   assert.equal(pickups.length, 0, "a moving/dropped item must never produce a false pickup of a nearby spawn");
+});
+
+test("own-POV pickup via ps.externalEvent is caught even with nothing in the events[] ring - real bug: mega/yellow armor pickups on bloodrun landed only here", () => {
+  const parser = fakeParser([
+    // events[]/eventParms[] ring stays all-zero for both snapshots - this
+    // path must not depend on it at all.
+    { serverTime: 1000, playerState: ownPlayerState({ x: 10, y: 20, z: 30 }) },
+    {
+      serverTime: 1025,
+      playerState: ownPlayerState({ x: 10, y: 20, z: 30, externalEvent: EV_ITEM_PICKUP_RAW, externalEventParm: ITEM_HEALTH_MEGA_INDEX }),
+    },
+  ]);
+
+  const replay = demoToReplay(parser, { povClientNum: 0, mapTable: [], includePickups: true });
+  const pickups = replay.events.filter((e) => e.event === "pickup");
+
+  assert.equal(pickups.length, 1);
+  const [pickup] = pickups;
+  assert.equal(pickup.item, "item_health_mega");
+  assert.equal(pickup.clientNum, 0);
+  assert.equal(pickup.source, "ps");
+  assert.equal(pickup.game_time_ms, 25);
+});
+
+test("a stale non-zero ps.externalEvent on the first snapshot is not mistaken for a fresh pickup", () => {
+  const parser = fakeParser([
+    {
+      serverTime: 1000,
+      playerState: ownPlayerState({ x: 10, y: 20, z: 30, externalEvent: EV_ITEM_PICKUP_RAW, externalEventParm: ITEM_HEALTH_MEGA_INDEX }),
+    },
+    { serverTime: 1025, playerState: ownPlayerState({ x: 10, y: 20, z: 30 }) },
+  ]);
+
+  const replay = demoToReplay(parser, { povClientNum: 0, mapTable: [], includePickups: true });
+  const pickups = replay.events.filter((e) => e.event === "pickup");
+  assert.equal(pickups.length, 0);
 });
