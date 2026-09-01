@@ -44,7 +44,6 @@ import {
   itemFamilyKey,
   loadMapPickupTable,
   normalizeMapKey,
-  resolvePickupAt,
   resolvePickupRowAt,
 } from "./map-item-resolve.js?v=20260901a";
 import { powerupNamesFromEntityMask } from "./powerups.js?v=20260712b";
@@ -101,19 +100,40 @@ function modelPathToClassname(path, mapTable, x, y, z) {
     if (p.includes("health/large")) return "item_health_large";
     if (p.includes("health/medium")) return "item_health";
     if (p.includes("health/small")) return "item_health_small";
-    if (p.includes("ammo/rockets") || p.includes("rocket")) return "weapon_rocketlauncher";
-    if (p.includes("ammo/lightning") || p.includes("lightning")) return "weapon_lightning";
-    if (p.includes("ammo/railgun") || p.includes("railgun")) return "weapon_railgun";
-    if (p.includes("ammo/plasma") || p.includes("cells")) return "weapon_plasmagun";
-    if (p.includes("ammo/shells")) return "weapon_shotgun";
-    if (p.includes("ammo/bullets")) return "weapon_machinegun";
+    // Dead code today: gamestate.models is empty for every real .dm_91
+    // capture seen so far (separate finding, not fixed here), so this
+    // branch never actually runs - modelPathToClassname always falls
+    // through to the position-based lookup below. Kept ammo/weapon
+    // DISTINCT here too (not collapsed to the parent weapon) so this stays
+    // consistent with that lookup if models[] ever gets populated.
+    if (p.includes("ammo/rockets")) return "ammo_rockets";
+    if (p.includes("rocket")) return "weapon_rocketlauncher";
+    if (p.includes("ammo/lightning")) return "ammo_lightning";
+    if (p.includes("lightning")) return "weapon_lightning";
+    if (p.includes("ammo/railgun")) return "ammo_railgun";
+    if (p.includes("railgun")) return "weapon_railgun";
+    if (p.includes("ammo/plasma") || p.includes("cells")) return "ammo_cells";
+    if (p.includes("ammo/shells")) return "ammo_shells";
+    if (p.includes("ammo/bullets")) return "ammo_bullets";
     if (p.includes("holdable/medkit")) return "item_holdable_medkit";
     if (p.includes("powerup/quad")) return "item_powerup_quad";
     if (p.includes("powerup/regen")) return "item_powerup_regen";
     if (p.includes("powerup/haste")) return "item_powerup_haste";
     if (p.includes("powerup/invis")) return "item_powerup_invis";
   }
-  return resolvePickupAt(mapTable, x, y, z);
+  // Registry entries use the map's own true classname, NOT
+  // resolvePickupAt()'s family-collapsed one (ammo_rockets ->
+  // weapon_rocketlauncher, item_armor_jacket -> item_armor_yellow, ...) -
+  // that collapsing is for itemFamilyKey()'s MATCHING step only (comparing
+  // family keys, not stored names - see nearestFamilyMatch), never for
+  // what gets reported as picked up. Root cause of a real bug: with this
+  // still collapsing at registration, an ammo box picked up with no exact
+  // event available (heuristic-only, e.g. a player with no POV demo) would
+  // still have been reported as its parent weapon - the same wrong
+  // "fresh weapon spawn" implication the exact-event path already got
+  // fixed for (see resolveExactPickupItem's own comment).
+  const row = resolvePickupRowAt(mapTable, x, y, z);
+  return row ? row.classname : "";
 }
 
 function respawnSec(classname) {

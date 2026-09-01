@@ -249,3 +249,28 @@ test("an ammo_rockets pickup near a registered weapon_rocketlauncher spot keeps 
   assert.equal(pickups[0].item, "ammo_rockets", "must not be renamed to the nearby weapon's classname");
   assert.equal(pickups[0].respawn_sec, 40);
 });
+
+test("PVS heuristic (no exact event at all) also reports an ammo box's own name, not its family-collapsed weapon name - root-cause fix, not just the exact-event path", () => {
+  const ammoMapTable = [{ classname: "ammo_rockets", x: 0, y: 0, z: 0 }];
+  const parser = fakeParser([
+    {
+      serverTime: 1000,
+      entities: [
+        itemEntity({ x: 30, y: 0, z: 0, trType: TR_STATIONARY }),
+        otherPlayerEntity({ clientNum: 1, x: 10, y: 0, z: 0 }),
+      ],
+    },
+    // Item entity gone, no ps/entity pickup event fired anywhere - only the
+    // disappearance heuristic can attribute this one.
+    { serverTime: 1025, entities: [otherPlayerEntity({ clientNum: 1, x: 10, y: 0, z: 0 })] },
+  ]);
+
+  const replay = demoToReplay(parser, {
+    povClientNum: 0,
+    mapTable: ammoMapTable,
+    includePickups: true,
+  });
+  const pickups = replay.events.filter((e) => e.event === "pickup");
+  assert.equal(pickups.length, 1);
+  assert.equal(pickups[0].item, "ammo_rockets", "the registry itself must store the map's true classname, not weapon_rocketlauncher");
+});
