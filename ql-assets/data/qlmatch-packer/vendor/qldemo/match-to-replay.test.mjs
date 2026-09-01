@@ -98,3 +98,27 @@ test("mergeProjectiles clears an eid immediately once its own source POV reports
   assert.equal(last.game_time_ms, 125);
   assert.equal(last.projectiles.length, 0, "the source POV's own empty frame must clear the eid immediately");
 });
+
+test("mergePositions carries map_name/gametype on every frame, not just the one-time match_start event", () => {
+  const povReplays = [
+    {
+      clientNum: 0,
+      replay: {
+        meta: baseMeta(),
+        events: [
+          { event: "positions", game_time_ms: 100, players: [{ clientNum: 0, x: 1, y: 2, z: 3, yaw: 0 }] },
+          { event: "positions", game_time_ms: 125, players: [{ clientNum: 0, x: 4, y: 5, z: 6, yaw: 0 }] },
+        ],
+      },
+    },
+    { clientNum: 1, replay: { meta: baseMeta(), events: [] } },
+  ];
+
+  const merged = mergeReplays(povReplays);
+  const frames = merged.events.filter((e) => e.event === "positions");
+  assert.ok(frames.length >= 2);
+  for (const f of frames) {
+    assert.equal(f.map_name, "bloodrun");
+    assert.equal(f.gametype, "duel");
+  }
+});

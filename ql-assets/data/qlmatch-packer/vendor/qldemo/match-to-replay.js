@@ -9,14 +9,14 @@
 // (rejected: no cross-POV vitals, "corpses win" over live players, item
 // pickups never merged - see the research doc section 6).
 
-import { QLDemoParser } from "./demo-parser.js?v=20260901c";
-import { demoToReplay } from "./demo-to-replay.js?v=20260901c";
+import { QLDemoParser } from "./demo-parser.js?v=20260901d";
+import { demoToReplay } from "./demo-to-replay.js?v=20260901d";
 import { liveClientNumFromParser, liveSnapRange } from "./identity.js?v=20260829a";
-import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260901c";
+import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260901d";
 import { unpackQlMatch } from "./qlmatch-pack.js?v=20260829a";
 
 /** Bump when the merge algorithm changes so a stale sidecar can be detected and regenerated. */
-export const MATCH_REPLAY_GENERATOR_VERSION = 7;
+export const MATCH_REPLAY_GENERATOR_VERSION = 8;
 
 // All POVs of one match sit on the same 25 ms server snapshot grid (sv_fps
 // 40) - see research doc section 4.
@@ -183,7 +183,7 @@ export function mergeReplays(povReplays) {
 
   const events = [];
   events.push(...mergeLifecycleEvents(mergedCountdownLeadMs, map, gametype));
-  events.push(...mergePositions(valid));
+  events.push(...mergePositions(valid, map, gametype));
   const deaths = mergeDeaths(valid);
   events.push(...deaths.events);
   events.push(...mergePickups(valid));
@@ -302,7 +302,7 @@ function playerRowKey(p) {
   return p.clientNum + ":" + Math.round(p.x) + "," + Math.round(p.y) + "," + Math.round(p.z) + ":" + Math.round(p.yaw ?? 0);
 }
 
-function mergePositions(povs) {
+function mergePositions(povs, map, gametype) {
   const streams = povs.map((p) => ({
     povClientNum: p.clientNum,
     events: p.replay.events
@@ -349,7 +349,16 @@ function mergePositions(povs) {
     const key = players.map(playerRowKey).join("|");
     if (key === lastKey) continue;
     lastKey = key;
-    events.push({ event: "positions", game_time_ms: tick, players });
+    // map_name/gametype on every frame, not just the one-time match_start
+    // event, matching demoToReplay()'s own per-frame shape - the map
+    // widget (map-spawns.js's MapSpawns.onMapPayload) only updates its
+    // remembered gametype when a payload actually carries one, and a
+    // replay seek can dispatch a "positions" frame as the first payload
+    // for a match without match_start ever having been replayed first.
+    // Real bug this fixes: a duel replay's gametype-conditional map items
+    // (e.g. bloodrun's TDM-only ammo packs) stayed visible because the
+    // widget's own gametype was never initialized in that dispatch order.
+    events.push({ event: "positions", game_time_ms: tick, map_name: map, gametype, players });
   }
   return events;
 }
