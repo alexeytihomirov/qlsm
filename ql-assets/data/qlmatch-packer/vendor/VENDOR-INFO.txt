@@ -1,4 +1,4 @@
 source: ql-stream-tools/live-overlay/lib/qldemo (production parser)
        + ql-stream-tools/live-overlay/maps/entities (pickup tables, vendored to ../maps/entities)
-synced: 2026-09-01T12:32:07Z
+synced: 2026-09-01T12:49:17Z
 refresh: bash sync-vendor.sh (see header comment)

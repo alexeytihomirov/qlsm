@@ -9,10 +9,10 @@
 // (rejected: no cross-POV vitals, "corpses win" over live players, item
 // pickups never merged - see the research doc section 6).
 
-import { QLDemoParser } from "./demo-parser.js?v=20260830d";
-import { demoToReplay } from "./demo-to-replay.js?v=20260830d";
+import { QLDemoParser } from "./demo-parser.js?v=20260901a";
+import { demoToReplay } from "./demo-to-replay.js?v=20260901a";
 import { liveClientNumFromParser, liveSnapRange } from "./identity.js?v=20260829a";
-import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260830a";
+import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260901a";
 import { unpackQlMatch } from "./qlmatch-pack.js?v=20260829a";
 
 /** Bump when the merge algorithm changes so a stale sidecar can be detected and regenerated. */
@@ -114,9 +114,11 @@ export async function matchBufferToReplay(bytesLike, options = {}) {
  * replays are tiny by comparison. Output is identical to
  * matchPovsToReplay on the same pack (same per-POV inputs to
  * mergeReplays, in the same order).
- * options.loadMapTable(mapKey) lets a Node caller supply the pickup table
- * lazily once the first POV reveals the map name (see
- * map-item-resolve.node.js's loadMapPickupTableFromDisk).
+ * options.loadMapTable(mapKey, gametype) lets a Node caller supply the
+ * pickup table lazily once the first POV reveals the map name and gametype
+ * (see map-item-resolve.node.js's loadMapPickupTableFromDisk) - gametype
+ * matters because some map spawns are gametype-conditional (e.g. bloodrun
+ * has a duel-only quad and TDM/FFA-only ammo packs at the same spots).
  */
 export async function matchBufferToReplaySequential(bytesLike, options = {}) {
   const pack = await unpackQlMatch(bytesLike);
@@ -127,7 +129,8 @@ export async function matchBufferToReplaySequential(bytesLike, options = {}) {
     parser.parseAll();
     if (mapTable == null) {
       const map = normalizeMapKey(options.mapOverride || parser.mapName());
-      mapTable = options.loadMapTable ? options.loadMapTable(map) : loadMapPickupTable(map);
+      const gametype = parser.gametype();
+      mapTable = options.loadMapTable ? options.loadMapTable(map, gametype) : loadMapPickupTable(map);
     }
     const clientNum = liveClientNumFromParser(parser);
     const liveRange = liveSnapRange(d.index, parser);

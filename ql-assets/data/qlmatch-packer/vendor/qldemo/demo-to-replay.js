@@ -47,7 +47,7 @@ import {
   resolvePickupAt,
   resolvePickupRowAt,
   toRestoreClassname,
-} from "./map-item-resolve.js?v=20260830a";
+} from "./map-item-resolve.js?v=20260901a";
 import { powerupNamesFromEntityMask } from "./powerups.js?v=20260712b";
 import { weaponSlug } from "./weapons.js?v=20260712b";
 

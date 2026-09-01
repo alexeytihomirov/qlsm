@@ -27,9 +27,87 @@ export function normalizeMapKey(name) {
     .replace(/[^a-z0-9]/g, "");
 }
 
-export function filterPickupEntities(entities) {
-  return (entities || []).filter((row) =>
-    PICKUP_PREFIXES.some((p) => String(row.classname || "").startsWith(p)),
+// Gametype-conditional item spawns (bloodrun has duel-only ammo packs and a
+// duel-only quad on the flip side of a not_gametype:"duel" pair at the same
+// spot) - ported from live-overlay/map-spawns.js's entityMatchesGametype()
+// (the live map widget already filters these correctly; the qlmatch replay
+// pipeline didn't, showing e.g. TDM-only items as pickable on a duel replay).
+// Duplicated rather than imported: map-spawns.js is a browser-global script
+// with page/DOM assumptions, this module also runs under Node (the packer
+// CLI).
+// parser.gametype() (demo-parser.js) returns the raw g_gametype serverinfo
+// cvar - a QL gametype *number* as a string ("1"), not a slug. Same table as
+// qlmatch-packer/pack.mjs's GAMETYPE_NAMES (independent copy - pack.mjs
+// isn't part of the vendored lib/qldemo, only needs this for its own
+// filename template).
+const GAMETYPE_CVAR_NAMES = {
+  0: "ffa", 1: "duel", 2: "race", 3: "tdm", 4: "ca", 5: "ctf",
+  6: "1f", 8: "har", 9: "ft", 10: "dom", 11: "ad", 12: "rr",
+};
+
+function normalizeGametype(gt) {
+  let raw = gt;
+  if (typeof raw === "number" || /^\d+$/.test(String(raw || ""))) {
+    raw = GAMETYPE_CVAR_NAMES[Number(raw)] ?? raw;
+  }
+  const g = String(raw || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!g) return "";
+  if (["1v1", "1on1", "oneonone", "one_on_one", "duel", "duels", "tourney", "tournament"].includes(g)) {
+    return "duel";
+  }
+  if (["ffa", "freeforall", "free_for_all", "deathmatch", "dm"].includes(g)) return "dm";
+  if (["tdm", "team_deathmatch", "teamdeathmatch", "team_dm"].includes(g)) return "tdm";
+  return g;
+}
+
+function gametypeTokens(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return [];
+  const out = [];
+  for (const part of raw.split(/[\s,]+/)) {
+    const token = normalizeGametype(part);
+    if (token && !out.includes(token)) out.push(token);
+  }
+  return out;
+}
+
+function gametypeListMatches(value, gt) {
+  const tokens = gametypeTokens(value);
+  if (!tokens.length) return false;
+  const normalized = normalizeGametype(gt);
+  return !!normalized && tokens.includes(normalized);
+}
+
+function truthyMapAttr(value) {
+  return value === "1" || value === 1 || value === true;
+}
+
+function legacySpawnFlagsBlockGametype(attrs, gt) {
+  if (!attrs || !gt) return false;
+  const g = normalizeGametype(gt);
+  if (!g) return false;
+  if (truthyMapAttr(attrs.notsingle) && g === "duel") return true;
+  if (truthyMapAttr(attrs.notfree) && (g === "dm" || g === "duel")) return true;
+  if (truthyMapAttr(attrs.notteam) && (g === "tdm" || g === "ctf" || g === "ca" || g === "dom")) return true;
+  return false;
+}
+
+function entityMatchesGametype(ent, gametype) {
+  const gt = normalizeGametype(gametype);
+  if (!gt) return true;
+  const attrs = ent.attrs || {};
+  if (attrs.gametype && !gametypeListMatches(attrs.gametype, gt)) return false;
+  if (attrs.not_gametype && gametypeListMatches(attrs.not_gametype, gt)) return false;
+  if (legacySpawnFlagsBlockGametype(attrs, gt)) return false;
+  return true;
+}
+
+/** gametype: the match's own gametype (parser.gametype()) - omit to skip gametype filtering entirely. */
+export function filterPickupEntities(entities, gametype) {
+  return (entities || []).filter(
+    (row) =>
+      PICKUP_PREFIXES.some((p) => String(row.classname || "").startsWith(p)) &&
+      entityMatchesGametype(row, gametype),
   );
 }
 
