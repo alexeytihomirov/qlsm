@@ -1454,8 +1454,9 @@ class match_restore(minqlx.Plugin):
         for row in rows[:20]:
             self._reply(
                 player, channel,
-                "  ^3{}^7. {} map={} players={}".format(
+                "  ^3{}^7. {} map={} time={} players={}".format(
                     row["index"], row["match_id"], row["map"] or "?",
+                    restore_qlmatch.format_clock(row.get("duration_ms")),
                     ",".join(row["players"][:8]) or "?",
                 ),
             )
@@ -1519,6 +1520,7 @@ class match_restore(minqlx.Plugin):
         try:
             doc, warning, snap_t = restore_qlmatch.build_checkpoint_doc(
                 sidecar, target_ms, self._map_spawns_table(), map_key or pack_map_key, time.time(),
+                window=pack.get("window"),
             )
             cp = canonicalize(doc)
         except (ValueError, KeyError, TypeError) as exc:

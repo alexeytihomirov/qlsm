@@ -19,7 +19,7 @@ sys.path.insert(
 from restore import qlmatch  # noqa: E402
 
 
-def _write_pack(path, match_id, map_name, players, gametype="1"):
+def _write_pack(path, match_id, map_name, players, gametype="1", window=None):
     manifest = {
         "format": "ql-match",
         "version": 1,
@@ -27,7 +27,7 @@ def _write_pack(path, match_id, map_name, players, gametype="1"):
         "map": map_name,
         "gametype": gametype,
         "index_framing": "with_header",
-        "window": {
+        "window": window if window is not None else {
             "start_server_time": 1000,
             "end_server_time": 500000,
             "game_start_server_time": 5000,
@@ -88,6 +88,9 @@ class ListPacksTests(unittest.TestCase):
         self.assertEqual(rows[0]["index"], 1)
         self.assertEqual(rows[1]["match_id"], "20260101T000000Z")
         self.assertEqual(rows[1]["index"], 2)
+        # window end 500000 - game_start 5000 = 495000 ms = 8:15
+        self.assertEqual(rows[0]["duration_ms"], 495000)
+        self.assertEqual(qlmatch.format_clock(rows[0]["duration_ms"]), "8:15")
 
     def test_filter_by_map_substring(self):
         _write_pack(
@@ -131,6 +134,22 @@ class ListPacksTests(unittest.TestCase):
 
     def test_missing_dir_returns_empty_list(self):
         self.assertEqual(qlmatch.list_packs(os.path.join(self.tmp_dir, "nope")), [])
+
+    def test_list_falls_back_to_sidecar_duration_when_window_is_sentinel(self):
+        _write_pack(
+            os.path.join(self.tmp_dir, "20260101T000000Z_bloodrun.qlmatch"),
+            "20260101T000000Z", "bloodrun", ["alice"],
+            window={"start_server_time": -1, "end_server_time": -1, "game_start_server_time": -1},
+        )
+        _write_sidecar(
+            os.path.join(self.tmp_dir, "20260101T000000Z_bloodrun.replay.json.gz"),
+            events=[{"event": "positions", "game_time_ms": 121175, "players": []}],
+        )
+        rows = qlmatch.list_packs(self.tmp_dir)
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(qlmatch.duration_ms_from_window(rows[0]["window"]))
+        self.assertEqual(rows[0]["duration_ms"], 121175)
+        self.assertEqual(qlmatch.format_clock(rows[0]["duration_ms"]), "2:01.175")
 
 
 class ResolveByIndexCacheTests(unittest.TestCase):
@@ -199,6 +218,26 @@ class ParseClockTests(unittest.TestCase):
             qlmatch.parse_clock_to_ms("")
         with self.assertRaises(ValueError):
             qlmatch.parse_clock_to_ms("abc")
+
+    def test_format_clock_roundtrip(self):
+        self.assertEqual(qlmatch.format_clock(0), "0:00")
+        self.assertEqual(qlmatch.format_clock(65000), "1:05")
+        self.assertEqual(qlmatch.format_clock(120000), "2:00")
+        self.assertEqual(qlmatch.format_clock(1500), "0:01.500")
+        self.assertEqual(qlmatch.format_clock(None), "?")
+        self.assertEqual(qlmatch.parse_clock_to_ms(qlmatch.format_clock(125500)), 125500)
+
+    def test_duration_from_window_ignores_sentinel_minus_one(self):
+        self.assertIsNone(qlmatch.duration_ms_from_window({
+            "start_server_time": -1,
+            "end_server_time": -1,
+            "game_start_server_time": -1,
+        }))
+        self.assertEqual(qlmatch.duration_ms_from_window({
+            "start_server_time": 1000,
+            "end_server_time": 121000,
+            "game_start_server_time": 1000,
+        }), 120000)
 
 
 class SnapshotAndCheckpointTests(unittest.TestCase):
@@ -365,6 +404,45 @@ class SnapshotAndCheckpointTests(unittest.TestCase):
         sidecar = {"meta": {}, "events": self._events()}
         with self.assertRaises(ValueError):
             qlmatch.build_checkpoint_doc(sidecar, -100, self.MAP_SPAWNS, "bloodrun", wall_now=1000.0)
+
+    def test_raises_when_requested_time_past_demo_duration_window(self):
+        # ~2 minute demo (window 120000 ms). Requesting 3:00 must error
+        # instead of silently restoring the last snapshot at 2:00.
+        sidecar = {"meta": {}, "events": self._events() + [
+            {
+                "event": "positions", "game_time_ms": 120000,
+                "players": [
+                    {"clientNum": 0, "x": 9.0, "y": 9.0, "z": 0.0, "health": 100, "armor": 0},
+                ],
+            },
+        ]}
+        window = {
+            "start_server_time": 5000,
+            "end_server_time": 125000,
+            "game_start_server_time": 5000,
+        }
+        self.assertEqual(qlmatch.duration_ms_from_window(window), 120000)
+        with self.assertRaises(ValueError) as ctx:
+            qlmatch.build_checkpoint_doc(
+                sidecar, 180000, self.MAP_SPAWNS, "bloodrun", wall_now=1000.0, window=window,
+            )
+        self.assertIn("past demo duration", str(ctx.exception))
+        self.assertIn("2:00", str(ctx.exception))
+        self.assertIn("3:00", str(ctx.exception))
+        # Exact end of the demo is still allowed (uses last snapshot).
+        doc, _warning, snap_t = qlmatch.build_checkpoint_doc(
+            sidecar, 120000, self.MAP_SPAWNS, "bloodrun", wall_now=1000.0, window=window,
+        )
+        self.assertEqual(snap_t, 120000)
+        self.assertEqual(doc["players"][0]["x"], 9.0)
+
+    def test_raises_when_requested_time_past_last_snapshot_without_window(self):
+        sidecar = {"meta": {}, "events": self._events()}
+        with self.assertRaises(ValueError) as ctx:
+            qlmatch.build_checkpoint_doc(
+                sidecar, 180000, self.MAP_SPAWNS, "bloodrun", wall_now=1000.0,
+            )
+        self.assertIn("past demo duration", str(ctx.exception))
 
     def test_pause_warning_present_when_meta_has_pause_windows(self):
         sidecar = {"meta": {"pause_windows": [{"start_ms": 1000, "end_ms": 2000}]}, "events": self._events()}

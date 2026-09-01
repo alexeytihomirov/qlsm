@@ -81,6 +81,77 @@ def parse_clock_to_ms(text):
     return max(0, ms)
 
 
+def format_clock(ms):
+    """Integer match-elapsed ms -> 'm:ss' or 'm:ss.mmm' (inverse of parse_clock_to_ms)."""
+    try:
+        ms = int(ms)
+    except (TypeError, ValueError):
+        return "?"
+    ms = max(0, ms)
+    minutes, rem = divmod(ms, 60000)
+    seconds, millis = divmod(rem, 1000)
+    if millis:
+        return "{}:{:02d}.{:03d}".format(minutes, seconds, millis)
+    return "{}:{:02d}".format(minutes, seconds)
+
+
+def duration_ms_from_window(window):
+    """Scoreboard-clock duration from a .qlmatch manifest window, or None.
+
+    game_start_server_time is the fight clock origin (mm:ss = 0:00). Falling
+    back to start_server_time covers packs that omit game_start.
+    """
+    if not isinstance(window, dict):
+        return None
+    try:
+        end = int(window["end_server_time"])
+    except (TypeError, ValueError, KeyError):
+        return None
+    start_raw = window.get("game_start_server_time")
+    if start_raw is None:
+        start_raw = window.get("start_server_time")
+    try:
+        start = int(start_raw)
+    except (TypeError, ValueError):
+        return None
+    # Packer/index sentinels: -1 is not a valid QL serverTime (seen on
+    # real packs whose window was never filled in). Treat as "unknown".
+    if end < 0 or start < 0:
+        return None
+    if end < start:
+        return None
+    return end - start
+
+
+def demo_duration_ms(window=None, sidecar=None):
+    """Operator-facing demo length in game-clock ms.
+
+    Prefer the pack manifest window (same value `qlmatch list` shows). Fall
+    back to the last positions event so a sidecar-only restore still rejects
+    times past the recorded feed.
+    """
+    dur = duration_ms_from_window(window)
+    if dur is not None:
+        return dur
+    if sidecar is not None:
+        return last_positions_ms(sidecar.get("events"))
+    return None
+
+
+def reject_if_past_duration(target_ms, duration_ms):
+    if duration_ms is None:
+        return
+    target_ms = int(target_ms)
+    duration_ms = int(duration_ms)
+    if target_ms > duration_ms:
+        raise ValueError(
+            "requested time {} ({}ms) is past demo duration {} ({}ms)".format(
+                format_clock(target_ms), target_ms,
+                format_clock(duration_ms), duration_ms,
+            )
+        )
+
+
 def sidecar_path_for(demo_dir, match_id, map_name):
     return os.path.join(demo_dir, "{}_{}{}".format(match_id, map_name, SIDECAR_EXT))
 
@@ -112,19 +183,38 @@ def _pack_summary(zip_path, filename):
         for d in (manifest.get("demos") or [])
         if isinstance(d, dict)
     ]
+    window = manifest.get("window") or {}
     return {
         "path": zip_path,
         "filename": filename,
         "match_id": match_id,
         "map": map_name,
         "players": [p for p in players if p],
-        "window": manifest.get("window") or {},
+        "window": window,
+        "duration_ms": duration_ms_from_window(window),
     }
+
+
+def _duration_from_sidecar(path):
+    """Last positions game_time_ms from a replay sidecar, or None.
+
+    Only used when the pack manifest window cannot yield a duration (missing
+    or sentinel -1). List still never opens demos/*.dm_91.
+    """
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        sidecar = load_sidecar(path)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, gzip.BadGzipFile, EOFError):
+        return None
+    return last_positions_ms(sidecar.get("events"))
 
 
 def list_packs(demo_dir, filter_substr=None):
     """Numbered (1-based) list of .qlmatch packs in demo_dir, newest match_id
-    first. Reads only manifest.json out of each pack's zip central directory.
+    first. Reads manifest.json out of each pack's zip; if the window cannot
+    yield a duration, falls back to the sibling replay sidecar (not the
+    .dm_91 files).
     """
     if not demo_dir or not os.path.isdir(demo_dir):
         return []
@@ -135,6 +225,10 @@ def list_packs(demo_dir, filter_substr=None):
         summary = _pack_summary(os.path.join(demo_dir, filename), filename)
         if summary is None:
             continue
+        if summary.get("duration_ms") is None:
+            summary["duration_ms"] = _duration_from_sidecar(
+                sidecar_path_for(demo_dir, summary["match_id"], summary["map"])
+            )
         rows.append(summary)
     rows.sort(key=lambda r: r["match_id"], reverse=True)
     needle = str(filter_substr or "").strip().lower()
@@ -179,6 +273,19 @@ def _event_time_ms(ev):
         return int(t)
     except (TypeError, ValueError):
         return None
+
+
+def last_positions_ms(events):
+    last = None
+    for ev in events or []:
+        if not isinstance(ev, dict) or ev.get("event") != "positions":
+            continue
+        t = _event_time_ms(ev)
+        if t is None:
+            continue
+        if last is None or t > last:
+            last = t
+    return last
 
 
 def nearest_positions_event(events, target_ms):
@@ -390,11 +497,13 @@ def pause_warning(sidecar_meta):
     )
 
 
-def build_checkpoint_doc(sidecar, target_ms, map_spawns_table, map_key, wall_now):
+def build_checkpoint_doc(sidecar, target_ms, map_spawns_table, map_key, wall_now, window=None):
     """Return (doc, warning, snapshot_t_ms) for restore.codec.canonicalize().
 
-    Raises ValueError if the sidecar has no snapshot at or before target_ms.
+    Raises ValueError if target_ms is past the demo duration, or if the
+    sidecar has no snapshot at or before target_ms.
     """
+    reject_if_past_duration(target_ms, demo_duration_ms(window=window, sidecar=sidecar))
     events = sidecar.get("events") or []
     snapshot, snap_t = nearest_positions_event(events, target_ms)
     if snapshot is None:
