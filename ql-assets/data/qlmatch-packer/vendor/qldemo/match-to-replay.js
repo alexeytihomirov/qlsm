@@ -9,14 +9,14 @@
 // (rejected: no cross-POV vitals, "corpses win" over live players, item
 // pickups never merged - see the research doc section 6).
 
-import { QLDemoParser } from "./demo-parser.js?v=20260901a";
-import { demoToReplay } from "./demo-to-replay.js?v=20260901a";
+import { QLDemoParser } from "./demo-parser.js?v=20260901b";
+import { demoToReplay } from "./demo-to-replay.js?v=20260901b";
 import { liveClientNumFromParser, liveSnapRange } from "./identity.js?v=20260829a";
-import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260901a";
+import { itemFamilyKey, loadMapPickupTable, normalizeMapKey } from "./map-item-resolve.js?v=20260901b";
 import { unpackQlMatch } from "./qlmatch-pack.js?v=20260829a";
 
 /** Bump when the merge algorithm changes so a stale sidecar can be detected and regenerated. */
-export const MATCH_REPLAY_GENERATOR_VERSION = 5;
+export const MATCH_REPLAY_GENERATOR_VERSION = 6;
 
 // All POVs of one match sit on the same 25 ms server snapshot grid (sv_fps
 // 40) - see research doc section 4.
@@ -480,8 +480,26 @@ function mergeProjectiles(povs) {
   for (const tick of ticks) {
     streams.forEach((s, si) => {
       while (idx[si] < s.events.length && roundToGrid(s.events[idx[si]].game_time_ms) <= tick) {
+        const seenThisFrame = new Set();
         for (const proj of s.events[idx[si]].projectiles || []) {
-          byEid.set(proj.eid, { data: proj, lastSeenTick: tick });
+          byEid.set(proj.eid, { data: proj, lastSeenTick: tick, streamIdx: si });
+          seenThisFrame.add(proj.eid);
+        }
+        // A stream's own frame (even an empty one) is authoritative for any
+        // eid IT was the current source of: that POV's own demoToReplay()
+        // already decided, via its own trailing-empty-frame logic, that the
+        // projectile is gone (missile entity's eType/trajectory stopped
+        // looking like a live projectile - see collectFxFromEntity). Acting
+        // on that immediately, instead of only via the PROJECTILE_STALE_MS
+        // timeout below, matters because the timeout can never fire if NO
+        // stream produces any more ticks for a while (nothing else airborne
+        // on the map) - real bug, confirmed on real production data: a
+        // rocket froze on the map for 35 real seconds because the next tick
+        // in either stream didn't arrive until then, so the stale eid just
+        // sat in byEid, never re-evaluated, and got included in every
+        // (nonexistent) frame in between as "still there".
+        for (const [eid, rec] of byEid) {
+          if (rec.streamIdx === si && !seenThisFrame.has(eid)) byEid.delete(eid);
         }
         idx[si]++;
       }

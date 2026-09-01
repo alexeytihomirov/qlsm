@@ -10,6 +10,7 @@ import { demoToReplay } from "./demo-to-replay.js";
 const EV_ITEM_PICKUP_RAW = 15 | 0x100;
 const ITEM_ARMOR_BODY_INDEX = 3; // QL91_ITEM_CLASSNAMES[3] (constants.js)
 const ITEM_HEALTH_MEGA_INDEX = 8; // QL91_ITEM_CLASSNAMES[8] (constants.js)
+const AMMO_ROCKETS_INDEX = 24; // QL91_ITEM_CLASSNAMES[24] (constants.js) - distinct bg_itemlist entry from weapon_rocketlauncher (13)
 
 function ownPlayerState({ x, y, z, externalEvent = 0, externalEventParm = 0 }) {
   const ps = createPlayerState();
@@ -213,4 +214,38 @@ test("a stale non-zero ps.externalEvent on the first snapshot is not mistaken fo
   const replay = demoToReplay(parser, { povClientNum: 0, mapTable: [], includePickups: true });
   const pickups = replay.events.filter((e) => e.event === "pickup");
   assert.equal(pickups.length, 0);
+});
+
+test("an ammo_rockets pickup near a registered weapon_rocketlauncher spot keeps its own name - real bug: reported as a fresh weapon pickup instead of ammo", () => {
+  const rlMapTable = [{ classname: "weapon_rocketlauncher", x: 100, y: 100, z: 50 }];
+  const parser = fakeParser([
+    // The RL weapon entity sits in view the whole time (registers it as
+    // "weapon_rocketlauncher" in the PVS heuristic's own registry).
+    {
+      serverTime: 1000,
+      entities: [itemEntity({ x: 100, y: 100, z: 50 })],
+      playerState: ownPlayerState({ x: 150, y: 100, z: 50 }),
+    },
+    // Player touches the SEPARATE ammo box 50 units away (well inside the
+    // 128-unit family-match radius) - the event's own canonical name is
+    // ammo_rockets, a distinct bg_itemlist entry from weapon_rocketlauncher.
+    {
+      serverTime: 1025,
+      entities: [itemEntity({ x: 100, y: 100, z: 50 })],
+      playerState: ownPlayerState({
+        x: 150,
+        y: 100,
+        z: 50,
+        externalEvent: EV_ITEM_PICKUP_RAW,
+        externalEventParm: AMMO_ROCKETS_INDEX,
+      }),
+    },
+  ]);
+
+  const replay = demoToReplay(parser, { povClientNum: 0, mapTable: rlMapTable, includePickups: true });
+  const pickups = replay.events.filter((e) => e.event === "pickup" && e.action === "pickup");
+
+  assert.equal(pickups.length, 1);
+  assert.equal(pickups[0].item, "ammo_rockets", "must not be renamed to the nearby weapon's classname");
+  assert.equal(pickups[0].respawn_sec, 40);
 });

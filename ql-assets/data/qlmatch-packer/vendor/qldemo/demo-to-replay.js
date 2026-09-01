@@ -46,7 +46,6 @@ import {
   normalizeMapKey,
   resolvePickupAt,
   resolvePickupRowAt,
-  toRestoreClassname,
 } from "./map-item-resolve.js?v=20260901a";
 import { powerupNamesFromEntityMask } from "./powerups.js?v=20260712b";
 import { weaponSlug } from "./weapons.js?v=20260712b";
@@ -121,6 +120,10 @@ function respawnSec(classname) {
   const cn = String(classname || "");
   if (cn === "item_health_mega") return 35;
   if (cn.startsWith("weapon_")) return 5;
+  // Ammo boxes (ammo_rockets, ammo_pack, ...) respawn on their own, much
+  // slower timer, not the parent weapon's 5s - see AMMO_RESPAWN_SEC_DEFAULT
+  // in map-spawns.js (the live map widget's own, already-correct value).
+  if (cn.startsWith("ammo_")) return 40;
   if (cn.startsWith("item_armor")) return 25;
   if (cn.startsWith("item_powerup")) return 35;
   if (cn.startsWith("item_")) return 35;
@@ -365,15 +368,28 @@ class StaticItemTracker {
  * pickup paths below.
  */
 function resolveExactPickupItem(canonical, x, y, z, staticItems, mapTable) {
+  // canonical is always the event's own bg_itemlist name - server-authoritative
+  // and precise (distinguishes e.g. ammo_rockets from weapon_rocketlauncher,
+  // item_armor_combat from item_armor_jacket). match/spawn below are used
+  // ONLY to snap the reported position onto a known spot (registry entry or
+  // map-spawn row) - never to rename the pickup. nearestFamilyMatch()
+  // deliberately collapses these distinctions (item_armor_jacket/_combat,
+  // weapon_X/ammo_X, ...) to find "the same physical spot" across naming
+  // conventions - using the MATCHED spot's own (collapsed) classname here
+  // used to silently rename an exact pickup to that family's name. Real bug,
+  // confirmed on bloodrun: an ammo_rockets touch got reported (and rendered)
+  // as weapon_rocketlauncher, implying a fresh weapon spawn that never
+  // happened. See also PICKUP_LABELS in overlay.js, which already expects
+  // the raw canonical names (item_armor_jacket "GA", item_armor_combat "YA")
+  // - not map-item-resolve.js's own CLASS_MAP output, which invented
+  // "item_armor_yellow" as if jacket/combat were the same item; they aren't.
   const match = staticItems.nearestFamilyMatch(canonical, x, y, z);
   if (match) {
     staticItems.seenPickups.add(match.key);
-    return { item: match, approxPos: false };
+    return { item: { classname: canonical, x: match.x, y: match.y, z: match.z }, approxPos: false };
   }
   const spawn = resolvePickupRowAt(mapTable, x, y, z, PS_PICKUP_MATCH_RADIUS);
-  const item = spawn
-    ? { classname: toRestoreClassname(spawn.classname) || canonical, x: spawn.x, y: spawn.y, z: spawn.z }
-    : { classname: canonical, x, y, z };
+  const item = spawn ? { classname: canonical, x: spawn.x, y: spawn.y, z: spawn.z } : { classname: canonical, x, y, z };
   return { item, approxPos: true };
 }
 

@@ -66,3 +66,35 @@ test("mergePickups prefers an exact entity-sourced pickup over an unsourced PVS-
   assert.equal(pickups.length, 1, "the two observations of one physical pickup collapse into one event");
   assert.equal(pickups[0].source, "ps");
 });
+
+test("mergeProjectiles clears an eid immediately once its own source POV reports it gone, without waiting for cross-POV staleness", () => {
+  const povReplays = [
+    {
+      clientNum: 0,
+      replay: {
+        meta: baseMeta(),
+        events: [
+          {
+            event: "projectiles",
+            game_time_ms: 100,
+            projectiles: [{ eid: 1, weapon: 5, weapon_slug: "rocketlauncher", clientNum: 0, x: 0, y: 0, z: 0, vx: 900, vy: 0, vz: 0 }],
+          },
+          // This POV's own trailing-empty-frame, 25ms later (well under
+          // PROJECTILE_STALE_MS=200) - real bug: without honoring this as
+          // an explicit "gone" signal, the eid stays in byEid (not yet
+          // stale by the timer) and, if neither stream produces another
+          // tick for a long time (nothing else airborne), it never gets
+          // re-evaluated - the last frame keeps reporting a frozen ghost.
+          { event: "projectiles", game_time_ms: 125, projectiles: [] },
+        ],
+      },
+    },
+    { clientNum: 1, replay: { meta: baseMeta(), events: [] } },
+  ];
+
+  const merged = mergeReplays(povReplays);
+  const frames = merged.events.filter((e) => e.event === "projectiles");
+  const last = frames[frames.length - 1];
+  assert.equal(last.game_time_ms, 125);
+  assert.equal(last.projectiles.length, 0, "the source POV's own empty frame must clear the eid immediately");
+});
