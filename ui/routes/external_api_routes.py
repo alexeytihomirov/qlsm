@@ -10,7 +10,7 @@ external_api_bp = Blueprint('external_api', __name__)
 _EXCLUDED_FIELDS = {'zmq_rcon_port', 'zmq_rcon_password', 'logs', 'config'}
 
 _QLMATCH_SUFFIX = '.qlmatch'
-_REPLAY_SUFFIX = '.replay.json.gz'
+_REPLAY_SUFFIX = '.replay.json.gz'  # keep in sync with ansible_instance_demos.SIDECAR_EXT
 
 
 @external_api_bp.route('/instances', methods=['GET'])
@@ -68,7 +68,9 @@ def external_list_instance_matches(instance_id):
     if err_response:
         return err_response
 
-    from ui.task_logic.ansible_instance_demos import list_instance_demos
+    from ui.task_logic.ansible_instance_demos import (
+        list_instance_demos, qlmatch_sidecar_name, read_qlmatch_manifest,
+    )
 
     success, demos, error_msg = list_instance_demos(instance_id)
     if not success:
@@ -79,12 +81,20 @@ def external_list_instance_matches(instance_id):
     for d in demos:
         if not d['name'].endswith(_QLMATCH_SUFFIX):
             continue
-        replay_name = d['name'][:-len(_QLMATCH_SUFFIX)] + _REPLAY_SUFFIX
+        # A pack's own filename doesn't reliably encode match_id/map (the
+        # operator-configurable qlx_qlmatchNameTemplate can template it to
+        # anything), so the sidecar name has to come from the pack's own
+        # manifest.json, not from string-editing this filename.
+        manifest_ok, manifest, _manifest_err = read_qlmatch_manifest(instance_id, d['name'])
+        replay_name = (
+            qlmatch_sidecar_name(manifest['match_id'], manifest['map'])
+            if manifest_ok else None
+        )
         matches.append({
             'name': d['name'],
             'size': d['size'],
             'mtime': d['mtime'],
-            'has_replay': replay_name in names,
+            'has_replay': replay_name in names if replay_name else False,
             'replay_name': replay_name if replay_name in names else None,
         })
 

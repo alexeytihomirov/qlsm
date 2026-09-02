@@ -32,9 +32,11 @@ Kept separate from ansible_instance_mgmt.py for the same reason as
 ansible_server_log_archives.py: that file is already past the project's
 file-size guideline.
 """
+import json
 import os
 import re
 import stat as stat_module
+import zipfile
 
 import paramiko
 
@@ -59,6 +61,14 @@ SSH_IO_TIMEOUT_SECONDS = 180
 # local filesystem path built by string concatenation, and $ still matches
 # before a trailing newline under .fullmatch().
 DEMO_FILENAME_RE = re.compile(r'\A[A-Za-z0-9._-]+\.(?:dm_91|qlmatch|packer\.log|replay\.json\.gz)\Z')
+
+# Mirrors restore/qlmatch.py's SIDECAR_EXT / sidecar_path_for(): the
+# packer always names a pack's replay sidecar "{match_id}_{map}.replay.json.gz",
+# regardless of what qlx_qlmatchNameTemplate made the .qlmatch's own filename
+# look like (see qlmatch-to-replay.mjs / pack.mjs) - so a .qlmatch and its
+# sidecar can NOT be paired by string-editing the .qlmatch filename; the
+# match_id/map have to come from the pack's own manifest.json.
+SIDECAR_EXT = '.replay.json.gz'
 
 # Generous but bounded: a batch this large would already take minutes to
 # fetch one-by-one over SFTP, so this is a sanity cap, not a realistic usage
@@ -226,6 +236,78 @@ def fetch_instance_demos(instance_id, filenames):
     except Exception as e:
         log.exception(f"Exception fetching demos for instance {instance_id}: {e}")
         return False, {}, [], "Failed to fetch demos."
+    finally:
+        if client is not None:
+            client.close()
+
+
+def qlmatch_sidecar_name(match_id, map_name):
+    """The replay sidecar filename for a given manifest match_id/map.
+
+    Same formula as restore/qlmatch.py's sidecar_path_for(), minus the
+    directory component (callers here only need to check/download by name).
+    """
+    return f"{match_id}_{map_name}{SIDECAR_EXT}"
+
+
+def read_qlmatch_manifest(instance_id, filename):
+    """Read {match_id, map} out of a .qlmatch pack's manifest.json.
+
+    Opens the remote pack through a seekable SFTP file handle and hands it
+    straight to zipfile, so only the central directory and the small
+    manifest.json member are fetched - not the multi-MB demos/*.dm_91
+    payload the rest of the zip carries. Mirrors the manifest read
+    restore/qlmatch.py's _pack_summary() already does locally on the game
+    server; needed here because a pack's own filename does not reliably
+    encode match_id/map (qlx_qlmatchNameTemplate can template it to anything).
+
+    Returns a tuple: (success: bool, manifest: dict or None, error_msg: str
+    or None) where manifest is {"match_id": str, "map": str}.
+    """
+    if not isinstance(filename, str) or not filename.endswith('.qlmatch') \
+            or not DEMO_FILENAME_RE.fullmatch(filename):
+        return False, None, f"Invalid qlmatch filename: {filename!r}"
+
+    client = None
+    try:
+        instance, host, instance_error = _resolve_instance(instance_id)
+        if instance_error:
+            log.error(f"Cannot read qlmatch manifest for instance {instance_id}: {instance_error}")
+            return False, None, instance_error
+
+        demo_dir = _demo_dir(instance)
+        client, sftp = _open_sftp(host)
+
+        try:
+            with sftp.open(f"{demo_dir}/{filename}", 'rb') as fh:
+                with zipfile.ZipFile(fh) as zf:
+                    raw = zf.read('manifest.json')
+        except FileNotFoundError:
+            return False, None, "Qlmatch file not found on the remote host."
+        except (KeyError, zipfile.BadZipFile) as exc:
+            return False, None, f"Could not read manifest.json from pack: {exc}"
+
+        try:
+            manifest = json.loads(raw.decode('utf-8'))
+        except (ValueError, UnicodeDecodeError) as exc:
+            return False, None, f"Malformed manifest.json: {exc}"
+
+        if not isinstance(manifest, dict):
+            return False, None, "Malformed manifest.json: not an object."
+
+        match_id = str(manifest.get('match_id') or '')
+        map_name = str(manifest.get('map') or '')
+        if not match_id or not map_name:
+            return False, None, "manifest.json missing match_id or map."
+
+        return True, {'match_id': match_id, 'map': map_name}, None
+
+    except (paramiko.AuthenticationException, paramiko.SSHException, OSError) as exc:
+        log.error(f"SSH failure reading qlmatch manifest for instance {instance_id}: {exc}")
+        return False, None, "Failed to read qlmatch manifest from remote host."
+    except Exception as e:
+        log.exception(f"Exception reading qlmatch manifest for instance {instance_id}: {e}")
+        return False, None, "Failed to read qlmatch manifest."
     finally:
         if client is not None:
             client.close()

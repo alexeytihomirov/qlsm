@@ -175,17 +175,34 @@ def test_matches_list_missing_instance_returns_404(client, app):
     mock_list.assert_not_called()
 
 
+def _fake_manifest_read(manifests):
+    """Build a read_qlmatch_manifest side_effect from {filename: (match_id, map)}."""
+    def _read(instance_id, filename):
+        if filename not in manifests:
+            return False, None, 'no manifest'
+        match_id, map_name = manifests[filename]
+        return True, {'match_id': match_id, 'map': map_name}, None
+    return _read
+
+
+@patch(f'{DEMOS_MODULE}.read_qlmatch_manifest', side_effect=_fake_manifest_read({
+    # Pack filename is templated (qlx_qlmatchNameTemplate) and does NOT
+    # share a base name with its sidecar - has_replay must come from the
+    # pack's manifest.json (match_id/map), not from editing this filename.
+    'duel_phrantic_Input-a3.qlmatch': ('20260827T170920Z', 'phrantic'),
+    'nopair.qlmatch': ('20260827T180000Z', 'phrantic'),
+}))
 @patch(f'{DEMOS_MODULE}.list_instance_demos', return_value=(
     True,
     [
         {'name': '20260827T170920Z_phrantic.replay.json.gz', 'size': 30, 'mtime': 3.0},
-        {'name': '20260827T170920Z_phrantic.qlmatch', 'size': 20, 'mtime': 2.0},
+        {'name': 'duel_phrantic_Input-a3.qlmatch', 'size': 20, 'mtime': 2.0},
         {'name': 'nopair.qlmatch', 'size': 10, 'mtime': 1.0},
         {'name': '20260827T170920Z_phrantic_p0_a3_1_1.dm_91', 'size': 5, 'mtime': 2.5},
     ],
     None,
 ))
-def test_matches_list_filters_to_qlmatch_and_flags_replay(mock_list, client, app):
+def test_matches_list_filters_to_qlmatch_and_flags_replay(mock_list, mock_manifest, client, app):
     key = _generate_key(client, app)
     instance_id = _create_test_instance(app)
     resp = client.get(f'/api/v1/instances/{instance_id}/matches',
@@ -194,9 +211,9 @@ def test_matches_list_filters_to_qlmatch_and_flags_replay(mock_list, client, app
     data = resp.get_json()['data']
     assert data['instance_name'] == 'ext-test-inst'
     matches = {m['name']: m for m in data['matches']}
-    assert set(matches) == {'20260827T170920Z_phrantic.qlmatch', 'nopair.qlmatch'}
-    assert matches['20260827T170920Z_phrantic.qlmatch']['has_replay'] is True
-    assert matches['20260827T170920Z_phrantic.qlmatch']['replay_name'] == \
+    assert set(matches) == {'duel_phrantic_Input-a3.qlmatch', 'nopair.qlmatch'}
+    assert matches['duel_phrantic_Input-a3.qlmatch']['has_replay'] is True
+    assert matches['duel_phrantic_Input-a3.qlmatch']['replay_name'] == \
         '20260827T170920Z_phrantic.replay.json.gz'
     assert matches['nopair.qlmatch']['has_replay'] is False
     assert matches['nopair.qlmatch']['replay_name'] is None

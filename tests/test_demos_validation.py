@@ -445,3 +445,110 @@ def test_fetch_ssh_failure_returns_error_not_exception():
     assert success is False
     assert files == {}
     assert error == "Failed to fetch demos from remote host."
+
+
+# --- read_qlmatch_manifest / qlmatch_sidecar_name ---
+#
+# A pack's own filename does not reliably encode match_id/map (the
+# qlx_qlmatchNameTemplate cvar can template it to include other fields), so
+# has_replay/replay_name for the external API must come from the pack's own
+# manifest.json rather than from string-editing the .qlmatch filename.
+
+
+def test_qlmatch_sidecar_name_matches_restore_qlmatch_formula():
+    from ui.task_logic.ansible_instance_demos import qlmatch_sidecar_name
+    assert qlmatch_sidecar_name('20260827T170920Z', 'phrantic') == \
+        '20260827T170920Z_phrantic.replay.json.gz'
+
+
+def _fake_qlmatch_zip(manifest):
+    import json as _json
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED) as zf:
+        zf.writestr('manifest.json', _json.dumps(manifest))
+    buf.seek(0)
+    return buf
+
+
+def test_manifest_rejects_non_qlmatch_filename_without_touching_ssh():
+    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
+        success, manifest, error = read_qlmatch_manifest(1, 'a.dm_91')
+    assert success is False
+    assert manifest is None
+    assert 'Invalid qlmatch filename' in error
+    mock_cls.assert_not_called()
+
+
+def test_manifest_rejects_path_traversal_without_touching_ssh():
+    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
+        success, manifest, error = read_qlmatch_manifest(1, '../../etc/passwd.qlmatch')
+    assert success is False
+    assert manifest is None
+    mock_cls.assert_not_called()
+
+
+def test_manifest_reads_match_id_and_map_from_zip_via_seekable_sftp_handle():
+    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+
+    zip_bytes = _fake_qlmatch_zip({'match_id': '20260902T210633Z', 'map': 'phrantic'})
+    sftp = MagicMock()
+    sftp.open.return_value.__enter__.return_value = zip_bytes
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, manifest, error = read_qlmatch_manifest(1, 'duel_phrantic_Input-a3.qlmatch')
+
+    assert success is True
+    assert error is None
+    assert manifest == {'match_id': '20260902T210633Z', 'map': 'phrantic'}
+
+
+def test_manifest_missing_file_returns_error_not_exception():
+    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+
+    sftp = MagicMock()
+    sftp.open.side_effect = FileNotFoundError()
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, manifest, error = read_qlmatch_manifest(1, 'a.qlmatch')
+
+    assert success is False
+    assert manifest is None
+    assert 'not found' in error.lower()
+
+
+def test_manifest_bad_zip_returns_error_not_exception():
+    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+
+    sftp = MagicMock()
+    sftp.open.return_value.__enter__.return_value = io.BytesIO(b'not a zip file')
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, manifest, error = read_qlmatch_manifest(1, 'a.qlmatch')
+
+    assert success is False
+    assert manifest is None
+
+
+def test_manifest_missing_match_id_or_map_returns_error():
+    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+
+    zip_bytes = _fake_qlmatch_zip({'match_id': '20260902T210633Z'})  # no "map"
+    sftp = MagicMock()
+    sftp.open.return_value.__enter__.return_value = zip_bytes
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, manifest, error = read_qlmatch_manifest(1, 'a.qlmatch')
+
+    assert success is False
+    assert manifest is None
+    assert 'match_id or map' in error
