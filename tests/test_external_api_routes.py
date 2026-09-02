@@ -1,8 +1,12 @@
+from unittest.mock import patch
+
 import pytest
 from tests.helpers import make_user, auth_headers
 from ui import db
 from ui.models import ApiKey, Host, HostStatus
 from ui.database import create_host, create_instance
+
+DEMOS_MODULE = 'ui.task_logic.ansible_instance_demos'
 
 
 def _generate_key(client, app):
@@ -149,3 +153,127 @@ def test_returns_all_instances(client, app):
                       headers={'Authorization': f'Bearer {key}'})
     assert resp.status_code == 200
     assert len(resp.get_json()['data']) == 3
+
+
+# --- Match (.qlmatch) listing and download ---
+
+def test_matches_list_no_auth(client, app):
+    """Missing Authorization header returns 401 before touching task logic."""
+    instance_id = _create_test_instance(app)
+    with patch(f'{DEMOS_MODULE}.list_instance_demos') as mock_list:
+        resp = client.get(f'/api/v1/instances/{instance_id}/matches')
+    assert resp.status_code == 401
+    mock_list.assert_not_called()
+
+
+def test_matches_list_missing_instance_returns_404(client, app):
+    key = _generate_key(client, app)
+    with patch(f'{DEMOS_MODULE}.list_instance_demos') as mock_list:
+        resp = client.get('/api/v1/instances/999999/matches',
+                          headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 404
+    mock_list.assert_not_called()
+
+
+@patch(f'{DEMOS_MODULE}.list_instance_demos', return_value=(
+    True,
+    [
+        {'name': '20260827T170920Z_phrantic.replay.json.gz', 'size': 30, 'mtime': 3.0},
+        {'name': '20260827T170920Z_phrantic.qlmatch', 'size': 20, 'mtime': 2.0},
+        {'name': 'nopair.qlmatch', 'size': 10, 'mtime': 1.0},
+        {'name': '20260827T170920Z_phrantic_p0_a3_1_1.dm_91', 'size': 5, 'mtime': 2.5},
+    ],
+    None,
+))
+def test_matches_list_filters_to_qlmatch_and_flags_replay(mock_list, client, app):
+    key = _generate_key(client, app)
+    instance_id = _create_test_instance(app)
+    resp = client.get(f'/api/v1/instances/{instance_id}/matches',
+                      headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 200
+    data = resp.get_json()['data']
+    assert data['instance_name'] == 'ext-test-inst'
+    matches = {m['name']: m for m in data['matches']}
+    assert set(matches) == {'20260827T170920Z_phrantic.qlmatch', 'nopair.qlmatch'}
+    assert matches['20260827T170920Z_phrantic.qlmatch']['has_replay'] is True
+    assert matches['20260827T170920Z_phrantic.qlmatch']['replay_name'] == \
+        '20260827T170920Z_phrantic.replay.json.gz'
+    assert matches['nopair.qlmatch']['has_replay'] is False
+    assert matches['nopair.qlmatch']['replay_name'] is None
+    mock_list.assert_called_once_with(instance_id)
+
+
+@patch(f'{DEMOS_MODULE}.list_instance_demos', return_value=(False, [], 'boom'))
+def test_matches_list_failure_returns_500(mock_list, client, app):
+    key = _generate_key(client, app)
+    instance_id = _create_test_instance(app)
+    resp = client.get(f'/api/v1/instances/{instance_id}/matches',
+                      headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 500
+    assert resp.get_json()['error']['message'] == 'boom'
+
+
+def test_match_download_no_auth(client, app):
+    instance_id = _create_test_instance(app)
+    with patch(f'{DEMOS_MODULE}.fetch_instance_demos') as mock_fetch:
+        resp = client.get(f'/api/v1/instances/{instance_id}/matches/download',
+                          query_string={'filename': 'a.qlmatch'})
+    assert resp.status_code == 401
+    mock_fetch.assert_not_called()
+
+
+@patch(f'{DEMOS_MODULE}.fetch_instance_demos', return_value=(True, {'a.qlmatch': b'zip-bytes'}, [], None))
+def test_match_download_returns_file_bytes(mock_fetch, client, app):
+    key = _generate_key(client, app)
+    instance_id = _create_test_instance(app)
+    resp = client.get(f'/api/v1/instances/{instance_id}/matches/download',
+                      query_string={'filename': 'a.qlmatch'},
+                      headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 200
+    assert resp.data == b'zip-bytes'
+    assert resp.mimetype == 'application/octet-stream'
+    mock_fetch.assert_called_once_with(instance_id, ['a.qlmatch'])
+
+
+def test_match_download_wrong_suffix_rejected_before_task_logic(client, app):
+    key = _generate_key(client, app)
+    instance_id = _create_test_instance(app)
+    with patch(f'{DEMOS_MODULE}.fetch_instance_demos') as mock_fetch:
+        resp = client.get(f'/api/v1/instances/{instance_id}/matches/download',
+                          query_string={'filename': 'a.replay.json.gz'},
+                          headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 400
+    mock_fetch.assert_not_called()
+
+
+@patch(f'{DEMOS_MODULE}.fetch_instance_demos', return_value=(True, {}, ['a.qlmatch'], None))
+def test_match_download_missing_file_returns_404(mock_fetch, client, app):
+    key = _generate_key(client, app)
+    instance_id = _create_test_instance(app)
+    resp = client.get(f'/api/v1/instances/{instance_id}/matches/download',
+                      query_string={'filename': 'a.qlmatch'},
+                      headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 404
+
+
+@patch(f'{DEMOS_MODULE}.fetch_instance_demos', return_value=(True, {'a.replay.json.gz': b'gz-bytes'}, [], None))
+def test_match_replay_download_returns_file_bytes(mock_fetch, client, app):
+    key = _generate_key(client, app)
+    instance_id = _create_test_instance(app)
+    resp = client.get(f'/api/v1/instances/{instance_id}/matches/replay',
+                      query_string={'filename': 'a.replay.json.gz'},
+                      headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 200
+    assert resp.data == b'gz-bytes'
+    mock_fetch.assert_called_once_with(instance_id, ['a.replay.json.gz'])
+
+
+def test_match_replay_download_wrong_suffix_rejected_before_task_logic(client, app):
+    key = _generate_key(client, app)
+    instance_id = _create_test_instance(app)
+    with patch(f'{DEMOS_MODULE}.fetch_instance_demos') as mock_fetch:
+        resp = client.get(f'/api/v1/instances/{instance_id}/matches/replay',
+                          query_string={'filename': 'a.qlmatch'},
+                          headers={'Authorization': f'Bearer {key}'})
+    assert resp.status_code == 400
+    mock_fetch.assert_not_called()
