@@ -699,6 +699,15 @@ function playerRowFromPs(ps, rosterByClient, serverTime, clientNum, lastVitals, 
   row.ammo = ps.ammo ? ps.ammo.slice() : undefined;
   row.weapons = ps.stats?.[STAT_WEAPONS];
   row.holdable = ps.stats?.[STAT_HOLDABLE_ITEM] || undefined;
+  // entityVelocity() returns 0,0,0 for TR_INTERPOLATE (the type
+  // playerStateToEntityState uses when extrapolate=false), so own-POV
+  // rows were serializing a standing-still vector even while moving.
+  // Restore and overlays need the real playerState velocity.
+  if (ps.velocity) {
+    row.vx = round1(ps.velocity[0] || 0);
+    row.vy = round1(ps.velocity[1] || 0);
+    row.vz = round1(ps.velocity[2] || 0);
+  }
   return row;
 }
 

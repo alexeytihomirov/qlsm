@@ -356,7 +356,57 @@ def _extract_inventory(row):
     return loadout_keys, ammo, holdable
 
 
-def build_player_rows(snapshot_event):
+def _finite_xyz(p):
+    if not isinstance(p, dict):
+        return None
+    try:
+        return float(p["x"]), float(p["y"]), float(p["z"])
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _attach_velocity(row, p, prev_p=None, dt_ms=None):
+    """Copy sidecar vx/vy/vz, or estimate from the previous positions row.
+
+    Own-POV rows historically serialized vx=0 always: entityVelocity()
+    ignores TR_INTERPOLATE (playerStateToEntityState's type). If sidecar
+    velocity is missing or all-zero while the player moved, derive it
+    from the position delta so restore still gets a motion vector.
+    """
+    vx, vy, vz = p.get("vx"), p.get("vy"), p.get("vz")
+    has = vx is not None and vy is not None and vz is not None
+    prev_xyz = _finite_xyz(prev_p)
+    moved = False
+    if prev_xyz is not None:
+        moved = (
+            abs(row["x"] - prev_xyz[0])
+            + abs(row["y"] - prev_xyz[1])
+            + abs(row["z"] - prev_xyz[2])
+        ) > 1.0
+    use_delta = False
+    if not has:
+        use_delta = prev_xyz is not None and dt_ms
+    elif (
+        moved
+        and dt_ms
+        and float(vx) == 0.0
+        and float(vy) == 0.0
+        and float(vz) == 0.0
+    ):
+        use_delta = True
+    if use_delta and prev_xyz is not None and dt_ms and dt_ms > 0:
+        scale = 1000.0 / float(dt_ms)
+        row["vx"] = (row["x"] - prev_xyz[0]) * scale
+        row["vy"] = (row["y"] - prev_xyz[1]) * scale
+        row["vz"] = (row["z"] - prev_xyz[2]) * scale
+        return
+    if has:
+        row["vx"] = float(vx)
+        row["vy"] = float(vy)
+        row["vz"] = float(vz)
+
+
+def build_player_rows(snapshot_event, prev_by_cn=None, dt_ms=None):
     """Loose (pre-canonicalize) players[] rows from one 'positions' event.
 
     Health/armor default to 100/0 when the sidecar doesn't carry them (a
@@ -365,6 +415,7 @@ def build_player_rows(snapshot_event):
     codec.canonicalize would otherwise read as a dead/near-dead player.
     """
     rows = []
+    prev_by_cn = prev_by_cn or {}
     for p in (snapshot_event or {}).get("players") or []:
         if not isinstance(p, dict):
             continue
@@ -394,6 +445,15 @@ def build_player_rows(snapshot_event):
                     row["dead"] = 1
             except (TypeError, ValueError):
                 pass
+        weapon = p.get("weapon")
+        if weapon is not None:
+            try:
+                w = int(weapon)
+            except (TypeError, ValueError):
+                w = 0
+            if w > 0:
+                row["w"] = w
+        _attach_velocity(row, p, prev_by_cn.get(cn), dt_ms)
         loadout_keys, ammo, _holdable = _extract_inventory(p)
         if loadout_keys is not None:
             row["lo"] = loadout_to_mask(loadout_keys)
@@ -511,7 +571,19 @@ def build_checkpoint_doc(sidecar, target_ms, map_spawns_table, map_key, wall_now
             "no snapshot at or before {}ms in this replay (match may start later, "
             "or the sidecar has no positions events)".format(target_ms)
         )
-    players = build_player_rows(snapshot)
+    prev_event, prev_t = (
+        nearest_positions_event(events, snap_t - 1) if snap_t is not None else (None, None)
+    )
+    dt_ms = (snap_t - prev_t) if (snap_t is not None and prev_t is not None) else None
+    prev_by_cn = {}
+    for p in (prev_event or {}).get("players") or []:
+        if not isinstance(p, dict):
+            continue
+        try:
+            prev_by_cn[int(p.get("clientNum"))] = p
+        except (TypeError, ValueError):
+            continue
+    players = build_player_rows(snapshot, prev_by_cn=prev_by_cn, dt_ms=dt_ms)
     pickup_state = pickup_state_at(events, target_ms)
     items = build_item_rows(pickup_state, map_spawns_table, target_ms, map_key, wall_now)
     doc = {

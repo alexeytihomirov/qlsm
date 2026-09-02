@@ -157,6 +157,9 @@ PAUSE_TEXT_CMD_PERM = 5
 RESTORE_POS_FRAMES = 3
 RESTORE_POS_FRAMES_BOT = 10
 RESTORE_VEL_FRAMES = 5
+# Server frames to leave unpaused after set_position so other clients
+# receive a snapshot with EF_TELEPORT_BIT before we freeze the match.
+RESTORE_SNAPSHOT_FRAMES = 2
 COORD_DECIMALS = 1
 
 WEAPON_KEYS = (
@@ -734,6 +737,22 @@ class match_restore(minqlx.Plugin):
     def _restore_cancel_live_hud_hooks(self):
         self._restore_skip_pause_hooks = False
 
+    def _schedule_after_frames(self, frames, fn):
+        """Run fn after `frames` server frames (0 = now)."""
+        try:
+            left = int(frames)
+        except (TypeError, ValueError):
+            left = 0
+        if left <= 0:
+            fn()
+            return
+
+        @minqlx.next_frame
+        def _step():
+            self._schedule_after_frames(left - 1, fn)
+
+        _step()
+
     def _begin_restore_session(self):
         self._restore_session_active = True
         self._reset_restore_runtime_cache()
@@ -1084,6 +1103,7 @@ class match_restore(minqlx.Plugin):
                         job["x"],
                         job["y"],
                         job["z"],
+                        teleport=False,
                     )
                 except (AttributeError, TypeError, ValueError, minqlx.NonexistentPlayerError):
                     pass
@@ -1096,7 +1116,7 @@ class match_restore(minqlx.Plugin):
             for job in self._velocity_apply_queue:
                 try:
                     target = self.player(job["client_id"])
-                    target.velocity = target.velocity._replace(x=job["vx"], y=job["vy"], z=job["vz"])
+                    self._write_player_velocity(target, job["vx"], job["vy"], job["vz"])
                 except (AttributeError, TypeError, ValueError, minqlx.NonexistentPlayerError):
                     pass
                 job["frames"] -= 1
@@ -2399,11 +2419,12 @@ class match_restore(minqlx.Plugin):
         self._begin_restore_session()
         self._restore_hold_until_unpause = True
         self._restore_apply_active = True
+        self._restore_pause_pending = False
         try:
             ok, detail = self._apply_checkpoint_body(
                 caller, cp, slot_remap=slot_remap, phase=phase
             )
-            if not ok:
+            if not ok and not self._restore_pause_pending:
                 self._abort_restore_session(detail)
             return ok, detail
         except Exception:
@@ -2464,23 +2485,19 @@ class match_restore(minqlx.Plugin):
                 self._refresh_match_timer_hud(checkpoint_t_ms)
 
             if phase in ("all", "items", "players"):
-                ok_pause, pause_detail = self._ensure_restore_paused(caller)
-                if not ok_pause:
-                    return False, pause_detail
-                if pause_detail:
-                    parts.append(pause_detail)
-
-            if phase in ("all", "players"):
-                n_kin, kin_detail = self._restore_phase_player_kinematics(
-                    cp, slot_remap=slot_remap
+                # Same-tick unpause+write+pause never lets SV_Frame send the
+                # teleport snapshot; other clients only saw the opponent
+                # after a later unpause. Hold live for a couple of frames.
+                hud_flag = live_hud
+                live_hud = False
+                self._restore_pause_pending = True
+                self._schedule_after_frames(
+                    RESTORE_SNAPSHOT_FRAMES,
+                    lambda: self._finish_restore_pause_kinematics(
+                        caller, cp, slot_remap, phase, hud_flag,
+                        items_failure_detail,
+                    ),
                 )
-                if kin_detail:
-                    parts.append(kin_detail)
-                if n_kin < 0:
-                    return False, kin_detail
-
-            if phase in ("all", "items", "players"):
-                self._end_restore_session()
 
             if items_failure_detail is not None:
                 return False, items_failure_detail
@@ -2506,6 +2523,50 @@ class match_restore(minqlx.Plugin):
             "; ".join(parts),
         )
         return True, summary
+
+    def _finish_restore_pause_kinematics(
+        self, caller, cp, slot_remap, phase, live_hud, items_failure_detail
+    ):
+        """Pause + kinematics after teleport snapshots have gone out."""
+        self._restore_pause_pending = False
+        try:
+            if phase in ("all", "items", "players"):
+                ok_pause, pause_detail = self._ensure_restore_paused(caller)
+                if not ok_pause:
+                    if caller is not None:
+                        try:
+                            caller.tell("^1restore^7: {}".format(pause_detail))
+                        except (AttributeError, TypeError, ValueError):
+                            pass
+                    self.logger.warning(
+                        "match_restore: deferred pause failed: %s", pause_detail
+                    )
+                    return
+            if phase in ("all", "players"):
+                n_kin, kin_detail = self._restore_phase_player_kinematics(
+                    cp, slot_remap=slot_remap
+                )
+                if kin_detail:
+                    self.logger.info(
+                        "match_restore restore phase=player_kinematics deferred %s",
+                        kin_detail,
+                    )
+                if n_kin < 0:
+                    if caller is not None:
+                        try:
+                            caller.tell(
+                                "^1restore^7: kinematics failed: {}".format(kin_detail)
+                            )
+                        except (AttributeError, TypeError, ValueError):
+                            pass
+                    return
+            if phase in ("all", "items", "players"):
+                self._end_restore_session()
+        except Exception:
+            self.logger.exception("match_restore: deferred pause/kinematics failed")
+        finally:
+            if live_hud:
+                self._restore_cancel_live_hud_hooks()
 
     def _refresh_match_timer_hud(self, t_ms):
         """Push setmatchtime to clients (must run unpaused for visible HUD)."""
@@ -3222,11 +3283,11 @@ class match_restore(minqlx.Plugin):
 
     def _apply_dead_player_inventory(self, target):
         try:
-            target.weapons = minqlx.NO_WEAPONS._replace(g=True)
+            self._write_player_weapons(target, minqlx.NO_WEAPONS._replace(g=True))
         except (AttributeError, TypeError, ValueError):
             pass
         try:
-            target.weapon = minqlx.Weapon(1)
+            self._write_player_weapon(target, 1)
         except (AttributeError, TypeError, ValueError):
             pass
         try:
@@ -3247,7 +3308,7 @@ class match_restore(minqlx.Plugin):
         for cid, vel in pending.items():
             try:
                 target = self.player(cid)
-                target.velocity = target.velocity._replace(x=vel[0], y=vel[1], z=vel[2])
+                self._write_player_velocity(target, vel[0], vel[1], vel[2])
                 self._queue_player_velocity(cid, vel[0], vel[1], vel[2], frames=frames)
             except (AttributeError, TypeError, ValueError, minqlx.NonexistentPlayerError):
                 pass
@@ -3294,7 +3355,9 @@ class match_restore(minqlx.Plugin):
                         if wkey in WEAPON_KEYS:
                             kwargs[wkey] = bool(val)
                     if kwargs:
-                        target.weapons = minqlx.NO_WEAPONS._replace(**kwargs)
+                        self._write_player_weapons(
+                            target, minqlx.NO_WEAPONS._replace(**kwargs)
+                        )
                 if isinstance(ammo, dict) and ammo:
                     self._apply_ammo(target, ammo)
                 # weapon_idx 0 means "no active weapon recorded" -- _read_weapon_idx
@@ -3303,7 +3366,7 @@ class match_restore(minqlx.Plugin):
                 # whole vitals restore for this player; skip the write instead, the
                 # same way the empty loadout/ammo dicts above are skipped.
                 if weapon_idx:
-                    target.weapon = minqlx.Weapon(int(weapon_idx))
+                    self._write_player_weapon(target, int(weapon_idx))
                 self._apply_powerups(target, payload.get("pw", payload.get("powerups")))
             if score is not None:
                 self._apply_player_score(target, score)
@@ -3393,8 +3456,7 @@ class match_restore(minqlx.Plugin):
                     if self._is_bot_player(target)
                     else RESTORE_POS_FRAMES
                 )
-                self._apply_player_position(target, x, y, z)
-                self._queue_player_position(client_id, x, y, z, frames=pos_frames)
+                self._teleport_player(target, x, y, z, frames=pos_frames)
             if want_dead:
                 self._schedule_dead_state_reassert(target)
             return True, ", ".join(planned)
@@ -3413,10 +3475,9 @@ class match_restore(minqlx.Plugin):
                     if self._is_bot_player(target)
                     else RESTORE_POS_FRAMES
                 )
-                self._apply_player_position(target, x, y, z)
-                self._queue_player_position(client_id, x, y, z, frames=pos_frames)
+                self._teleport_player(target, x, y, z, frames=pos_frames)
             if vx is not None and vy is not None and vz is not None:
-                target.velocity = target.velocity._replace(x=vx, y=vy, z=vz)
+                self._write_player_velocity(target, vx, vy, vz)
                 self._remember_restore_velocity(client_id, vx, vy, vz)
             elif payload.get("vel_reset"):
                 # minqlx.Vector3 is a PyStructSequence: its ctor takes exactly ONE
@@ -3425,7 +3486,7 @@ class match_restore(minqlx.Plugin):
                 # `velocity(reset=True)` call this replaced returned the zero vector
                 # without ever writing it (`if not kwargs: return vel`), so on production
                 # it was a silent no-op. Zeroing here is deliberate, not accidental.
-                target.velocity = minqlx.Vector3((0, 0, 0))
+                self._write_player_velocity(target, 0, 0, 0)
                 self._restore_pending_velocities.pop(int(client_id), None)
             return True, ", ".join(planned)
 
@@ -3445,18 +3506,17 @@ class match_restore(minqlx.Plugin):
                 if target is None:
                     return
                 if x is not None and y is not None and z is not None:
-                    self._apply_player_position(target, x, y, z)
-                    self._queue_player_position(client_id, x, y, z, frames=pos_frames)
+                    self._teleport_player(target, x, y, z, frames=pos_frames)
                 if vx is not None and vy is not None and vz is not None:
-                    target.velocity = target.velocity._replace(x=vx, y=vy, z=vz)
+                    self._write_player_velocity(target, vx, vy, vz)
                 elif payload.get("vel_reset"):
                     # REAL zero-velocity write (was a silent no-op pre-v1.0.0) --
                     # operator-approved; see the Vector3 note in _apply_player_snapshot's
                     # kinematics_only branch above.
-                    target.velocity = minqlx.Vector3((0, 0, 0))
+                    self._write_player_velocity(target, 0, 0, 0)
                 elif not want_dead and x is not None and y is not None and z is not None:
                     # Same: REAL zero-velocity write, operator-approved (see note above).
-                    target.velocity = minqlx.Vector3((0, 0, 0))
+                    self._write_player_velocity(target, 0, 0, 0)
                 if (
                     not want_dead
                     and not target.is_alive
@@ -3465,15 +3525,18 @@ class match_restore(minqlx.Plugin):
                     and z is not None
                 ):
                     target.is_alive = True
-                    self._queue_player_position(client_id, x, y, z, frames=pos_frames)
             except (AttributeError, TypeError, ValueError) as exc:
                 self.logger.exception("match_restore restoreplayer: %s", exc)
 
         _apply()
         if x is not None and y is not None and z is not None and self._is_bot_player(target):
+            # Native set_position xors EF_TELEPORT_BIT each call; do not
+            # re-teleport the bot. Fallback queue holds origin without xor.
 
             @minqlx.delay(0.15)
             def _bot_reposition():
+                if callable(getattr(minqlx, "set_position", None)):
+                    return
                 self._queue_player_position(
                     client_id, x, y, z, frames=RESTORE_POS_FRAMES_BOT
                 )
@@ -3509,7 +3572,63 @@ class match_restore(minqlx.Plugin):
         )
 
     @staticmethod
-    def _apply_player_position(target, x, y, z):
+    def _write_player_velocity(target, vx, vy, vz):
+        vel = minqlx.Vector3((float(vx), float(vy), float(vz)))
+        setter = getattr(minqlx, "set_velocity", None)
+        if callable(setter):
+            try:
+                if setter(int(target.id), vel):
+                    return
+            except (AttributeError, TypeError, ValueError):
+                pass
+        target.velocity = target.velocity._replace(x=float(vx), y=float(vy), z=float(vz))
+
+    def _teleport_player(self, target, x, y, z, frames=RESTORE_POS_FRAMES):
+        """One native teleport (xor EF_TELEPORT_BIT once). Queue only on fallback.
+
+        minqlx.set_position xors the teleport bit every call. Re-applying it
+        for RESTORE_POS_FRAMES cancelled the snap on even counts, so other
+        clients interpolated from the old origin until a later unpause.
+        """
+        if self._apply_player_position(target, x, y, z, teleport=True):
+            return True
+        self._queue_player_position(int(target.id), x, y, z, frames=frames)
+        return False
+
+    @staticmethod
+    def _write_player_weapons(target, weapons_obj):
+        setter = getattr(minqlx, "set_weapons", None)
+        if callable(setter):
+            try:
+                if setter(int(target.id), weapons_obj):
+                    return
+            except (AttributeError, TypeError, ValueError):
+                pass
+        target.weapons = weapons_obj
+
+    @staticmethod
+    def _write_player_weapon(target, weapon_idx):
+        idx = int(weapon_idx)
+        setter = getattr(minqlx, "set_weapon", None)
+        if callable(setter):
+            try:
+                if setter(int(target.id), idx):
+                    return
+            except (AttributeError, TypeError, ValueError):
+                pass
+        target.weapon = minqlx.Weapon(idx)
+
+    @staticmethod
+    def _apply_player_position(target, x, y, z, teleport=True):
+        pos = minqlx.Vector3((float(x), float(y), float(z)))
+        if teleport:
+            setter = getattr(minqlx, "set_position", None)
+            if callable(setter):
+                try:
+                    if setter(int(target.id), pos):
+                        return True
+                except (AttributeError, TypeError, ValueError):
+                    pass
         try:
             # REAL zero-velocity write (was a silent no-op pre-v1.0.0) --
             # operator-approved; see the Vector3 note in _apply_player_snapshot.
@@ -3517,6 +3636,7 @@ class match_restore(minqlx.Plugin):
         except (AttributeError, TypeError, ValueError):
             pass
         target.position = target.position._replace(x=float(x), y=float(y), z=float(z))
+        return False
 
     @staticmethod
     def _apply_player_score(target, score):
@@ -3535,7 +3655,18 @@ class match_restore(minqlx.Plugin):
         if not kwargs:
             return
         try:
-            target.ammo = target.ammo._replace(**kwargs)
+            ammo_obj = target.ammo._replace(**kwargs)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError("ammo apply failed: {}".format(exc)) from exc
+        setter = getattr(minqlx, "set_ammo", None)
+        if callable(setter):
+            try:
+                if setter(int(target.id), ammo_obj):
+                    return
+            except (AttributeError, TypeError, ValueError):
+                pass
+        try:
+            target.ammo = ammo_obj
         except (AttributeError, TypeError, ValueError) as exc:
             raise ValueError("ammo apply failed: {}".format(exc)) from exc
 

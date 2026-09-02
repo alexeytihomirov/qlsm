@@ -1,5 +1,5 @@
 export { parseDemoBuffer, QLDemoParser } from "./demo-parser.js?v=20260901d";
-export { demoToReplay, replaySummary } from "./demo-to-replay.js?v=20260901d";
+export { demoToReplay, replaySummary } from "./demo-to-replay.js?v=20260902a";
 export {
   matchBufferToReplay,
   matchPovsToReplay,

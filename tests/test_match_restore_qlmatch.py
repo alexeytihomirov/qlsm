@@ -400,6 +400,60 @@ class SnapshotAndCheckpointTests(unittest.TestCase):
             {"mg": 100, "rl": 25, "sg": 0, "gl": 0, "lg": 0, "rg": 0, "pg": 0, "cg": 0},
         )
 
+    def test_checkpoint_copies_velocity_weapon_and_inventory(self):
+        events = [
+            {
+                "event": "positions", "game_time_ms": 0,
+                "players": [
+                    {
+                        "clientNum": 0, "x": 0.0, "y": 0.0, "z": 0.0,
+                        "health": 100, "armor": 50,
+                        "vx": 10, "vy": 20, "vz": -5,
+                        "weapon": 5,
+                        "weapons": (1 << 1) | (1 << 5),
+                        "ammo": [0, 65535, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    },
+                ],
+            },
+        ]
+        sidecar = {"meta": {}, "events": events}
+        doc, _warning, _snap_t = qlmatch.build_checkpoint_doc(
+            sidecar, 0, {}, "bloodrun", wall_now=1000.0,
+        )
+        row = doc["players"][0]
+        self.assertEqual(row["vx"], 10)
+        self.assertEqual(row["vy"], 20)
+        self.assertEqual(row["vz"], -5)
+        self.assertEqual(row["w"], 5)
+        self.assertIn("lo", row)
+        self.assertEqual(row["am"]["rl"], 12)
+
+    def test_zero_sidecar_velocity_estimated_from_previous_snapshot(self):
+        events = [
+            {
+                "event": "positions", "game_time_ms": 0,
+                "players": [
+                    {"clientNum": 0, "x": 0.0, "y": 0.0, "z": 0.0, "health": 100, "armor": 0,
+                     "vx": 0, "vy": 0, "vz": 0},
+                ],
+            },
+            {
+                "event": "positions", "game_time_ms": 100,
+                "players": [
+                    {"clientNum": 0, "x": 50.0, "y": 0.0, "z": 0.0, "health": 100, "armor": 0,
+                     "vx": 0, "vy": 0, "vz": 0},
+                ],
+            },
+        ]
+        sidecar = {"meta": {}, "events": events}
+        doc, _warning, snap_t = qlmatch.build_checkpoint_doc(
+            sidecar, 100, {}, "bloodrun", wall_now=1000.0,
+        )
+        self.assertEqual(snap_t, 100)
+        row = doc["players"][0]
+        self.assertAlmostEqual(row["vx"], 500.0)
+        self.assertEqual(row["vy"], 0.0)
+
     def test_raises_when_no_snapshot_before_target(self):
         sidecar = {"meta": {}, "events": self._events()}
         with self.assertRaises(ValueError):
