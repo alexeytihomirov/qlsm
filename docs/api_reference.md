@@ -1068,9 +1068,13 @@ Authorization: Bearer <api_key>
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/v1/instances` | GET | Bearer token | List all instances for external service integration |
+| `/api/v1/instances/<id>/matches` | GET | Bearer token | List recorded `.qlmatch` demos for an instance. Each entry: `{name, size, mtime, has_replay, replay_name}` |
+| `/api/v1/instances/<id>/matches/download?filename=` | GET | Bearer token | Download a single `.qlmatch` file |
+| `/api/v1/instances/<id>/matches/replay?filename=` | GET | Bearer token | Download the `.replay.json.gz` sidecar for a match, by its `replay_name` |
 
 - Rate limited: 200 requests/minute
 - Excludes sensitive fields: `zmq_rcon_port`, `zmq_rcon_password`, `zmq_stats_port`, `zmq_stats_password`, `logs`, `config`
+- Called cross-origin from a browser (e.g. ql-stream-tools' Demo Editor)? Add that origin to `CORS_ORIGINS` — the `Authorization` header this API requires is allowed once `CORS_ORIGINS` is non-empty (see `ui/__init__.py`), but the request is still same-origin-only until the caller's origin is listed there.
 
 ## Response Formats
 

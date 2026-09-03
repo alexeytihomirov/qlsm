@@ -119,7 +119,13 @@ def create_app(test_config=None):
         app.logger.warning(f"Redis client init failed — JWT blocklist and lockout disabled: {e}")
     cors_origins = app.config.get('CORS_ORIGINS', [])
     if cors_origins:
-        CORS(app, resources={r"/api/*": {"origins": cors_origins, "allow_headers": ["Content-Type", "X-CSRF-TOKEN"], "supports_credentials": True}})
+        # "Authorization" is required alongside the JWT-cookie routes'
+        # existing allowance — external_api_routes.py's Bearer-token API
+        # (require_api_key()) sends it on every request, and a browser drops
+        # that header from a cross-origin request whose preflight response
+        # doesn't explicitly allow it, regardless of the origin itself being
+        # allowed.
+        CORS(app, resources={r"/api/*": {"origins": cors_origins, "allow_headers": ["Content-Type", "X-CSRF-TOKEN", "Authorization"], "supports_credentials": True}})
     # When CORS_ORIGINS is empty, no CORS headers are added — browser enforces same-origin policy
     
     # Initialize Flask-SocketIO with Redis message queue (optional for RCON feature)
