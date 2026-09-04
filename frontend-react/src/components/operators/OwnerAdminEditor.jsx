@@ -157,7 +157,8 @@ function OwnerAdminEditor({ serverCfgContent, accessTxtContent, onServerCfgChang
             </ul>
           )}
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Writes <code className="text-[var(--text-secondary)]">steamid|level</code> lines in access.txt.
+            Writes <code className="text-[var(--text-secondary)]">steamid|level</code> lines in access.txt,
+            and applies the permission level in-game on Save (may take up to ~30s to take effect).
           </p>
         </div>
       </div>

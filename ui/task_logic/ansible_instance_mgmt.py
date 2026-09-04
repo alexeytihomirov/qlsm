@@ -673,6 +673,15 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
                     instance_id, exc_info=True,
                 )
 
+            try:
+                from .access_permission_sync import sync_instance_access_permissions
+                sync_instance_access_permissions(instance)
+            except Exception:
+                log.warning(
+                    "access.txt permission sync failed for instance %s (non-fatal)",
+                    instance_id, exc_info=True,
+                )
+
             log.info(f"Finished task apply_instance_config for instance_id: {instance_id}. Status: {final_status.value}")
             return f"Instance {instance_id} config application successful. Status: {final_status.value}"
         else:
