@@ -68,6 +68,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       QLSM_HOST_USER: ${QLSM_HOST_USER:-home}
       QLSM_HOST_IP: ${QLSM_HOST_IP:-192.168.100.100}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     volumes:
       - /home/home/qlsm/data:/app/data
       - /home/home/qlsm/terraform/ssh-keys:/app/terraform/ssh-keys
