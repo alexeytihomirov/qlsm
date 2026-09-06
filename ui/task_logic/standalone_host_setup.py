@@ -7,6 +7,7 @@ from rq import get_current_job
 from ui import db
 from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.models import Host, HostStatus
+from ui.runtime import host_runtime
 from ui.task_logic.self_host_network import resolve_self_host_management_target
 from .common import append_log
 from .standalone_inventory import generate_standalone_inventory
@@ -215,15 +216,7 @@ def _setup_playbook_extra_vars(host):
         # a real list.
         'game_udp_ports': GAME_UDP_PORTS,
         'rcon_tcp_ports': RCON_TCP_PORTS,
-        # Mirrors ansible_host_setup.py's cloud-host extra vars -- without
-        # these, build_engine_hook.yml always falls back to its 'minqlx'
-        # default regardless of Host.engine_flavor, so a standalone host
-        # configured for minqlxtended silently keeps rebuilding minqlx on
-        # every rerun-setup.
-        'qlds_engine_flavor': host.engine_flavor,
-        'qlds_engine_source': host.engine_source,
-        'qlds_engine_artifact_url': host.engine_artifact_url or '',
-        'qlsm_github_token': os.environ.get('GITHUB_ARTIFACT_TOKEN', ''),
+        'runtime': host_runtime(host),
     }
     if host.provider == 'self':
         extra_vars['use_host_redis'] = 'false'

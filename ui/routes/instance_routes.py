@@ -13,7 +13,12 @@ from ui.lan_rate_policy import (
     lan_rate_unsupported_message,
     would_enable_unsupported_lan_rate,
 )
-from ui.preset_support import resolve_preset_path, resolve_preset_subdir
+from ui.preset_support import (
+    default_preset_name_for_runtime,
+    resolve_preset_path,
+    resolve_preset_subdir,
+)
+from ui.runtime import host_runtime, log_filename_pattern, runtime_paths
 from ui.database import (
     get_instances, get_instance, create_instance, update_instance, delete_instance,
     get_host,
@@ -433,8 +438,16 @@ def add_instance_api():
 
             shutil.rmtree(_get_draft_base_path(draft_id), ignore_errors=True)
         else:
-            # No draft — copy defaults
-            default_scripts_dir = resolve_preset_subdir('default', 'scripts')
+            # No draft — copy the builtin defaults for the host's runtime.
+            # draft_id is optional on this endpoint, so this is a live path for
+            # API clients and for the UI after a draft-creation failure.
+            # Hardcoding 'default' here would seed a minqlxtended host with
+            # minqlx plugins, and the playbook's baseline backfill
+            # (--ignore-existing) cannot correct a same-named wrong-runtime
+            # file — every plugin would then die on import.
+            default_scripts_dir = resolve_preset_subdir(
+                default_preset_name_for_runtime(host_runtime(selected_host)), 'scripts'
+            )
             if os.path.exists(default_scripts_dir):
                 shutil.copytree(default_scripts_dir, instance_scripts_dir, dirs_exist_ok=True)
             else:
@@ -1045,14 +1058,15 @@ def fetch_remote_minqlx_logs_api(instance_id):
     if not instance.host:
         return jsonify({"error": {"message": "Instance has no associated host."}}), 400
 
+    runtime = host_runtime(instance.host)
     filter_mode = request.args.get('filter_mode', 'lines')
     lines_raw = request.args.get('lines', '500')
-    filename = request.args.get('filename', 'minqlx.log')
+    filename = request.args.get('filename') or runtime_paths(runtime)['log_filename']
 
     if filter_mode not in ('lines', 'all'):
         return jsonify({"error": {"message": "filter_mode must be 'lines' or 'all'"}}), 400
 
-    if not re.fullmatch(r'minqlx\.log(\.\d+)?', filename):
+    if not re.fullmatch(log_filename_pattern(runtime), filename):
         return jsonify({"error": {"message": "Invalid MinQLX log filename."}}), 400
 
     try:
@@ -1374,7 +1388,8 @@ def manage_instance_config_api(instance_id): # Renamed and combined GET/POST fro
             os.makedirs(instance_user_hooks_dir, exist_ok=True)  # rsync source must exist (spec §5.4)
             if draft_id:
                 from ui.routes.draft_routes import (
-                    _get_draft_base_path, _get_draft_scripts_path, _get_draft_user_hooks_path,
+                    _get_draft_base_path, _get_draft_scripts_path, _get_draft_source,
+                    _get_draft_user_hooks_path, _merge_draft_user_hooks_into_instance,
                 )
 
                 instance_scripts_dir = os.path.join(instance_config_dir, 'scripts')
@@ -1384,9 +1399,14 @@ def manage_instance_config_api(instance_id): # Renamed and combined GET/POST fro
                         shutil.rmtree(instance_scripts_dir)
                     shutil.copytree(draft_scripts, instance_scripts_dir)
 
-                draft_user_hooks = _get_draft_user_hooks_path(draft_id)
-                if os.path.exists(draft_user_hooks):
-                    shutil.copytree(draft_user_hooks, instance_user_hooks_dir, dirs_exist_ok=True)
+                # Only a preset-sourced draft can legitimately introduce new hook
+                # binaries here — a plain instance-sourced draft is just a stale
+                # snapshot of user-hooks/ taken when the modal opened, and blindly
+                # copying it back would silently undo any replace/delete done via
+                # the Hooks tab's live per-file API in the same edit session.
+                if _get_draft_source(draft_id) == 'preset':
+                    draft_user_hooks = _get_draft_user_hooks_path(draft_id)
+                    _merge_draft_user_hooks_into_instance(draft_user_hooks, instance_user_hooks_dir)
 
                 shutil.rmtree(_get_draft_base_path(draft_id), ignore_errors=True)
 

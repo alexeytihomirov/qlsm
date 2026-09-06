@@ -4,7 +4,7 @@ FROM node:22-alpine AS frontend-build
 WORKDIR /build
 
 # Enable pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10 --activate
 
 # Install dependencies (cached layer)
 COPY frontend-react/package.json frontend-react/pnpm-lock.yaml frontend-react/pnpm-workspace.yaml ./

@@ -6,6 +6,7 @@ from ui.database import (
     get_hosts, get_host, get_host_by_name, create_host, update_host, delete_host # delete_host might be used by delete_host_route
 )
 from ui.vultr_settings import is_vultr_configured
+from ui.runtime import DEFAULT_RUNTIME, VALID_RUNTIMES, is_valid_runtime, runtime_paths
 import re
 import os
 import datetime
@@ -38,42 +39,6 @@ _STALE_TRANSITIONAL_STATUSES = {
 HOST_NAME_MAX_LENGTH = 20
 HOST_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$')
 SSH_USER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]{0,63}$')
-
-# Engine hook (minqlx.x64.so / minqlxtended.x64.so) build source — see
-# ansible/playbooks/tasks/build_engine_hook.yml for what each value does.
-ENGINE_FLAVORS = {'minqlx', 'minqlxtended'}
-ENGINE_SOURCES = {'build', 'artifact'}
-
-
-def _validate_engine_settings(data, defaults=True):
-    """Extract+validate engine_flavor/engine_source/engine_artifact_url from a
-    request body. With defaults=True (host creation), missing fields fall back
-    to QLSM's historical behavior (minqlx/build). With defaults=False (the
-    dedicated update route), a field is only included in the result if present
-    in `data`, so update_host() only touches what was actually sent."""
-    result = {}
-
-    if defaults or 'engine_flavor' in data:
-        flavor = data.get('engine_flavor', 'minqlx')
-        if flavor not in ENGINE_FLAVORS:
-            return None, {"message": f"engine_flavor must be one of {sorted(ENGINE_FLAVORS)}", "status_code": 400}
-        result['engine_flavor'] = flavor
-
-    if defaults or 'engine_source' in data:
-        source = data.get('engine_source', 'build')
-        if source not in ENGINE_SOURCES:
-            return None, {"message": f"engine_source must be one of {sorted(ENGINE_SOURCES)}", "status_code": 400}
-        result['engine_source'] = source
-
-    if defaults or 'engine_artifact_url' in data:
-        artifact_url = data.get('engine_artifact_url') or None
-        result['engine_artifact_url'] = artifact_url
-
-    effective_source = result.get('engine_source', data.get('engine_source', 'build'))
-    if effective_source == 'artifact' and not result.get('engine_artifact_url', data.get('engine_artifact_url')):
-        return None, {"message": "engine_artifact_url is required when engine_source is 'artifact'", "status_code": 400}
-
-    return result, None
 
 # Systemd OnCalendar validation (matches formats produced by the frontend)
 SYSTEMD_CALENDAR_RE = re.compile(
@@ -134,6 +99,24 @@ def validate_host_name(name, exclude_host_id=None):
     if existing_host and (exclude_host_id is None or existing_host.id != exclude_host_id):
         return None, {"message": f"A host with the name '{name}' already exists", "status_code": 409}
     return name, None
+
+def _validate_runtime(value):
+    """Validate the optional 'runtime' field of a host-creation payload.
+
+    Returns (runtime, None) on success or (None, message) on failure. An absent
+    value means the default. An unknown value is an error rather than a silent
+    default: the runtime is immutable once set, so guessing is not acceptable.
+    """
+    if value is None:
+        return DEFAULT_RUNTIME, None
+    if not isinstance(value, str):
+        return None, "Runtime must be a string."
+    normalized = value.strip().lower()
+    if not normalized:
+        return None, "Runtime must be a non-empty string."
+    if not is_valid_runtime(normalized):
+        return None, f"Invalid runtime. Must be one of: {', '.join(VALID_RUNTIMES)}."
+    return normalized, None
 
 def validate_ip_address(ip_str):
     """Validates IP address format. Returns (validated_ip, error_dict)."""
@@ -221,14 +204,18 @@ def add_host_api():
         return jsonify({"error": {"message": error["message"]}}), error["status_code"]
     name = validated_name
 
+    runtime, runtime_error = _validate_runtime(data.get('runtime'))
+    if runtime_error:
+        return jsonify({"error": {"message": runtime_error}}), 400
+
     if provider == 'self':
-        return _handle_self_host_creation(name, data)
+        return _handle_self_host_creation(name, data, runtime)
     if provider == 'standalone':
-        return _handle_standalone_host_creation(name, data)
-    return _handle_cloud_host_creation(name, provider, data)
+        return _handle_standalone_host_creation(name, data, runtime)
+    return _handle_cloud_host_creation(name, provider, data, runtime)
 
 
-def _handle_cloud_host_creation(name, provider, data):
+def _handle_cloud_host_creation(name, provider, data, runtime=DEFAULT_RUNTIME):
     """Handle creation of cloud-provisioned hosts (Vultr, etc.)."""
     region = data.get('region')
     machine_size = data.get('machine_size')
@@ -252,10 +239,6 @@ def _handle_cloud_host_creation(name, provider, data):
         if timezone not in VALID_TIMEZONES:
             return jsonify({"error": {"message": f"Invalid timezone. Must be a valid IANA timezone."}}), 400
 
-    engine_settings, error = _validate_engine_settings(data)
-    if error:
-        return jsonify({"error": {"message": error["message"]}}), error["status_code"]
-
     try:
         host = create_host(
             name=name,
@@ -263,10 +246,13 @@ def _handle_cloud_host_creation(name, provider, data):
             region=region,
             machine_size=machine_size,
             timezone=timezone,
-            os_type='debian',
+            # The OS follows the runtime: minqlxtended is built and tested on
+            # Ubuntu 24.04, which is also the only Terraform image that ships
+            # the Python 3.12 it links against.
+            os_type=runtime_paths(runtime)['os_type'],
             is_standalone=False,
-            status=HostStatus.PENDING,
-            **engine_settings
+            runtime=runtime,
+            status=HostStatus.PENDING
         )
         if host:
             lock_token = str(uuid.uuid4())
@@ -403,7 +389,45 @@ def _validate_detected_remote_os(detected_os):
     return True, _build_detected_os_success_message(detected_os)
 
 
-def _detect_and_validate_remote_os(*, host, port, username, timeout=15, password=None, key_filename=None):
+def _validate_runtime_python(detected_os, runtime):
+    """Whether a detected host meets the runtime's Python floor.
+
+    Only minqlxtended has one (it links -lpython3.12). Returns (ok, message).
+    An undetectable version fails closed: the runtime choice is irreversible,
+    so shipping a host we cannot verify is worse than refusing.
+    """
+    minimum = runtime_paths(runtime)['min_python']
+    if minimum is None:
+        return True, ""
+
+    raw = (detected_os or {}).get('python_version')
+    minimum_text = '.'.join(str(part) for part in minimum)
+    if not raw:
+        return False, (
+            f"Could not determine the host's Python version, and {runtime} "
+            f"requires Python {minimum_text} or newer. Install python3 on the "
+            "host, or create this host with the minqlx runtime."
+        )
+
+    try:
+        parts = tuple(int(part) for part in str(raw).split('.')[:len(minimum)])
+    except ValueError:
+        return False, (
+            f"Could not parse the host's Python version ({raw}), and {runtime} "
+            f"requires Python {minimum_text} or newer."
+        )
+
+    if parts < minimum:
+        return False, (
+            f"This host runs Python {raw}, but {runtime} requires Python "
+            f"{minimum_text} or newer. Use Ubuntu 24.04 or newer, or create "
+            "this host with the minqlx runtime."
+        )
+    return True, ""
+
+
+def _detect_and_validate_remote_os(*, host, port, username, timeout=15, password=None,
+                                   key_filename=None, runtime=DEFAULT_RUNTIME):
     try:
         detected_os = detect_remote_os(
             host=host,
@@ -417,7 +441,14 @@ def _detect_and_validate_remote_os(*, host, port, username, timeout=15, password
         return False, f"Connection failed: {exc}", None
 
     success, message = _validate_detected_remote_os(detected_os)
-    return success, message, detected_os
+    if not success:
+        return success, message, detected_os
+
+    python_ok, python_message = _validate_runtime_python(detected_os, runtime)
+    if not python_ok:
+        return False, python_message, detected_os
+
+    return True, message, detected_os
 
 
 def _test_standalone_connection_with_key(validated_ip, ssh_port, ssh_user, ssh_key):
@@ -477,7 +508,7 @@ def _test_standalone_connection_with_key(validated_ip, ssh_port, ssh_user, ssh_k
                 pass
 
 
-def _handle_standalone_host_creation(name, data):
+def _handle_standalone_host_creation(name, data, runtime=DEFAULT_RUNTIME):
     """Handle creation of standalone (user-provided) hosts."""
     ip_address = data.get('ip_address')
     ssh_key = data.get('ssh_key')
@@ -555,6 +586,7 @@ def _handle_standalone_host_creation(name, data):
             username=ssh_user,
             timeout=30,
             key_filename=ssh_key_path,
+            runtime=runtime,
         )
         if not remote_os_ok:
             if ssh_auth_method == 'password':
@@ -570,16 +602,6 @@ def _handle_standalone_host_creation(name, data):
                 _cleanup_local_key_material(ssh_key_path, public_key_path)
             return jsonify({"error": {"message": remote_os_message}}), 400
 
-        engine_settings, engine_error = _validate_engine_settings(data)
-        if engine_error:
-            if ssh_auth_method == 'password':
-                _cleanup_password_bootstrap_artifacts(
-                    validated_ip, ssh_port, ssh_user, ssh_key_path, public_key_path, managed_key_installed,
-                )
-            else:
-                _cleanup_local_key_material(ssh_key_path, public_key_path)
-            return jsonify({"error": {"message": engine_error["message"]}}), engine_error["status_code"]
-
         # Create host record
         host = create_host(
             name=name,
@@ -591,8 +613,8 @@ def _handle_standalone_host_creation(name, data):
             os_type=detected_os['os_type'],
             timezone=timezone,
             is_standalone=True,
-            status=HostStatus.PENDING,
-            **engine_settings
+            runtime=runtime,
+            status=HostStatus.PENDING
         )
 
         if host:
@@ -729,7 +751,7 @@ def _validate_required_timezone(timezone):
     return timezone, None
 
 
-def _handle_self_host_creation(name, data):
+def _handle_self_host_creation(name, data, runtime=DEFAULT_RUNTIME):
     existing_self = Host.query.filter_by(provider='self').first()
     if existing_self:
         return jsonify({"error": {"message": "A self host already exists. Only one QLSM Host (self) is allowed."}}), 409
@@ -752,9 +774,6 @@ def _handle_self_host_creation(name, data):
     lock_token = None
     local_os_info = detect_local_os()
     local_os_type = local_os_info.get('os_type') if local_os_info else None
-    engine_settings, engine_error = _validate_engine_settings(data)
-    if engine_error:
-        return jsonify({"error": {"message": engine_error["message"]}}), engine_error["status_code"]
 
     try:
         key_path, public_key = generate_self_host_keys(name)
@@ -768,8 +787,8 @@ def _handle_self_host_creation(name, data):
             os_type=local_os_type,
             is_standalone=True,
             timezone=timezone,
-            status=HostStatus.PENDING,
-            **engine_settings
+            runtime=runtime,
+            status=HostStatus.PENDING
         )
 
         lock_token = str(uuid.uuid4())
@@ -940,37 +959,6 @@ def update_host_api(host_id):
             return jsonify({"error": {"message": "Failed to update host"}}), 500
 
     return jsonify({"error": {"message": "No valid fields to update"}}), 400
-
-
-@host_api_bp.route('/<int:host_id>/engine', methods=['PUT'], endpoint='update_host_engine_api')
-@jwt_required()
-def update_host_engine_api(host_id):
-    """Change which engine hook flavor/source this host builds (minqlx vs
-    minqlxtended, build-from-source vs prebuilt artifact). Takes effect on the
-    next host setup/rebuild run — this endpoint only updates the stored
-    setting, it does not trigger a rebuild itself."""
-    host = get_host(host_id)
-    if not host:
-        return jsonify({"error": {"message": "Host not found"}}), 404
-
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": {"message": "No data provided"}}), 400
-
-    engine_settings, error = _validate_engine_settings(data, defaults=False)
-    if error:
-        return jsonify({"error": {"message": error["message"]}}), error["status_code"]
-    if not engine_settings:
-        return jsonify({"error": {"message": "No valid fields to update"}}), 400
-
-    updated_host = update_host(host_id, **engine_settings)
-    if not updated_host:
-        return jsonify({"error": {"message": "Failed to update host"}}), 500
-
-    return jsonify({
-        "message": "Engine hook settings updated. Re-run host setup or rebuild_minqlx.yml to apply.",
-        "data": updated_host.to_dict()
-    }), 200
 
 
 @host_api_bp.route('/<int:host_id>/logs', methods=['GET'], endpoint='view_host_logs_api') # Added methods=['GET']

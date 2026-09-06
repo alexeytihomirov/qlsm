@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
   getPresetById: vi.fn(),
   getPresets: vi.fn(),
   fileManagerProps: [],
+  // Preset names the plugin draft adapter was opened against, newest last.
+  draftAdapterPresets: [],
+  // Last acceptedReplacements the plugin draft adapter saw for each preset name --
+  // proves whether a stale accepted list from a previous preset leaked onto this one.
+  draftAdapterAcceptedReplacementsByPreset: {},
   qlentLanguage: { name: 'qlent' },
   qlentLinter: vi.fn(),
   savePreset: vi.fn(),
@@ -116,7 +121,14 @@ vi.mock('../../fileManager', () => ({
       </div>
     );
   }),
-  useDraftAdapter: () => ({
+  useDraftAdapter: ({ preset, acceptedReplacements } = {}) => {
+    if (mocks.draftAdapterPresets[mocks.draftAdapterPresets.length - 1] !== preset) {
+      mocks.draftAdapterPresets.push(preset);
+    }
+    if (preset) {
+      mocks.draftAdapterAcceptedReplacementsByPreset[preset] = acceptedReplacements || [];
+    }
+    return {
     draftId: 'draft-123',
     tree: [],
     loading: false,
@@ -131,7 +143,8 @@ vi.mock('../../fileManager', () => ({
     discard: mocks.discardDraft,
     consume: mocks.consumeDraft,
     hasChanges: false,
-  }),
+    };
+  },
   useStateAdapter: ({ initialFiles = {}, initialFolders = [], serverTree = [] } = {}) => {
     const [files, setFiles] = React.useState(initialFiles);
     const [folders, setFolders] = React.useState(initialFolders);
@@ -273,6 +286,8 @@ describe('AddInstanceForm draft lifecycle', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mocks.fileManagerProps = [];
+    mocks.draftAdapterPresets = [];
+    mocks.draftAdapterAcceptedReplacementsByPreset = {};
     if (!AddInstanceForm) {
       ({ default: AddInstanceForm } = await import('../AddInstanceForm'));
     }
@@ -519,7 +534,7 @@ describe('AddInstanceForm draft lifecycle', () => {
     render(
       <AddInstanceForm
         initialData={{
-          hosts: [],
+          hosts: [{ id: 1, name: 'deb-host', os_type: 'debian' }],
           presets: [],
           defaultConfigContents: {
             'server.cfg': '',
@@ -528,7 +543,7 @@ describe('AddInstanceForm draft lifecycle', () => {
             'workshop.txt': '',
           },
         }}
-        initialHostId={null}
+        initialHostId={1}
         onSubmit={vi.fn()}
         onCancel={vi.fn()}
         isLoadingSubmit={false}
@@ -538,12 +553,13 @@ describe('AddInstanceForm draft lifecycle', () => {
       />
     );
 
+    await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
     expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('false');
 
     fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
 
-    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1, { targetRuntime: null }));
     await waitFor(() => expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('true'));
   });
 
@@ -582,7 +598,7 @@ describe('AddInstanceForm draft lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
 
-    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1, { targetRuntime: null }));
     await waitFor(() => expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('false'));
   });
 
@@ -623,7 +639,7 @@ describe('AddInstanceForm draft lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
 
-    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1, { targetRuntime: null }));
     expect(screen.getByTestId('lan-rate-enabled')).toHaveTextContent('true');
   });
 
@@ -714,7 +730,7 @@ describe('AddInstanceForm draft lifecycle', () => {
     render(
       <AddInstanceForm
         initialData={{
-          hosts: [],
+          hosts: [{ id: 1, name: 'deb-host', os_type: 'debian' }],
           presets: [{ id: 1, name: 'my-preset', is_builtin: false }],
           defaultConfigContents: {
             'server.cfg': '',
@@ -723,7 +739,7 @@ describe('AddInstanceForm draft lifecycle', () => {
             'workshop.txt': '',
           },
         }}
-        initialHostId={null}
+        initialHostId={1}
         onSubmit={onSubmit}
         onCancel={vi.fn()}
         isLoadingSubmit={false}
@@ -733,10 +749,11 @@ describe('AddInstanceForm draft lifecycle', () => {
       />
     );
 
+    await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
     fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
 
-    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1, { targetRuntime: null }));
     await waitFor(() => expect(screen.getByRole('button', { name: /folder actions for existingFolder/i })).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: /folder actions for existingFolder/i }));
@@ -862,11 +879,16 @@ describe('AddInstanceForm draft lifecycle', () => {
             'access.txt': '',
             'workshop.txt': '',
           },
-          defaultAvailableHooks: [
-            { filename: 'a.so', size: 1024, modified: 1, enabled: false, order: null, description: '' },
-            { filename: 'b.so', size: 2048, modified: 1, enabled: false, order: null, description: '' },
-          ],
-          defaultEnabledHooks: ['a.so'],
+          defaultSeedsByRuntime: {
+            minqlx: {
+              checkedPlugins: [],
+              availableHooks: [
+                { filename: 'a.so', size: 1024, modified: 1, enabled: false, order: null, description: '' },
+                { filename: 'b.so', size: 2048, modified: 1, enabled: false, order: null, description: '' },
+              ],
+              enabledHooks: ['a.so'],
+            },
+          },
         }}
         initialHostId={null}
         onSubmit={onSubmit}
@@ -981,7 +1003,7 @@ describe('AddInstanceForm draft lifecycle', () => {
   });
 
   describe('non-enableable plugins', () => {
-    it('drops non-enableable entries from defaultCheckedPlugins', async () => {
+    it('drops non-enableable entries from the runtime seed', async () => {
       render(
         <AddInstanceForm
           initialData={{
@@ -993,7 +1015,13 @@ describe('AddInstanceForm draft lifecycle', () => {
               'access.txt': '',
               'workshop.txt': '',
             },
-            defaultCheckedPlugins: ['balance.py', 'extras/textart.py'],
+            defaultSeedsByRuntime: {
+              minqlx: {
+                checkedPlugins: ['balance.py', 'extras/textart.py'],
+                availableHooks: [],
+                enabledHooks: [],
+              },
+            },
           }}
           initialHostId={null}
           onSubmit={vi.fn()}
@@ -1018,7 +1046,7 @@ describe('AddInstanceForm draft lifecycle', () => {
       render(
         <AddInstanceForm
           initialData={{
-            hosts: [],
+            hosts: [{ id: 1, name: 'deb-host', os_type: 'debian' }],
             presets: [{ id: 1, name: 'my-preset', is_builtin: false }],
             defaultConfigContents: {
               'server.cfg': '',
@@ -1027,7 +1055,7 @@ describe('AddInstanceForm draft lifecycle', () => {
               'workshop.txt': '',
             },
           }}
-          initialHostId={null}
+          initialHostId={1}
           onSubmit={vi.fn()}
           onCancel={vi.fn()}
           isLoadingSubmit={false}
@@ -1037,10 +1065,11 @@ describe('AddInstanceForm draft lifecycle', () => {
         />
       );
 
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
       fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
       fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
 
-      await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1));
+      await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1, { targetRuntime: null }));
       expect(await screen.findByRole('status')).toHaveTextContent(
         /2 plugins that can't be enabled were deselected/i
       );
@@ -1060,7 +1089,13 @@ describe('AddInstanceForm draft lifecycle', () => {
               'access.txt': '',
               'workshop.txt': '',
             },
-            defaultCheckedPlugins: ['balance.py', 'discord_extensions/admin.py'],
+            defaultSeedsByRuntime: {
+              minqlx: {
+                checkedPlugins: ['balance.py', 'discord_extensions/admin.py'],
+                availableHooks: [],
+                enabledHooks: [],
+              },
+            },
           }}
           initialHostId={null}
           onSubmit={onSubmit}
@@ -1500,6 +1535,562 @@ describe('AddInstanceForm draft lifecycle', () => {
       expect(savedPreset).not.toHaveProperty('zmq_stats_password');
       expect(savedPreset).not.toHaveProperty('zmq_rcon_password');
       expect(savedPreset).not.toHaveProperty('auto_generate_passwords');
+    });
+  });
+
+  describe('preset runtime compatibility', () => {
+    const renderForm = (hosts, initialHostId) => render(
+      <AddInstanceForm
+        initialData={{
+          hosts,
+          presets: [{ id: 1, name: 'my-preset', is_builtin: false }],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={initialHostId}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    const loadThePreset = async () => {
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await waitFor(() => expect(screen.getByText('Editing preset:')).toBeInTheDocument());
+    };
+
+    it('cannot open the preset loader before a host is chosen', () => {
+      // With no host there is no runtime to check a preset against, so the
+      // gate has nothing to gate on -- the entry point closes instead.
+      renderForm([{ id: 1, name: 'deb-host', runtime: 'minqlx' }], null);
+
+      expect(screen.getByTestId('selected-host')).toHaveTextContent('none');
+      expect(screen.getByRole('button', { name: /load preset/i })).toBeDisabled();
+    });
+
+    it('enables the preset loader once a host is chosen', async () => {
+      renderForm([{ id: 1, name: 'deb-host', runtime: 'minqlx' }], 1);
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      expect(screen.getByRole('button', { name: /load preset/i })).toBeEnabled();
+    });
+
+    it('clears a loaded preset when the host switches to the other runtime', async () => {
+      mocks.getPresetById.mockResolvedValue({ name: 'my-preset', runtime: 'minqlx' });
+      renderForm(
+        [
+          { id: 1, name: 'deb-host', runtime: 'minqlx' },
+          { id: 2, name: 'ubu-host', runtime: 'minqlxtended' },
+        ],
+        1,
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      await loadThePreset();
+
+      fireEvent.click(screen.getByRole('button', { name: /select host 2/i }));
+
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/no longer matches this host and was cleared/i));
+      expect(screen.queryByText('Editing preset:')).not.toBeInTheDocument();
+    });
+
+    it('keeps a loaded preset when the new host runs the same runtime', async () => {
+      // The clear is destructive, so it must fire only on a genuine mismatch --
+      // dropping the operator's loaded config on a same-runtime swap would be a
+      // worse bug than the one the gate exists to prevent.
+      mocks.getPresetById.mockResolvedValue({ name: 'my-preset', runtime: 'minqlx' });
+      renderForm(
+        [
+          { id: 1, name: 'deb-host-a', runtime: 'minqlx' },
+          { id: 2, name: 'deb-host-b', runtime: 'minqlx' },
+        ],
+        1,
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      await loadThePreset();
+
+      fireEvent.click(screen.getByRole('button', { name: /select host 2/i }));
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('2'));
+      expect(screen.getByText('Editing preset:')).toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('seeds the minqlxtended default when the form opens on a minqlxtended host', async () => {
+      // The defect this guards: seeding every host from the minqlx builtin
+      // ships plugins that cannot load on a minqlxtended server.
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [{ id: 2, name: 'ubu-host', runtime: 'minqlxtended' }],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '', 'mappool.txt': '', 'access.txt': '', 'workshop.txt': '',
+            },
+            defaultSeedsByRuntime: {
+              minqlx: { checkedPlugins: ['balance.py'], availableHooks: [], enabledHooks: [] },
+              minqlxtended: { checkedPlugins: ['essentials.py'], availableHooks: [], enabledHooks: [] },
+            },
+          }}
+          initialHostId={2}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('2'));
+      expect(mocks.draftAdapterPresets).toContain('default-minqlxtended');
+      expect(mocks.draftAdapterPresets).not.toContain('default');
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(onSubmit.mock.calls[0][0].checked_plugins).toEqual(['essentials']);
+    });
+
+    it('re-seeds from the new runtime when the host switches across runtimes', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [
+              { id: 1, name: 'deb-host', runtime: 'minqlx' },
+              { id: 2, name: 'ubu-host', runtime: 'minqlxtended' },
+            ],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '', 'mappool.txt': '', 'access.txt': '', 'workshop.txt': '',
+            },
+            defaultSeedsByRuntime: {
+              minqlx: { checkedPlugins: ['balance.py'], availableHooks: [], enabledHooks: [] },
+              minqlxtended: { checkedPlugins: ['essentials.py'], availableHooks: [], enabledHooks: [] },
+            },
+          }}
+          initialHostId={1}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: /select host 2/i }));
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('2'));
+
+      await waitFor(() => expect(mocks.draftAdapterPresets).toContain('default-minqlxtended'));
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(onSubmit.mock.calls[0][0].checked_plugins).toEqual(['essentials']);
+    });
+
+    it('keeps a manual plugin selection when switching between same-runtime hosts', async () => {
+      // The no-wipe half of the re-seed guard, and the dominant path: every
+      // existing user moves between minqlx hosts. Re-seeding there would
+      // silently discard the operator's manual selection, which is exactly
+      // what the original plan got wrong -- so pin it against the submitted
+      // payload, not against a rendered label.
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [
+              { id: 1, name: 'deb-host-a', runtime: 'minqlx' },
+              { id: 2, name: 'deb-host-b', runtime: 'minqlx' },
+            ],
+            presets: [],
+            defaultConfigContents: {
+              'server.cfg': '', 'mappool.txt': '', 'access.txt': '', 'workshop.txt': '',
+            },
+            defaultSeedsByRuntime: {
+              minqlx: { checkedPlugins: ['balance.py'], availableHooks: [], enabledHooks: [] },
+              minqlxtended: { checkedPlugins: ['essentials.py'], availableHooks: [], enabledHooks: [] },
+            },
+          }}
+          initialHostId={1}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+
+      // The operator edits the seeded selection by hand: drop balance, add irc.
+      const pluginManagerProps = () => mocks.fileManagerProps
+        .filter(props => props.checkable && props.capabilities.allowedExtensions.includes('.py'))
+        .at(-1);
+      act(() => {
+        pluginManagerProps().onCheck('balance.py', false);
+        pluginManagerProps().onCheck('irc.py', true);
+      });
+      await waitFor(() => expect(pluginManagerProps().checkedFiles).toEqual(new Set(['irc.py'])));
+
+      fireEvent.click(screen.getByRole('button', { name: /select host 2/i }));
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('2'));
+
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(onSubmit.mock.calls[0][0].checked_plugins).toEqual(['irc']);
+    });
+
+    it('treats a runtime-less preset and a runtime-less host as compatible', async () => {
+      // Legacy rows predate the runtime column, and nothing but minqlx ever
+      // existed, so both sides normalize to minqlx and nothing is cleared.
+      mocks.getPresetById.mockResolvedValue({ name: 'my-preset' });
+      renderForm(
+        [
+          { id: 1, name: 'legacy-a' },
+          { id: 2, name: 'legacy-b' },
+        ],
+        1,
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      await loadThePreset();
+
+      fireEvent.click(screen.getByRole('button', { name: /select host 2/i }));
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('2'));
+      expect(screen.getByText('Editing preset:')).toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('preset compatibility gate on load', () => {
+    const renderOnHost = () => render(
+      <AddInstanceForm
+        initialData={{
+          hosts: [{ id: 1, name: 'deb-host', runtime: 'minqlx' }],
+          presets: [{ id: 1, name: 'my-preset', is_builtin: false }],
+          defaultConfigContents: {
+            'server.cfg': '',
+            'mappool.txt': '',
+            'access.txt': '',
+            'workshop.txt': '',
+          },
+        }}
+        initialHostId={1}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isLoadingSubmit={false}
+        formError={null}
+        onServerCfgLintStatusChange={vi.fn()}
+        onDirtyStateChange={vi.fn()}
+      />
+    );
+
+    it('sends the host runtime with the preset fetch', async () => {
+      mocks.getPresetById.mockResolvedValue({ name: 'my-preset', runtime: 'minqlx' });
+      renderOnHost();
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+      await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledWith(1, { targetRuntime: 'minqlx' }));
+    });
+
+    it('applies directly when the response carries no compatibility block', async () => {
+      mocks.getPresetById.mockResolvedValue({ name: 'my-preset', runtime: 'minqlx' });
+      renderOnHost();
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+      await waitFor(() => expect(screen.getByText('Editing preset:')).toBeInTheDocument());
+      expect(screen.queryByText(/won.t carry over/i)).not.toBeInTheDocument();
+    });
+
+    it('does not apply a preset immediately when the response has stripped plugins', async () => {
+      // The matched-pair regression test: without the compatibility gate this
+      // response would apply exactly like the no-compatibility-block case
+      // above, so "Editing preset:" appearing here is the bug the gate exists
+      // to prevent.
+      mocks.getPresetById.mockResolvedValue({
+        name: 'my-preset',
+        runtime: 'minqlxtended',
+        compatibility: {
+          preset_runtime: 'minqlxtended',
+          target_runtime: 'minqlx',
+          stripped: [
+            { path: 'essentials.py', verdict: 'incompatible', reasons: ['uses a minqlxtended-only API'], replacement: null },
+          ],
+          replacements: {},
+        },
+      });
+      renderOnHost();
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+      await screen.findByText(/won.t carry over/i);
+      expect(screen.queryByText('Editing preset:')).not.toBeInTheDocument();
+    });
+
+    it('shows a not-applied notice and closes the preset manager when the compatibility dialog is cancelled', async () => {
+      mocks.getPresetById.mockResolvedValue({
+        name: 'my-preset',
+        runtime: 'minqlxtended',
+        compatibility: {
+          preset_runtime: 'minqlxtended',
+          target_runtime: 'minqlx',
+          stripped: [
+            { path: 'essentials.py', verdict: 'incompatible', reasons: ['uses a minqlxtended-only API'], replacement: null },
+          ],
+          replacements: {},
+        },
+      });
+      renderOnHost();
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await screen.findByText(/won.t carry over/i);
+
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: /^cancel$/i }));
+
+      await waitFor(() => expect(screen.getByText(/was not applied/i)).toBeInTheDocument());
+      expect(screen.getByText(/was not applied/i).textContent).toMatch(/my-preset/);
+      expect(screen.queryByTestId('preset-manager')).not.toBeInTheDocument();
+      expect(screen.queryByText('Editing preset:')).not.toBeInTheDocument();
+    });
+
+    it('records the target runtime on the loaded preset, not the preset\'s own source runtime', async () => {
+      // Regression: loadedPreset.runtime used to be set from presetData.runtime
+      // (the preset's declared source runtime, e.g. minqlx), which is never
+      // equal to the host it was just loaded onto after a cross-runtime load.
+      // handleHostChange compares loadedPreset.runtime against the current
+      // host's runtime to decide whether to clear the preset -- storing the
+      // source runtime instead of the target makes that comparison always
+      // "mismatched" and silently wipes a correctly-applied preset's plugin
+      // selection on the very next host reselection.
+      mocks.getPresetById.mockResolvedValue({
+        name: 'my-preset',
+        runtime: 'minqlx',
+        checked_plugins: ['ban.py'],
+        compatibility: {
+          preset_runtime: 'minqlx',
+          target_runtime: 'minqlxtended',
+          stripped: [],
+          replacements: {},
+        },
+      });
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      render(
+        <AddInstanceForm
+          initialData={{
+            hosts: [{ id: 1, name: 'mqx-host', runtime: 'minqlxtended' }],
+            presets: [{ id: 1, name: 'my-preset', is_builtin: false }],
+            defaultConfigContents: {
+              'server.cfg': '',
+              'mappool.txt': '',
+              'access.txt': '',
+              'workshop.txt': '',
+            },
+            // A recognizable, non-empty default seed so a reseed-to-default
+            // is distinguishable from "no reseed happened" -- an empty
+            // default seed would make both outcomes look like [].
+            defaultSeedsByRuntime: {
+              minqlx: { checkedPlugins: ['balance.py'], availableHooks: [], enabledHooks: [] },
+              minqlxtended: { checkedPlugins: ['default_plugin.py'], availableHooks: [], enabledHooks: [] },
+            },
+          }}
+          initialHostId={1}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoadingSubmit={false}
+          formError={null}
+          onServerCfgLintStatusChange={vi.fn()}
+          onDirtyStateChange={vi.fn()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await waitFor(() => expect(screen.getByText('Editing preset:')).toBeInTheDocument());
+
+      // Re-selecting the SAME host (same runtime, "minqlxtended") must not
+      // clear the just-loaded preset. The mocked InstanceBasicInfoForm (this
+      // test file, ~line 176-191) renders a "Select Host 1" button wired to
+      // onHostChange('1') regardless of current selection -- clicking it here
+      // re-fires handleHostChange with hostId '1' while already on host 1,
+      // which is exactly the "no-op reselect" scenario the bug affects.
+      fireEvent.click(screen.getByRole('button', { name: /select host 1/i }));
+
+      await waitFor(() => expect(screen.getByText('Editing preset:')).toBeInTheDocument());
+      expect(screen.queryByText(/no longer matches this host/i)).not.toBeInTheDocument();
+
+      // Prove it's not just the banner that survived: the operator's actual
+      // loaded selection ('ban', from the preset) must still be what gets
+      // submitted, not silently reseeded back to the runtime's default
+      // ('default_plugin') by the no-op reselect.
+      fireEvent.click(screen.getByRole('button', { name: /create instance/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(onSubmit.mock.calls[0][0].checked_plugins).toEqual(['ban']);
+    });
+
+    it('applies a cross-runtime preset silently when every plugin is compatible', async () => {
+      // stripped: [] is a real response shape -- every plugin scanned clean --
+      // and it must not surface a dialog with nothing in it.
+      mocks.getPresetById.mockResolvedValue({
+        name: 'my-preset',
+        runtime: 'minqlxtended',
+        compatibility: {
+          preset_runtime: 'minqlxtended',
+          target_runtime: 'minqlx',
+          stripped: [],
+          replacements: {},
+        },
+      });
+      renderOnHost();
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+      await waitFor(() => expect(screen.getByText('Editing preset:')).toBeInTheDocument());
+      expect(screen.queryByText(/won.t carry over/i)).not.toBeInTheDocument();
+    });
+
+    it('does not carry a confirmed preset\'s accepted replacements onto the next preset loaded', async () => {
+      // Regression: handleLoadPreset used to leave acceptedReplacements untouched
+      // when the next load needed no compatibility confirmation of its own, so a
+      // stale accepted filename from preset A rode along into preset B's draft
+      // seed. Fixed by clearing at the top of every load; only the compatibility
+      // dialog's confirm handler is allowed to repopulate it.
+      mocks.getPresetById
+        .mockResolvedValueOnce({
+          name: 'presetA',
+          runtime: 'minqlxtended',
+          compatibility: {
+            preset_runtime: 'minqlxtended',
+            target_runtime: 'minqlx',
+            stripped: [
+              {
+                path: 'essentials.py',
+                verdict: 'incompatible',
+                reasons: ['uses a minqlxtended-only API'],
+                replacement: 'essentials_mqx.py',
+                originally_checked: true,
+              },
+            ],
+            replacements: { 'essentials.py': 'essentials_mqx.py' },
+          },
+        })
+        .mockResolvedValueOnce({ name: 'presetB', runtime: 'minqlx' });
+      renderOnHost();
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+
+      // Load preset A and confirm the compatibility dialog, accepting the one
+      // offered replacement (pre-checked by the dialog itself).
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await screen.findByText(/won.t carry over/i);
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: /load preset/i }));
+
+      await waitFor(() => expect(screen.getByText('Editing preset:').parentElement).toHaveTextContent('presetA'));
+      expect(mocks.draftAdapterAcceptedReplacementsByPreset.presetA).toEqual(['essentials.py']);
+
+      // Now load preset B, which needs no confirmation of its own.
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+
+      await waitFor(() => expect(screen.getByText('Editing preset:').parentElement).toHaveTextContent('presetB'));
+      expect(mocks.draftAdapterAcceptedReplacementsByPreset.presetB).toEqual([]);
+    });
+
+    it('leaves the active preset\'s accepted replacements intact when a subsequent load is cancelled', async () => {
+      // Regression, round 2: an earlier fix cleared acceptedReplacements
+      // speculatively at the start of every load, before it was known whether
+      // the load would even complete. Since acceptedKey is a dependency of
+      // useDraftWorkspace's seeding effect, that speculative clear re-seeded
+      // preset A's still-active draft with an empty list immediately -- so
+      // cancelling the load of preset B destroyed a replacement the operator
+      // had explicitly accepted for A. Fixed by making the accepted list an
+      // argument to applyPresetData (called only on confirm, never on cancel)
+      // instead of ambient state cleared ahead of time.
+      mocks.getPresetById
+        .mockResolvedValueOnce({
+          name: 'presetA',
+          runtime: 'minqlxtended',
+          compatibility: {
+            preset_runtime: 'minqlxtended',
+            target_runtime: 'minqlx',
+            stripped: [
+              {
+                path: 'essentials.py',
+                verdict: 'incompatible',
+                reasons: ['uses a minqlxtended-only API'],
+                replacement: 'essentials_mqx.py',
+                originally_checked: true,
+              },
+            ],
+            replacements: { 'essentials.py': 'essentials_mqx.py' },
+          },
+        })
+        .mockResolvedValueOnce({
+          name: 'presetB',
+          runtime: 'minqlxtended',
+          compatibility: {
+            preset_runtime: 'minqlxtended',
+            target_runtime: 'minqlx',
+            stripped: [
+              { path: 'other.py', verdict: 'incompatible', reasons: ['unrelated'], replacement: null },
+            ],
+            replacements: {},
+          },
+        });
+      renderOnHost();
+
+      await waitFor(() => expect(screen.getByTestId('selected-host')).toHaveTextContent('1'));
+
+      // Load preset A and confirm, accepting the offered replacement.
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await screen.findByText(/won.t carry over/i);
+      let dialog = screen.getByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: /load preset/i }));
+
+      await waitFor(() => expect(screen.getByText('Editing preset:').parentElement).toHaveTextContent('presetA'));
+      expect(mocks.draftAdapterAcceptedReplacementsByPreset.presetA).toEqual(['essentials.py']);
+
+      // Start loading preset B, then cancel out of its compatibility dialog.
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await screen.findByText(/won.t carry over/i);
+      dialog = screen.getByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+
+      // Preset A is still the active preset, and it must still show its
+      // accepted replacement -- not silently reseeded to an empty list.
+      expect(screen.getByText('Editing preset:').parentElement).toHaveTextContent('presetA');
+      expect(mocks.draftAdapterAcceptedReplacementsByPreset.presetA).toEqual(['essentials.py']);
     });
   });
 });

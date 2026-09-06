@@ -1,11 +1,13 @@
 ---
-# Shared task: build or fetch the minqlx/minqlxtended engine hook (.so +
-# wrapper script + python package) into the host's shared location, then
-# canonicalize the wrapper script to a fixed name so qlds@.service.j2 never
-# needs to know which flavor is in use.
+# Shared task: build or fetch the minqlx/minqlxtended/minqlxtended-patched
+# engine hook (.so + wrapper script + python package) into the host's shared
+# location. qlds@.service.j2 execs the wrapper by its actual per-runtime name
+# via the `launch_script` extra-var (ui.runtime.runtime_extravars()) rather
+# than a canonicalized fixed name.
 #
 # Requires: minqlx_build_dir, minqlx_shared_dir (set by the including playbook)
-# Reads: qlds_engine_flavor ('minqlx' | 'minqlxtended', default 'minqlx')
+# Reads: runtime ('minqlx' | 'minqlxtended' | 'minqlxtended-patched', default
+#        'minqlx'; qlds_engine_flavor is accepted as a legacy alias)
 #        qlds_engine_source ('build' | 'artifact', default 'build')
 #        qlds_engine_artifact_url (required when source == 'artifact')
 #
@@ -29,22 +31,44 @@
 # optional). Update the vendored copy from ql-server-core's qlds-scripts/ +
 # minqlxtended-patches/ when that chain changes upstream.
 
-- name: Set engine hook flavor facts
+- name: Set engine hook runtime facts
   set_fact:
-    _engine_flavor: "{{ qlds_engine_flavor | default('minqlx') }}"
+    _engine_flavor: "{{ runtime | default(qlds_engine_flavor | default('minqlx')) }}"
     _engine_source: "{{ qlds_engine_source | default('build') }}"
 
-- name: Set per-flavor build facts (minqlx)
+- name: Set per-runtime build facts (minqlx)
   set_fact:
     _engine_repo: "https://github.com/MinoMino/minqlx.git"
     _engine_git_version: "fbdd915185337791d8e209dc4b686a1ee60d3721"
     _engine_apply_local_patches: true
+    _engine_apply_minqlxtended_qlhub_patches: false
     _engine_so_name: "minqlx.x64.so"
     _engine_wrapper_name: "run_server_x64_minqlx.sh"
     _engine_python_pkg: "minqlx"
   when: _engine_flavor == 'minqlx'
 
-- name: Set per-flavor build facts (minqlxtended)
+# Vanilla upstream minqlxtended, unpatched -- pinned like minqlx is. Nothing
+# uses this yet (see 'minqlxtended-patched' below for the flavor host
+# "germany" actually runs), but it exists so a plain minqlxtended host is
+# possible without QLSM's own patch chain.
+- name: Set per-runtime build facts (minqlxtended)
+  set_fact:
+    _engine_repo: "https://github.com/tjone270/minqlxtended.git"
+    _engine_git_version: "{{ qlds_engine_git_version | default('97fbe6715a4802545aa7eca741d11e2486a306a4') }}"
+    _engine_apply_local_patches: false
+    _engine_apply_minqlxtended_qlhub_patches: false
+    _engine_so_name: "minqlxtended.x64.so"
+    _engine_wrapper_name: "run_server_x64_minqlxtended.sh"
+    _engine_python_pkg: "minqlxtended"
+  when: _engine_flavor == 'minqlxtended'
+
+# minqlxtended plus QLSM's own qlhub patch chain (see the big comment on
+# patch-minqlxtended-qlhub.py invocation below). This is what "germany" has
+# actually been running since the chain was ported (commit 82254ef) -- the
+# git_version stays unpinned (floating HEAD) exactly as it always has been;
+# see ui/runtime.py's MINQLXTENDED_PATCHED entry for why that is a known,
+# open risk rather than an oversight.
+- name: Set per-runtime build facts (minqlxtended-patched)
   set_fact:
     _engine_repo: "https://github.com/tjone270/minqlxtended.git"
     _engine_git_version: "{{ qlds_engine_git_version | default('HEAD') }}"
@@ -53,7 +77,7 @@
     _engine_so_name: "minqlxtended.x64.so"
     _engine_wrapper_name: "run_server_x64_minqlxtended.sh"
     _engine_python_pkg: "minqlxtended"
-  when: _engine_flavor == 'minqlxtended'
+  when: _engine_flavor == 'minqlxtended-patched'
 
 - name: Clean up old engine build directory
   file:
@@ -279,15 +303,6 @@
     done
   args:
     executable: /bin/bash
-
-- name: Canonicalize wrapper script name (qlds@.service.j2 always execs run_server_x64.sh)
-  copy:
-    src: "{{ minqlx_shared_dir }}/{{ _engine_wrapper_name }}"
-    dest: "{{ minqlx_shared_dir }}/run_server_x64.sh"
-    remote_src: yes
-    owner: ql
-    group: ql
-    mode: '0755'
 
 - name: Clean up engine build directory
   file:

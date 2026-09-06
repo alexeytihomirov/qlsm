@@ -2,7 +2,7 @@
 # Manual maintenance playbook — not wired into the QLSM UI/task queue.
 # Run directly, e.g.:
 #   ansible-playbook -i ansible/inventory/<host>.yml ansible/playbooks/rebuild_minqlx.yml \
-#     -e '{"qlds_engine_flavor": "minqlxtended", "qlds_engine_source": "build"}'
+#     -e '{"runtime": "minqlxtended-patched"}'
 - name: Rebuild engine hook and deploy to shared location
   hosts: all
   become: yes

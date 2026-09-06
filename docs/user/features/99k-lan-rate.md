@@ -22,6 +22,12 @@ On small servers (2–4 players, low-intensity gametypes) there is effectively n
 
 99k LAN rate works on any supported host OS — the LD_PRELOAD library is OS-independent.
 
+## minqlxtended Hosts
+
+On hosts running the **minqlxtended** runtime, QLSM runs every instance at 99k LAN rate and does not offer 25k.
+
+Hosts running the standard **minqlx** runtime are unaffected: the toggle stays yours to set, per instance, exactly as described below.
+
 ## How To Enable
 
 ### At deploy time
@@ -46,7 +52,7 @@ Follow the same steps and toggle the setting off. The server reverts to standard
 
 When enabled, QLSM:
 
-- Adds `+set sv_lanForceRate 1` to the qlds startup arguments
+- Adds `+set sv_lanForceRate 1` and `+set sv_serverType 1` to the qlds startup arguments
 - Registers `force_rate.so` as a managed **system hook** for the instance and loads it via `LD_PRELOAD`. The library patches `Sys_IsLANAddress` inside qzeroded.x64 so the engine treats every client as a LAN client, which (in combination with `sv_lanForceRate 1`) forces `rate=99999` for all clients.
 
 The hook binary lives on each instance host at `/home/ql/qlds-<port>/system-hooks/force_rate.so`, synced from QLSM's `ql-assets/data/system-hooks/`. You can see it listed as a read-only system hook in the instance's **Hooks** tab — see [LD_PRELOAD Hooks](hooks.md).

@@ -8,6 +8,7 @@ from rq import get_current_job
 from ui import db
 from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.models import Host, HostStatus, QLFilterStatus
+from ui.runtime import host_runtime
 from .common import append_log # Import from the common module
 # Note: No need to import _run_ansible_playbook as this task uses direct subprocess calls
 
@@ -158,13 +159,9 @@ def setup_host_ansible_logic(host_id, rerun=False):
         ansible_command_args += ['-e', json.dumps({
             'game_udp_ports': GAME_UDP_PORTS,
             'rcon_tcp_ports': RCON_TCP_PORTS,
-            'qlds_engine_flavor': host.engine_flavor,
-            'qlds_engine_source': host.engine_source,
-            'qlds_engine_artifact_url': host.engine_artifact_url or '',
-            # Only used by tasks/build_engine_hook.yml's engine_source=artifact path, and
-            # only ever read by the QLSM controller itself (delegate_to: localhost) — never
-            # sent to the game VPS. Empty is fine for a public artifact URL.
-            'qlsm_github_token': os.environ.get('GITHUB_ARTIFACT_TOKEN', ''),
+            # Read from the DB on every run, so re-running setup always
+            # rebuilds the runtime the host was created with.
+            'runtime': host_runtime(host),
         })]
         ansible_command_args.append(ansible_playbook_path)
 
