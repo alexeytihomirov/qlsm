@@ -300,6 +300,9 @@ Example success response:
 | `/instances/<id>/remote-logs/list` | GET | List available server-log archive files |
 | `/instances/<id>/chat-logs` | GET | Fetch chat logs (`?filter_mode=`, `?since=`, `?lines=`, `?filename=`) |
 | `/instances/<id>/chat-logs/list` | GET | List available chat log files |
+| `/instances/<id>/demos` | GET | List server-side demo (`.dm_91`) files found on disk under `demos/` |
+| `/instances/<id>/demos/download` | GET | Download a single demo file (`?filename=`) |
+| `/instances/<id>/demos/download-batch` | POST | Download multiple demo files as one ZIP (`{"filenames": [...]}`) |
 
 `filename` on `/instances/<id>/remote-logs` defaults to `server.log` and must match `\Aserver\.log(-\d{8}-\d{6}(\.gz)?)?\Z` — the exact set of names logrotate produces for the rotated server log. The anchors are `\A`/`\Z` rather than `^`/`$` deliberately: with `.match()` (used by the Ansible/Jinja listing filter), `$` still accepts a trailing newline, which `\Z` does not. For `server.log`, `filter_mode=lines` and `filter_mode=time` query journald, while `filter_mode=all` reads the current size-bounded exported file. For a dated archive, `lines` and `all` read the selected file; `time` is rejected with 400 because a rotated file has no journald time range to query.
 
@@ -1156,9 +1159,13 @@ Authorization: Bearer <api_key>
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/v1/instances` | GET | Bearer token | List all instances for external service integration |
+| `/api/v1/instances/<id>/matches` | GET | Bearer token | List recorded `.qlmatch` demos for an instance. Each entry: `{name, size, mtime, has_replay, replay_name}` |
+| `/api/v1/instances/<id>/matches/download?filename=` | GET | Bearer token | Download a single `.qlmatch` file |
+| `/api/v1/instances/<id>/matches/replay?filename=` | GET | Bearer token | Download the `.replay.json.gz` sidecar for a match, by its `replay_name` |
 
 - Rate limited: 200 requests/minute
 - Excludes sensitive fields: `zmq_rcon_port`, `zmq_rcon_password`, `zmq_stats_port`, `zmq_stats_password`, `logs`, `config`
+- Called cross-origin from a browser? Add that origin to `CORS_ORIGINS` — the `Authorization` header this API requires is allowed once `CORS_ORIGINS` is non-empty (see `ui/__init__.py`), but the request is still same-origin-only until the caller's origin is listed there.
 
 ## Response Formats
 

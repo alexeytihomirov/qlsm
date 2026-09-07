@@ -110,6 +110,8 @@ ql-assets/data/*
 !ql-assets/data/minqlxtended-plugins/**
 !ql-assets/data/system-hooks/
 !ql-assets/data/system-hooks/**
+!ql-assets/data/qlmatch-packer/
+!ql-assets/data/qlmatch-packer/**
 !ql-assets/qlfilter/
 !ql-assets/qlfilter/**
 !ql-assets/patches/

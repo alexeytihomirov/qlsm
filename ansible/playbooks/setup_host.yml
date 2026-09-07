@@ -692,6 +692,10 @@
   #######################################################################
   # 6. Sync Common Assets & Install Core Dependencies
   #######################################################################
+    # External .qlmatch packer + Node runtime (launched per finished match
+    # by demo_native_autorecord.py; see the task file's header).
+    - ansible.builtin.import_tasks: tasks/sync_qlmatch_packer.yml
+
     - name: Get pip3 version
       command: pip3 --version
       register: pip3_version_output

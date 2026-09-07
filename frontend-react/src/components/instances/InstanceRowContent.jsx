@@ -19,6 +19,7 @@ export default function InstanceRowContent({
     onViewLogs,
     onViewChatLogs,
     onViewMinqlxLogs,
+    onViewDemos,
     onOpenRcon,
 }) {
     // QLSM runs minqlxtended hosts at 99k, so the Rate column must not read 25k
@@ -116,6 +117,7 @@ export default function InstanceRowContent({
                     onViewLogs={() => onViewLogs(inst)}
                     onViewChatLogs={() => onViewChatLogs(inst)}
                     onViewMinqlxLogs={() => onViewMinqlxLogs(inst)}
+                    onViewDemos={() => onViewDemos(inst)}
                     onOpenRconConsole={(instance) =>
                         onOpenRcon({
                             ...instance,
