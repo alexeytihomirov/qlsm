@@ -90,8 +90,8 @@ class mydiscordbot(Plugin):
         super().__init__()
 
         # maybe initialize plugin cvars
-        Plugin.set_cvar_once("qlx_discordBotToken", "YOUR_DISCORD_BOT_TOKEN")
-        Plugin.set_cvar_once("qlx_discordApplicationId", "YOUR_DISCORD_APP_ID")
+        Plugin.set_cvar_once("qlx_discordBotToken", "")
+        Plugin.set_cvar_once("qlx_discordApplicationId", "1184483144573923390")
         Plugin.set_cvar_once("qlx_discordRelayChannelIds", "1185809861217370165")
         Plugin.set_cvar_once("qlx_discordRelayTeamchatChannelIds", "1185809861217370165")
         Plugin.set_cvar_once("qlx_discordTriggeredChannelIds", "")
@@ -589,10 +589,6 @@ class SimpleAsyncDiscord(threading.Thread):
         Called when the SimpleAsyncDiscord thread is started. We will set up the bot here with the right commands, and
         run the discord.py bot in a new event_loop until completed.
         """
-        if not self.discord_bot_token:
-            self.logger.info("No discord bot token configured (qlx_discordBotToken). Skipping Discord connection.")
-            return
-
         loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
