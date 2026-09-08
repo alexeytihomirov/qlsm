@@ -23,11 +23,13 @@ import {
   useStateAdapter,
 } from '../fileManager';
 import { partitionCheckedPaths, toQlxPluginNames } from '../fileManager/pluginSelection';
+import { useCvarAutocomplete } from '../../hooks/useCvarAutocomplete';
 import {
   qlcfgLanguage,
   createQlCfgLinter,
   stripManagedCvars
 } from '../../codemirror-lang-qlcfg';
+import { qlFactoriesLanguage, qlFactoriesLinterSource } from '../../codemirror-lang-qlfactories';
 import { qlmappoolLanguage } from '../../codemirror-lang-qlmappool';
 import { qlaccessLanguage } from '../../codemirror-lang-qlaccess';
 import { qlworkshopLanguage } from '../../codemirror-lang-qlworkshop';
@@ -54,8 +56,8 @@ const CONFIG_LANGUAGE_MAP = {
   'access.txt': qlaccessLanguage,
   'workshop.txt': qlworkshopLanguage,
 };
-const FACTORY_LANGUAGE = json();
-const FACTORY_LINTER_SOURCE = () => jsonParseLinter();
+const FACTORY_LANGUAGE = qlFactoriesLanguage;
+const FACTORY_LINTER_SOURCE = qlFactoriesLinterSource;
 const PYTHON_LANGUAGE = python();
 
 // Mapping from internal config keys to API keys
@@ -336,6 +338,10 @@ function AddInstanceForm({
     allowedExtensions: FACTORY_CAPS.allowedExtensions,
     protectedFiles: FACTORY_CAPS.protectedFiles,
   });
+  // Autocomplete in the config editor: engine cvars from the backend catalog,
+  // qlx_ cvars from the plugins this instance will actually carry.
+  useCvarAutocomplete({ pluginTree: pluginsAdapter.tree, checkedPlugins });
+
   const pluginDraftId = pluginsAdapter.draftId;
   const pluginConsume = pluginsAdapter.consume;
   const pluginDiscard = pluginsAdapter.discard;

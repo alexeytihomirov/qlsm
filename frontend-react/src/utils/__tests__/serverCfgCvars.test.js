@@ -86,3 +86,22 @@ describe('parseCvarValue', () => {
     expect(parseCvarValue('number', undefined)).toBeNull();
   });
 });
+
+describe('configs written by hand', () => {
+  it('reads a value that was left unquoted', () => {
+    expect(readCvarFromConfig('set g_gravity 800\n', 'g_gravity')).toBe('800');
+  });
+
+  it('reads a seta line', () => {
+    expect(readCvarFromConfig('seta qlx_foo "2"\n', 'qlx_foo')).toBe('2');
+  });
+
+  it('rewrites an unquoted line instead of appending a second one', () => {
+    const cfg = 'set g_gravity 800\nset sv_hostname "x"';
+    expect(upsertCvarInConfig(cfg, 'g_gravity', '1200')).toBe('set g_gravity "1200"\nset sv_hostname "x"');
+  });
+
+  it('keeps the seta keyword and the indentation of the line it rewrites', () => {
+    expect(upsertCvarInConfig('  seta qlx_foo "1"', 'qlx_foo', '0')).toBe('  seta qlx_foo "0"');
+  });
+});

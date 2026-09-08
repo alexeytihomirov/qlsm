@@ -29,6 +29,7 @@ import {
   qlAccessCompletion,
 } from '../codemirror-lang-qlaccess';
 import { qlcfgLanguage, qlCfgCompletion } from '../codemirror-lang-qlcfg';
+import { qlFactoriesLanguage, qlFactoriesCompletion } from '../codemirror-lang-qlfactories';
 
 import { chatLogLanguage, chatDarkHighlighting, chatLightHighlighting } from '../utils/chatLogLanguage';
 import { minqlxLogLanguage, minqlxDarkHighlighting, minqlxLightHighlighting } from '../utils/minqlxLogLanguage';
@@ -70,6 +71,12 @@ const lightHighlightStyle = HighlightStyle.define([
 
 // Dark editor chrome theme
 const darkEditorTheme = EditorView.theme({
+  // Completion tooltip: description first, then where the description came
+  // from, so a guess read off the cvar name never looks like a fact.
+  '& .cm-cvar-info': { maxWidth: '380px', lineHeight: '1.4' },
+  '& .cm-cvar-info-meta': { marginTop: '4px', fontSize: '11px', opacity: '0.85' },
+  '& .cm-cvar-info-bits': { marginTop: '4px', fontSize: '11px', opacity: '0.85', columnWidth: '150px' },
+  '& .cm-cvar-info-source': { marginTop: '6px', fontSize: '11px', fontStyle: 'italic', opacity: '0.7' },
   '& .custom-line-comment': { color: '#6A9955 !important' },
   '&': { height: '100%', backgroundColor: 'transparent !important' },
   '& .cm-scroller': { backgroundColor: 'transparent !important', scrollbarColor: 'var(--surface-border-strong) var(--surface-elevated)' },
@@ -95,6 +102,12 @@ const darkEditorTheme = EditorView.theme({
 
 // Light editor chrome theme
 const lightEditorTheme = EditorView.theme({
+  // Completion tooltip: description first, then where the description came
+  // from, so a guess read off the cvar name never looks like a fact.
+  '& .cm-cvar-info': { maxWidth: '380px', lineHeight: '1.4' },
+  '& .cm-cvar-info-meta': { marginTop: '4px', fontSize: '11px', opacity: '0.85' },
+  '& .cm-cvar-info-bits': { marginTop: '4px', fontSize: '11px', opacity: '0.85', columnWidth: '150px' },
+  '& .cm-cvar-info-source': { marginTop: '6px', fontSize: '11px', fontStyle: 'italic', opacity: '0.7' },
   '&': { height: '100%', backgroundColor: '#f6f8fa !important' },
   '& .cm-scroller': { backgroundColor: '#f6f8fa !important', scrollbarColor: 'var(--surface-border-strong) var(--surface-elevated)' },
   '& .cm-content': { backgroundColor: 'transparent !important', color: '#24292f' },
@@ -183,6 +196,12 @@ const getExtensions = (currentLanguage, currentLinterSource, onChangeCallback, i
     // console commands at the start of a line, in server.cfg-like files
     if (currentLanguage === qlcfgLanguage) {
       baseExtensions.push(qlCfgCompletion);
+    }
+
+    // Same, for .factories files: keys, base gametype, and cvar names inside
+    // the "cvars" block
+    if (currentLanguage === qlFactoriesLanguage) {
+      baseExtensions.push(qlFactoriesCompletion);
     }
 
 

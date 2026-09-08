@@ -93,3 +93,43 @@ export function formatPluginCommandsText(item) {
     })
     .join('  ·  ');
 }
+
+// Every cvar the plugins of one server declare, for the config editor's
+// autocomplete. Walks the Plugins tab's own file tree, so a plugin the
+// operator uploaded counts exactly as much as a bundled one, and a plugin that
+// is not on this server contributes nothing at all.
+//
+// `checkedPaths` are the plugins actually enabled (the ones that end up in
+// qlx_plugins); their cvars are marked so the editor can offer them first.
+export function collectPluginCvars(tree = [], checkedPaths = []) {
+  const checked = checkedPaths instanceof Set ? checkedPaths : new Set(checkedPaths || []);
+  const collected = [];
+  const seen = new Set();
+
+  const walk = (node) => {
+    if (!node) return;
+    if (node.type === 'folder') {
+      (node.children || []).forEach(walk);
+      return;
+    }
+    const path = node.path || node.name || '';
+    if (!path.endsWith('.py')) return;
+    const label = getPluginDisplayLabel(node);
+    const enabled = checked.has(path);
+    getPluginCvars(node).forEach((entry) => {
+      const key = entry.cvar.toLowerCase();
+      // A cvar shared by two plugins is listed once; an enabled plugin wins,
+      // since that is the one actually reading it on this server.
+      const existing = seen.has(key) ? collected.find(c => c.cvar.toLowerCase() === key) : null;
+      if (existing) {
+        if (enabled && !existing.enabled) Object.assign(existing, entry, { plugin: label, enabled });
+        return;
+      }
+      seen.add(key);
+      collected.push({ ...entry, plugin: label, enabled });
+    });
+  };
+  (tree || []).forEach(walk);
+
+  return collected;
+}

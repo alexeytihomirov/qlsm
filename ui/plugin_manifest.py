@@ -22,6 +22,30 @@ PLUGIN_MANIFEST_MAX_SIZE = 16 * 1024  # 16KB — metadata only, not a data file
 # by filename means the manifest still shows up wherever the plugin does,
 # without needing every preset/instance copy kept in sync by hand.
 MINQLX_PLUGINS_POOL_DIR = os.path.join('ql-assets', 'data', 'minqlx-plugins')
+MINQLXTENDED_PLUGINS_POOL_DIR = os.path.join('ql-assets', 'data', 'minqlxtended-plugins')
+
+
+def _pool_dirs(runtime=None):
+    """Pools to look a manifest up in, best match first.
+
+    The two runtimes carry their own copy of the same plugin filenames, and
+    those copies do drift (a cvar added on one side, a command renamed on the
+    other), so an instance's own runtime pool has to win when we know it. The
+    other pool is still tried afterwards: stale-but-close metadata is more
+    useful than none, and it is what this lookup did before runtimes were
+    split at all."""
+    from ui.runtime import MINQLXTENDED, is_valid_runtime  # local import: no import cycle at module load
+
+    ordered = []
+    if is_valid_runtime(runtime):
+        ordered.append(
+            MINQLXTENDED_PLUGINS_POOL_DIR if runtime.strip().lower() == MINQLXTENDED
+            else MINQLX_PLUGINS_POOL_DIR
+        )
+    for pool in (MINQLX_PLUGINS_POOL_DIR, MINQLXTENDED_PLUGINS_POOL_DIR):
+        if pool not in ordered:
+            ordered.append(pool)
+    return [os.path.abspath(pool) for pool in ordered]
 
 
 def load_manifest_file(manifest_path):
@@ -43,7 +67,7 @@ def load_manifest_file(manifest_path):
         return None
 
 
-def read_plugin_manifest(script_full_path):
+def read_plugin_manifest(script_full_path, runtime=None):
     """Manifest for a plugin .py file: the central pool wins when it has an
     entry for this filename. ql-assets is the source of truth for manifests
     (see qlsm-plugin-pool-vs-builtin-preset-duplication in project memory) —
@@ -54,12 +78,15 @@ def read_plugin_manifest(script_full_path):
     aren't in the pool at all (a custom/one-off plugin an operator wrote
     directly for one preset or instance)."""
     basename = os.path.splitext(os.path.basename(script_full_path))[0]
-    pool_manifest = os.path.join(os.path.abspath(MINQLX_PLUGINS_POOL_DIR), basename + PLUGIN_MANIFEST_SUFFIX)
-    manifest = load_manifest_file(pool_manifest)
-    if manifest is not None:
-        return manifest
+    tried = []
+    for pool in _pool_dirs(runtime):
+        pool_manifest = os.path.join(pool, basename + PLUGIN_MANIFEST_SUFFIX)
+        tried.append(os.path.abspath(pool_manifest))
+        manifest = load_manifest_file(pool_manifest)
+        if manifest is not None:
+            return manifest
 
     local_manifest = os.path.splitext(script_full_path)[0] + PLUGIN_MANIFEST_SUFFIX
-    if os.path.abspath(local_manifest) == os.path.abspath(pool_manifest):
+    if os.path.abspath(local_manifest) in tried:
         return None  # already tried this exact file above (browsing the pool itself)
     return load_manifest_file(local_manifest)

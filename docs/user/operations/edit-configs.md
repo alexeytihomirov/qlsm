@@ -52,6 +52,19 @@ Use **Upload** when you want to bring in an existing file from another server. U
 - `server.cfg` shows inline lint diagnostics.
 - In the deploy form, instance creation is blocked if `server.cfg` has blocking lint errors.
 
+## Autocomplete
+
+In `.cfg` files the editor suggests console commands at the start of a line, and cvar names after `set` or `seta`. Each suggestion shows a short description and, underneath it, **where that description came from** — so a line that was read off the cvar's name is never mistaken for a verified fact.
+
+Two things are suggested, from two different places:
+
+- **Engine and server cvars** come from the catalog the server keeps in `ui/data/ql_cvar_catalog.json`. It lists every cvar a live Quake Live dedicated server registers (a `listcvars` dump), with descriptions taken from the game's own annotated `server.cfg`, from its factory definitions, and from verified reference notes. Bitmask settings such as `g_startingWeapons` and `g_voteFlags` show their bit table, and settings the official factories use show real example values. Regenerate the catalog with `python scripts/gen_cvar_catalog.py` after refreshing its inputs in `scripts/cvar-catalog/`.
+- **Plugin (`qlx_`) cvars** come from the plugins of the server you are editing, read from each plugin's `<plugin>.ql-plugin.json` manifest. Plugins that are enabled are offered first, plugins that are only present are offered below them, and a plugin that isn't on this server is not offered at all. A plugin you uploaded yourself counts exactly as much as a bundled one.
+
+Cvars QLSM sets itself (ports, passwords, Redis, plugin list) are marked as app-managed, the same ones the linter flags when you set them by hand.
+
+`.factories` files get their own suggestions: the keys of a factory definition, the base gametypes for `basegt`, and cvar names inside the `cvars` block — with the cvars the game's own factories actually use offered first.
+
 ## Restart After Saving
 
 <img src="../../images/forced-restart.png" width="220" />

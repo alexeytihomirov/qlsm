@@ -261,6 +261,15 @@ vi.mock('../../../codemirror-lang-qlcfg', () => ({
   qlcfgLanguage: {},
   createQlCfgLinter: vi.fn(() => vi.fn()),
   stripManagedCvars: vi.fn((value) => value),
+  setCvarCatalog: vi.fn(),
+  registerPluginCvarProvider: vi.fn(() => vi.fn()),
+  getCvarCatalog: vi.fn(() => ({ cvars: [], commands: [], gametypes: [], sources: {} })),
+}));
+
+vi.mock('../../../codemirror-lang-qlfactories', () => ({
+  qlFactoriesLanguage: {},
+  qlFactoriesLinterSource: vi.fn(() => vi.fn()),
+  qlFactoriesCompletion: [],
 }));
 
 vi.mock('../../../codemirror-lang-qlmappool', () => ({
