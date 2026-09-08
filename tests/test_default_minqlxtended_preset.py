@@ -118,14 +118,21 @@ def test_the_hook_description_matches_the_minqlx_one(manifest):
     assert manifest['binary_descriptions']['scripts/highfps_hook.so'] == theirs
 
 
-#: sha256 of footsteps_hook.so as built in dngrtech/qlsm_plugins at `f2094f4`.
+#: sha256 of footsteps_hook.so as built in dngrtech/qlsm_plugins at `c9b78d4`.
+#:
+#: That build removed the scanner's fixed 16-segment cap. minqlxtended restores page
+#: protection after each of its ~12 qagame detours, which splits qagamex64.so's text
+#: into ~19 r-xp VMAs (minqlx: ~5); the previous build overflowed at 17 and refused
+#: with FS_AMBIGUOUS on every minqlxtended host without scanning anything. Pinning the
+#: fixed build here is what keeps a stale copy from being re-shipped to the one runtime
+#: it was broken on.
 #:
 #: The hook patches PM_Footsteps inside qagamex64.so and knows nothing about either
 #: Python runtime, so there is one build and both runtimes ship it. Pinned by hash *as
 #: well as* compared against the minqlx copy below, for the same reason the highfps pin
 #: above is: rebuilding both at once still has to be a deliberate act that updates
 #: this line.
-FOOTSTEPS_HOOK_SHA256 = 'df225e85200bf017a033f60fc590ca4a0c72a2fe9e99ecc1c28632bf82e6cfa5'
+FOOTSTEPS_HOOK_SHA256 = '65349129aa7669374665810da4ef8707ebfdaa1f6beec67a2a7846413e6be0a4'
 
 
 def test_the_footsteps_hook_binary_is_the_current_qlsm_plugins_build():
