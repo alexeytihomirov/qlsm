@@ -261,7 +261,7 @@ def test_sync_seeds_binary_metadata_row(runner, app, tmp_path, monkeypatch):
         row = BinaryMetadata.query.filter_by(
             context_type='preset',
             context_key='duel',
-            file_path='scripts/hook.so',
+            file_path='hook.so',
         ).first()
         assert row is not None
         assert row.description == 'My hook'
@@ -281,7 +281,7 @@ def test_sync_overwrites_binary_metadata_on_resync(runner, app, tmp_path, monkey
         row = BinaryMetadata.query.filter_by(
             context_type='preset',
             context_key='duel',
-            file_path='scripts/hook.so',
+            file_path='hook.so',
         ).one()
         assert row.description == 'New desc'
 
@@ -297,12 +297,62 @@ def test_sync_deletes_stale_binary_metadata_row(runner, app, tmp_path, monkeypat
 
     assert result.exit_code == 0
     with app.app_context():
+        rows = BinaryMetadata.query.filter_by(
+            context_type='preset',
+            context_key='duel',
+        ).all()
+        assert rows == []
+
+
+def test_sync_files_the_row_under_the_path_the_ui_queries(runner, app, tmp_path, monkeypatch):
+    """preset.json addresses the binary from the preset root; the UI does not.
+
+    The plugin file manager builds its tree with scripts/ as the base
+    (draft_routes._build_draft_tree), so it asks binary_meta_routes.get_binary_meta()
+    for the bare filename, and that lookup is an exact string match. Filing the row
+    under the manifest's own 'scripts/hook.so' means the reader never finds it and the
+    description box renders empty with the text sitting right there in the table --
+    which is exactly what shipped, unnoticed, for as long as builtin descriptions have
+    existed. Assert both halves: the queried path hits, the manifest path does not.
+    """
+    monkeypatch.chdir(tmp_path)
+    write_manifest('duel', 'Duel', binary_descriptions={'scripts/hook.so': 'My hook'})
+    write_so_file('duel', 'scripts/hook.so')
+
+    assert runner.invoke(args=['sync-builtin-presets']).exit_code == 0
+
+    with app.app_context():
+        paths = [
+            row.file_path for row in BinaryMetadata.query.filter_by(
+                context_type='preset', context_key='duel',
+            ).all()
+        ]
+        assert paths == ['hook.so'], (
+            "the row must be filed under the bare filename the file manager queries, "
+            "not the preset-root path preset.json declares")
+
+
+def test_sync_keeps_the_subfolder_of_a_nested_binary(runner, app, tmp_path, monkeypatch):
+    """Only the leading scripts/ comes off.
+
+    _build_draft_tree walks recursively and yields 'extras/hook.so' for a nested file,
+    so the stripped path has to keep everything below scripts/ or nested binaries break
+    the moment the flat case is fixed.
+    """
+    monkeypatch.chdir(tmp_path)
+    write_manifest('duel', 'Duel', binary_descriptions={'scripts/extras/hook.so': 'My hook'})
+    write_so_file('duel', 'scripts/extras/hook.so')
+
+    assert runner.invoke(args=['sync-builtin-presets']).exit_code == 0
+
+    with app.app_context():
         row = BinaryMetadata.query.filter_by(
             context_type='preset',
             context_key='duel',
-            file_path='scripts/hook.so',
+            file_path='extras/hook.so',
         ).first()
-        assert row is None
+        assert row is not None
+        assert row.description == 'My hook'
 
 
 def test_sync_no_binary_metadata_when_field_absent(runner, app, tmp_path, monkeypatch):
