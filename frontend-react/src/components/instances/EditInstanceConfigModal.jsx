@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { X, LoaderCircle, Zap, AlertTriangle, Settings, Code2, LayoutGrid, Save, FolderOpen, RotateCw, Webhook, Crown } from 'lucide-react';
-import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
 import { getInstanceConfig, updateInstanceConfig, getInstanceById, getPresets, getPresetById, createPreset, updatePreset, getFactoryTree, getFactoryContent, fetchInstanceHooks } from '../../services/api';
 import { getBinaryMeta, saveBinaryMeta } from '../../services/draftApi';
@@ -14,8 +13,10 @@ import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, PluginCvarsModal, 
 import SubfolderPluginNotice from '../fileManager/SubfolderPluginNotice';
 import { partitionCheckedPaths, resolveRootPluginPaths, toQlxPluginNames } from '../fileManager/pluginSelection';
 import { useNotification } from '../NotificationProvider';
+import { useCvarAutocomplete } from '../../hooks/useCvarAutocomplete';
 import InfoTooltip from '../common/InfoTooltip';
 import { qlcfgLanguage, createQlCfgLinter, stripManagedCvars } from '../../codemirror-lang-qlcfg';
+import { qlFactoriesLanguage, qlFactoriesLinterSource } from '../../codemirror-lang-qlfactories';
 import { qlmappoolLanguage } from '../../codemirror-lang-qlmappool';
 import { qlaccessLanguage } from '../../codemirror-lang-qlaccess';
 import { qlworkshopLanguage } from '../../codemirror-lang-qlworkshop';
@@ -41,8 +42,8 @@ const getLanguageForFile = (fileName) => {
   if (fileName?.toLowerCase().endsWith('.ent')) return qlentLanguage;
   return LANGUAGE_MAP[fileName] || null;
 };
-const FACTORY_LANGUAGE = json();
-const FACTORY_LINTER_SOURCE = () => jsonParseLinter();
+const FACTORY_LANGUAGE = qlFactoriesLanguage;
+const FACTORY_LINTER_SOURCE = qlFactoriesLinterSource;
 const PYTHON_LANGUAGE = python();
 const getPluginLanguage = (fileName) => (
   fileName?.toLowerCase().endsWith('.py') ? PYTHON_LANGUAGE : null
@@ -211,6 +212,9 @@ function EditInstanceConfigModal({
     hasChanges: pluginsHaveChanges,
     tree: pluginTree,
   } = pluginsAdapter;
+  // Autocomplete in the config editor: engine cvars from the backend catalog,
+  // qlx_ cvars from this instance's own plugins (enabled ones first).
+  useCvarAutocomplete({ pluginTree, checkedPlugins, enabled: isOpen });
   const { files: serializedConfigFiles } = serializeConfigs();
   const serverCfgContent = serializedConfigFiles['server.cfg'] || '';
   const accessTxtContent = serializedConfigFiles['access.txt'] || '';

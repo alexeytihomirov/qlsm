@@ -435,7 +435,7 @@ def _get_file_type(filename):
     return FILE_TYPE_MAP.get(ext)
 
 
-def _build_draft_tree(path, base_path=None):
+def _build_draft_tree(path, base_path=None, runtime=None):
     """
     Recursively build a file tree with type metadata.
 
@@ -463,7 +463,7 @@ def _build_draft_tree(path, base_path=None):
             continue
 
         if os.path.isdir(full_path):
-            children = _build_draft_tree(full_path, base_path)
+            children = _build_draft_tree(full_path, base_path, runtime)
             items.append({
                 'name': entry,
                 'type': 'folder',
@@ -483,7 +483,7 @@ def _build_draft_tree(path, base_path=None):
                     'last_modified': stat.st_mtime
                 }
                 if ext == '.py':
-                    manifest = read_plugin_manifest(full_path)
+                    manifest = read_plugin_manifest(full_path, runtime)
                     if manifest is not None:
                         item['plugin_manifest'] = manifest
                 items.append(item)
@@ -686,7 +686,9 @@ def get_draft_tree(draft_id):
         return jsonify({"error": {"message": "Draft not found"}}), 404
 
     scripts_path = _get_draft_scripts_path(draft_id)
-    tree = _build_draft_tree(scripts_path)
+    # A draft that was filtered for a runtime holds that runtime's plugins, so
+    # its manifests should come from that runtime's pool too.
+    tree = _build_draft_tree(scripts_path, runtime=draft_filtered_runtime(draft_id))
     return jsonify({"data": tree}), 200
 
 

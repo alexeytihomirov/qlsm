@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collectPluginCvars,
   formatPluginCommandsText,
   getPluginCommands,
   getPluginCvars,
@@ -164,5 +165,70 @@ describe('formatPluginCommandsText', () => {
 
   it('returns an empty string with no commands', () => {
     expect(formatPluginCommandsText({})).toBe('');
+  });
+});
+
+describe('collectPluginCvars', () => {
+  const tree = [
+    {
+      type: 'file',
+      name: 'lobby.py',
+      path: 'lobby.py',
+      plugin_manifest: {
+        label: 'Lobby',
+        cvars: [{ cvar: 'qlx_lobbyEnabled', type: 'bool', default: false, description: 'on/off' }],
+      },
+    },
+    {
+      type: 'file',
+      name: 'branding.py',
+      path: 'branding.py',
+      plugin_manifest: {
+        label: 'Branding',
+        cvars: [{ cvar: 'qlx_serverBrandName', type: 'string', default: '' }],
+      },
+    },
+    { type: 'file', name: 'notes.txt', path: 'notes.txt' },
+    {
+      type: 'folder',
+      name: 'extras',
+      children: [{
+        type: 'file',
+        name: 'helper.py',
+        path: 'extras/helper.py',
+        plugin_manifest: { label: 'Helper', cvars: [{ cvar: 'qlx_helper', type: 'number', default: 1 }] },
+      }],
+    },
+  ];
+
+  it('collects the cvars of every plugin present on the server', () => {
+    const cvars = collectPluginCvars(tree, ['lobby.py']);
+    expect(cvars.map(c => c.cvar).sort()).toEqual(['qlx_helper', 'qlx_lobbyEnabled', 'qlx_serverBrandName']);
+  });
+
+  it('marks the plugins that are actually enabled', () => {
+    const cvars = collectPluginCvars(tree, ['lobby.py']);
+    expect(cvars.find(c => c.cvar === 'qlx_lobbyEnabled')).toMatchObject({ plugin: 'Lobby', enabled: true });
+    expect(cvars.find(c => c.cvar === 'qlx_serverBrandName')).toMatchObject({ plugin: 'Branding', enabled: false });
+  });
+
+  it('accepts the checked paths as a Set, the way the Plugins tab holds them', () => {
+    const cvars = collectPluginCvars(tree, new Set(['branding.py']));
+    expect(cvars.find(c => c.cvar === 'qlx_serverBrandName').enabled).toBe(true);
+  });
+
+  it('lists a cvar shared by two plugins once, preferring the enabled one', () => {
+    const shared = [
+      { type: 'file', name: 'a.py', path: 'a.py', plugin_manifest: { label: 'A', cvars: [{ cvar: 'qlx_shared', type: 'bool' }] } },
+      { type: 'file', name: 'b.py', path: 'b.py', plugin_manifest: { label: 'B', cvars: [{ cvar: 'qlx_shared', type: 'bool' }] } },
+    ];
+    const cvars = collectPluginCvars(shared, ['b.py']);
+    expect(cvars).toHaveLength(1);
+    expect(cvars[0]).toMatchObject({ plugin: 'B', enabled: true });
+  });
+
+  it('returns nothing for a server with no plugin manifests', () => {
+    expect(collectPluginCvars([{ type: 'file', name: 'x.py', path: 'x.py' }], [])).toEqual([]);
+    expect(collectPluginCvars()).toEqual([]);
   });
 });

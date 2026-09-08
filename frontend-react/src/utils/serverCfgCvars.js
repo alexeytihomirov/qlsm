@@ -7,22 +7,31 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Matches `set x "value"` and `seta x value` alike: a hand-written config
+// often leaves the quotes off, and treating such a line as absent used to make
+// the writer append a second, conflicting `set` for the same cvar.
 function buildCvarRegex(cvar) {
-  return new RegExp(`^set\\s+${escapeRegExp(cvar)}\\s+"([^"]*)"`, 'm');
+  return new RegExp(`^([ \\t]*seta?[ \\t]+${escapeRegExp(cvar)}[ \\t]+)("([^"]*)"|[^\\s"/]+)`, 'im');
 }
 
 export function readCvarFromConfig(cfgText, cvar) {
   if (!cvar) return null;
   const match = (cfgText || '').match(buildCvarRegex(cvar));
-  return match ? match[1] : null;
+  if (!match) return null;
+  return match[3] !== undefined ? match[3] : match[2];
 }
 
-// No quote-escaping, matching the existing sv_hostname sync's behavior.
+// No quote-escaping, matching the existing sv_hostname sync's behavior. An
+// existing line keeps its own set/seta keyword and indentation; only the value
+// is rewritten, and it comes back quoted.
 export function upsertCvarInConfig(cfgText, cvar, value) {
   const cfg = cfgText || '';
-  const line = `set ${cvar} "${value}"`;
   const regex = buildCvarRegex(cvar);
-  if (regex.test(cfg)) return cfg.replace(regex, () => line);
+  const match = cfg.match(regex);
+  // Function form: a value containing $& or $1 must be written literally, not
+  // read as a replacement backreference.
+  if (match) return cfg.replace(regex, () => `${match[1]}"${value}"`);
+  const line = `set ${cvar} "${value}"`;
   return cfg ? `${cfg}\n${line}` : line;
 }
 
