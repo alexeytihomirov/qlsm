@@ -205,11 +205,14 @@ def _run_host_ansible_playbook(host, playbook_name, extravars=None, capture_outp
         return False, "", str(e)
 
 
-def run_host_ansible_adhoc(host, module_args, module='shell', become_user=None):
+def run_host_ansible_adhoc(host, module_args, module='shell', become_user=None, timeout=30):
     """Runs a single ad-hoc ansible module against a host (no playbook) and
     returns (success, stdout, stderr). Used for read-only checks (e.g. hashing
     a remote directory for "Check for Updates") where a full playbook run
-    would be overkill.
+    would be overkill. Runs synchronously inside a web request, so a hung
+    SSH connection must not be able to block it forever — bounded by
+    `timeout` seconds, mirroring the pattern in host_routes.py's connection
+    test (subprocess.run(..., timeout=...) + TimeoutExpired).
     """
     if not host:
         return False, "", "Internal Error: Host object not provided"
@@ -233,6 +236,7 @@ def run_host_ansible_adhoc(host, module_args, module='shell', become_user=None):
         '-m', module,
         '-a', module_args,
         '--become',
+        '--timeout', str(timeout),
     ]
     if become_user:
         cmd.extend(['--become-user', become_user])
@@ -240,7 +244,13 @@ def run_host_ansible_adhoc(host, module_args, module='shell', become_user=None):
     try:
         log.info(f"Executing ansible ad-hoc for host {host.name}: -m {module} -a {module_args!r}")
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        stdout_content, stderr_content = process.communicate()
+        try:
+            stdout_content, stderr_content = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            log.warning(f"Ansible ad-hoc for host {host.name} timed out after {timeout}s")
+            return False, "", f"Timed out after {timeout}s"
         rc = process.wait()
 
         # Ad-hoc output isn't structured JSON by default: a leading

@@ -66,8 +66,21 @@ def test_shared_sync_task_refreshes_pool_by_full_mirror():
     tasks = _load(SHARED_TASKS)
     sync_task = next(
         t for t in tasks
-        if "synchronize" in t and "minqlx-plugins" in str(t["synchronize"].get("dest", ""))
+        if "synchronize" in t and "runtime_plugins_dirname" in str(t["synchronize"].get("dest", ""))
     )
     sync_args = sync_task["synchronize"]
     assert sync_args["delete"] is True
-    assert sync_args["dest"] == "{{ common_assets_dir }}/minqlx-plugins/"
+    assert sync_args["dest"] == "{{ common_assets_dir }}/{{ runtime_plugins_dirname }}/"
+
+
+def test_update_common_plugins_playbook_targets_the_host_runtime():
+    """runtime_plugins_dirname must resolve from a runtime var the caller can
+    override — ansible_plugin_update.py passes it via runtime_extravars(host)
+    (see ui/runtime.py) so a minqlxtended host's own pool gets synced, not
+    minqlx's."""
+    doc = _load(UPDATE_PLAYBOOK)
+    play = doc[0]
+    assert play["vars"]["runtime_plugins_dirname"] == (
+        "{{ 'minqlxtended-plugins' if runtime == 'minqlxtended' else 'minqlx-plugins' }}"
+    )
+    assert play["hosts"] == "{{ target_host_name | default('all') }}"

@@ -19,8 +19,13 @@ function CheckForUpdatesModal({ isOpen, onClose, onSubmit, host, isChecking, che
         const restarts = {};
         (checkResult.instances || []).forEach(inst => {
             const changed = (inst.selected_plugin_changes || []).filter(c => c.change !== 'removed');
+            // Pre-tick only files this instance already has a stale copy of.
+            // Pre-ticking every "added" file too means one click on an
+            // 8-instance host copies every new pool plugin to all 8 and
+            // restarts them — the operator opts into those explicitly.
+            const preTicked = changed.filter(c => c.change === 'modified');
             if (changed.length > 0) {
-                files[inst.id] = new Set(changed.map(c => c.name));
+                files[inst.id] = new Set(preTicked.map(c => c.name));
                 restarts[inst.id] = inst.status !== 'STOPPED';
             }
         });
