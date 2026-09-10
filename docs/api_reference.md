@@ -36,6 +36,58 @@ All endpoints except `/api/auth/login` require authentication via JWT cookie.
 | `/hosts/<id>/available-ports` | GET | Get available ports on the host |
 | `/hosts/<id>/update-workshop` | POST | Force workshop items update on host |
 | `/hosts/<id>/auto-restart` | POST | Configure host auto-restart schedule |
+| `/hosts/<id>/watchdog` | POST | Enable/disable and tune the ql-watchdog add-on |
+
+### Configure Watchdog
+
+```
+POST /api/hosts/<id>/watchdog
+```
+
+Deploys, reconfigures, or removes the **ql-watchdog** add-on on a host. The
+add-on is opt-in per host and off by default. Requires the host to be `ACTIVE`;
+takes the host lock and runs `configure_watchdog.yml` as a background task.
+
+**Request body**
+
+```json
+{
+  "enabled": true,
+  "config": {
+    "interval": 10,
+    "recvq_threshold": 8192,
+    "strikes": 3,
+    "grace": 90,
+    "rate_max": 3,
+    "rate_window": 900,
+    "dryrun": false,
+    "forensics": true
+  }
+}
+```
+
+`config` is optional; unknown keys are rejected. All tunables are validated as
+integers within range (`recvq_threshold` must be >= 1 -- 0 would mark every
+instance permanently hung) or booleans.
+
+**How detection works.** Every `interval` seconds the watchdog reads the kernel
+Recv-Q for each `qlds@<port>.service` game port *and* the process CPU time from
+`/proc/<pid>/stat`. An instance is only struck when Recv-Q is at or above
+`recvq_threshold` **and** its CPU time has not advanced since the previous
+check. Requiring both avoids restarting a healthy server whose socket is merely
+backed up -- a slow map load, a blocking plugin call, or inbound traffic on the
+public game port. After `strikes` consecutive strikes the instance is
+restarted, at most `rate_max` times per `rate_window` seconds.
+
+`dryrun` logs `would_restart` instead of restarting. `forensics` captures a gdb
+all-thread backtrace (and py-spy dump when available) before a real restart;
+enabling it installs `gdb` on the host.
+
+**Response**
+
+```json
+{"data": {"task_id": "..."}, "message": "Watchdog configuration queued."}
+```
 
 ### Resize Host
 
