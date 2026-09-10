@@ -17,12 +17,23 @@ ansible/templates/qlds@.service.j2), unlike ql-server-core's supervisord
 `quakelive:ql_N` groups. Discovery/restart here go through systemctl instead
 of supervisorctl, and the game port is read directly off the unit name.
 
-Detection (per instance, every INTERVAL):
-  kernel Recv-Q for the UDP game port (read from /proc/net/udp) stays above
-  RECVQ_THRESHOLD for STRIKES consecutive checks -> restart. A healthy server
-  drains its socket every frame (Recv-Q ~0), so a sustained high Recv-Q only
-  happens when the main loop is frozen. The strike count + GRACE window
-  prevent restarting during boot/map-load or on a one-off burst.
+Detection (per instance, every INTERVAL) requires TWO signals to agree:
+  1. kernel Recv-Q for the UDP game port (from /proc/net/udp[6]) is at or above
+     RECVQ_THRESHOLD, and
+  2. the instance's CPU time (utime+stime from /proc/<pid>/stat) has NOT
+     advanced since the previous check.
+  Both for STRIKES consecutive checks -> restart.
+
+  Recv-Q alone is not sufficient. It rises whenever inbound rate exceeds drain
+  rate, which a healthy server does during a slow workshop map load, while a
+  plugin blocks the main thread, when the shared Redis stalls, or simply when
+  someone points traffic at the public game port. GRACE only covers unit
+  startup, so it never re-arms mid-session. A frozen frame loop, by contrast,
+  stops burning CPU -- QLDS otherwise runs its loop continuously -- so the CPU
+  delta is what separates "stuck" from "busy".
+
+  Deliberate trade-off: a busy-spin hang keeps consuming CPU and is NOT caught.
+  Restarting a healthy server mid-match is worse than missing a rare spin.
 
 Stdlib only. Runs as root (systemctl restart on a system unit + gdb attach to
 another user's process both require it).
@@ -57,7 +68,9 @@ DRYRUN = _env_bool("QL_WATCHDOG_DRYRUN", False)
 INTERVAL = max(2, _env_int("QL_WATCHDOG_INTERVAL", 10))
 # Sustained Recv-Q (bytes) above this for STRIKES checks => hung. Healthy idle
 # server sits at 0-960B even under polling; a real hang reaches 100KB+.
-RECVQ_THRESHOLD = max(0, _env_int("QL_WATCHDOG_RECVQ_THRESHOLD", 8192))
+# Floor of 1: a threshold of 0 would make "Recv-Q >= 0" true on every check,
+# i.e. every instance permanently hung. The API validator rejects 0 too.
+RECVQ_THRESHOLD = max(1, _env_int("QL_WATCHDOG_RECVQ_THRESHOLD", 8192))
 STRIKES = max(1, _env_int("QL_WATCHDOG_STRIKES", 3))
 # Skip an instance that has been active for less than GRACE seconds: covers
 # systemd startup + map load + post-restart settle (no strikes during boot).
@@ -235,6 +248,26 @@ def recv_q(port: int) -> int:
     return max(_recv_q_from("/proc/net/udp", port), _recv_q_from("/proc/net/udp6", port))
 
 
+def cpu_ticks(pid: str) -> int | None:
+    """Total CPU time (utime+stime, in clock ticks) burned by pid so far.
+
+    Returns None if the process is gone or /proc is unreadable. The comm field
+    can contain spaces and parentheses, so fields are taken after the last
+    ')' rather than by naive split.
+    """
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    try:
+        fields = data[data.rindex(")") + 1:].split()
+        # After comm, field 0 is state; utime/stime are fields 11 and 12.
+        return int(fields[11]) + int(fields[12])
+    except (ValueError, IndexError):
+        return None
+
+
 def restart_instance(port: int) -> tuple[bool, str]:
     unit = _unit_name(port)
     try:
@@ -267,7 +300,10 @@ def capture_hang_forensics(port: int, rq: int) -> str:
     if not pid:
         return ""
     try:
-        os.makedirs(FORENSICS_DIR, exist_ok=True)
+        # 0700/0600: a gdb "thread apply all bt" prints frame arguments,
+        # including char* values, from a process holding the rcon password.
+        os.makedirs(FORENSICS_DIR, mode=0o700, exist_ok=True)
+        os.chmod(FORENSICS_DIR, 0o700)
     except OSError:
         return ""
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -302,7 +338,8 @@ def capture_hang_forensics(port: int, rq: int) -> str:
         parts.append("\n\n=== py-spy dump (python threads) ===\n")
         parts.append(_run([pyspy, "dump", "--pid", pid, "--nonblocking"], 30))
     try:
-        with open(path, "w", encoding="utf-8") as fh:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write("".join(parts))
     except OSError:
         return ""
@@ -323,6 +360,7 @@ def main() -> int:
     )
     strikes: dict[int, int] = {}
     restarts: dict[int, deque[float]] = {}
+    cpu: dict[int, int | None] = {}
 
     while True:
         try:
@@ -332,10 +370,37 @@ def main() -> int:
                     strikes[port] = 0
                     continue
                 rq = recv_q(port)
-                hung = rq >= RECVQ_THRESHOLD
+                # Recv-Q alone cannot tell "frozen frame loop" from "inbound
+                # rate > drain rate". A slow workshop map load, a blocking
+                # plugin call, a stalled shared Redis, or plain UDP traffic
+                # aimed at the public game port all back the socket up on a
+                # perfectly healthy server -- and GRACE only covers unit
+                # startup, so it never re-arms mid-session. Require a second,
+                # non-network signal: the process must ALSO have stopped
+                # burning CPU. QLDS runs its frame loop continuously, so
+                # utime+stime always advances while the server is alive; the
+                # blocking deadlock this addon targets flatlines it.
+                #
+                # Trade-off, deliberately this way round: a busy-spin hang
+                # keeps burning CPU and is not caught. Restarting a healthy
+                # server mid-match is worse than missing a rare spin.
+                pid = instance_pid(port)
+                ticks = cpu_ticks(pid) if pid else None
+                prev_ticks = cpu.get(port)
+                cpu[port] = ticks
+                # No previous sample yet (first pass, or just restarted) --
+                # no verdict until we have two points to compare.
+                cpu_frozen = (
+                    ticks is not None
+                    and prev_ticks is not None
+                    and ticks == prev_ticks
+                )
+                hung = rq >= RECVQ_THRESHOLD and cpu_frozen
                 if not hung:
                     if strikes.get(port):
-                        log_event("recovered", port=port, recv_q=rq)
+                        log_event(
+                            "recovered", port=port, recv_q=rq, cpu_ticks=ticks
+                        )
                     strikes[port] = 0
                     continue
                 strikes[port] = strikes.get(port, 0) + 1
@@ -343,6 +408,7 @@ def main() -> int:
                     "hang_suspected",
                     port=port,
                     recv_q=rq,
+                    cpu_ticks=ticks,
                     strike=strikes[port],
                     need=STRIKES,
                 )
@@ -365,17 +431,20 @@ def main() -> int:
                     strikes[port] = 0
                     continue
 
+                if DRYRUN:
+                    # No forensics in dry-run: the dry-run branch never appends
+                    # to the rate-limit history, so capturing here would write a
+                    # dump every STRIKES*INTERVAL seconds forever.
+                    log_event("would_restart", port=port, recv_q=rq)
+                    strikes[port] = 0
+                    continue
+
                 # Capture native+python backtraces of the frozen process BEFORE
                 # touching it - a hang yields no core, so this is the only
                 # record of WHERE the main thread is stuck.
                 forensics = capture_hang_forensics(port, rq)
                 if forensics:
                     log_event("hang_forensics", port=port, recv_q=rq, file=forensics)
-
-                if DRYRUN:
-                    log_event("would_restart", port=port, recv_q=rq, forensics=forensics)
-                    strikes[port] = 0
-                    continue
 
                 ok, out = restart_instance(port)
                 hist.append(now)

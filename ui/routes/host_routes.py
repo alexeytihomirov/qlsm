@@ -55,7 +55,9 @@ SYSTEMD_CALENDAR_RE = re.compile(
 WATCHDOG_CONFIG_FIELDS = {
     'dryrun': (lambda v: isinstance(v, bool), 'dryrun must be a boolean'),
     'interval': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 2 <= v <= 3600, 'interval must be an integer between 2 and 3600'),
-    'recvq_threshold': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10_000_000, 'recvq_threshold must be a non-negative integer'),
+    # Floor of 1, not 0: 'Recv-Q >= 0' is true on every check, so 0 would mark
+    # every instance permanently hung. An operator reasonably reads 0 as 'off'.
+    'recvq_threshold': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 10_000_000, 'recvq_threshold must be an integer between 1 and 10000000'),
     'strikes': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 100, 'strikes must be an integer between 1 and 100'),
     'grace': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 30 <= v <= 3600, 'grace must be an integer between 30 and 3600'),
     'rate_max': (lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 100, 'rate_max must be an integer between 1 and 100'),

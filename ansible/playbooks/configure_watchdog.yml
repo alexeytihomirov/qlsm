@@ -47,6 +47,19 @@
         mode: '0755'
       when: watchdog_enabled | default(false)
 
+    # The forensics toggle is exposed in the UI and defaults on, so the tools
+    # it promises have to actually exist on the host -- without this the
+    # watchdog writes a "gdb not found" stub instead of a backtrace.
+    - name: Install forensics tooling for ql-watchdog
+      ansible.builtin.apt:
+        name: gdb
+        state: present
+        update_cache: yes
+        cache_valid_time: 3600
+      when:
+        - watchdog_enabled | default(false)
+        - watchdog_forensics | default(true)
+
     - name: Render ql-watchdog systemd unit
       ansible.builtin.template:
         src: ../templates/ql-watchdog.service.j2
@@ -55,7 +68,6 @@
         group: root
         mode: '0644'
       when: watchdog_enabled | default(false)
-      register: watchdog_unit_rendered
 
     - name: Reload systemd daemon (ql-watchdog unit deployed)
       ansible.builtin.systemd:
@@ -69,13 +81,19 @@
         enabled: yes
       when: watchdog_enabled | default(false)
 
+    # Tolerate only "the unit was never installed"; a genuine stop failure must
+    # not be swallowed, or the unit file gets removed underneath a still-running
+    # root daemon that retains systemctl restart authority over every qlds@ unit.
     - name: Stop and disable ql-watchdog
       ansible.builtin.systemd:
         name: ql-watchdog
         state: stopped
         enabled: no
       when: not (watchdog_enabled | default(false))
-      ignore_errors: yes
+      register: watchdog_stop_result
+      failed_when:
+        - watchdog_stop_result is failed
+        - "'could not be found' not in (watchdog_stop_result.msg | default(''))"
 
     - name: Remove ql-watchdog systemd unit file
       ansible.builtin.file:
