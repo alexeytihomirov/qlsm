@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useState, useCallback } from 'react';
+import React, { Fragment, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Listbox, Transition } from '@headlessui/react';
 import { ChevronDown, Check, FileText, Maximize, RefreshCw, AlertCircle, Server } from 'lucide-react';
@@ -27,19 +27,28 @@ function HostLogsPage() {
     const [error, setError] = useState(null);
     const [isExpandedEditorOpen, setIsExpandedEditorOpen] = useState(false);
 
+    // Clicking through the host picker starts a request per host, and these
+    // payloads are large enough that an earlier one can land last. Every
+    // request takes a ticket; only the newest may write state, so the log on
+    // screen always belongs to the host named in the picker.
+    const requestIdRef = useRef(0);
+
     const fetchLogs = useCallback(async () => {
         if (!selectedHostId) return;
+        const requestId = ++requestIdRef.current;
         setIsLoading(true);
         setError(null);
         try {
             const data = await getHostLogs(selectedHostId);
+            if (requestId !== requestIdRef.current) return;
             setLogs(data.logs || '-- No entries --');
         } catch (err) {
+            if (requestId !== requestIdRef.current) return;
             console.error('Error fetching host logs:', err);
             setError(err?.message || err?.error?.message || 'Failed to fetch host logs.');
             setLogs('');
         } finally {
-            setIsLoading(false);
+            if (requestId === requestIdRef.current) setIsLoading(false);
         }
     }, [selectedHostId]);
 

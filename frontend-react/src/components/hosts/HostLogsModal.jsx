@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { X, RefreshCw, Terminal, AlertCircle, Maximize } from 'lucide-react';
 import CodeMirrorEditor from '../CodeMirrorEditor';
@@ -18,20 +18,29 @@ function HostLogsModal({ isOpen, onClose, host }) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [isExpandedEditorOpen, setIsExpandedEditorOpen] = useState(false);
+    const editorContainerRef = useRef(null);
+    // Host logs are an unbounded text column, so a response can land long after
+    // the operator moved on. Every request takes a ticket; only the newest one
+    // is allowed to write state. Closing the modal bumps the counter too, so a
+    // late response cannot re-populate (and pin in memory) a closed modal.
+    const requestIdRef = useRef(0);
 
     const fetchLogs = useCallback(async () => {
         if (!host?.id) return;
+        const requestId = ++requestIdRef.current;
         setIsLoading(true);
         setError(null);
         try {
             const data = await getHostLogs(host.id);
+            if (requestId !== requestIdRef.current) return;
             setLogs(data.logs || '-- No entries --');
         } catch (err) {
+            if (requestId !== requestIdRef.current) return;
             console.error('Error fetching host logs:', err);
             setError(err?.message || err?.error?.message || 'Failed to fetch host logs.');
             setLogs('');
         } finally {
-            setIsLoading(false);
+            if (requestId === requestIdRef.current) setIsLoading(false);
         }
     }, [host?.id]);
 
@@ -39,6 +48,7 @@ function HostLogsModal({ isOpen, onClose, host }) {
         if (isOpen && host?.id) {
             fetchLogs();
         } else if (!isOpen) {
+            requestIdRef.current += 1;
             setLogs('');
             setError(null);
             setIsExpandedEditorOpen(false);
@@ -49,9 +59,11 @@ function HostLogsModal({ isOpen, onClose, host }) {
     useEffect(() => {
         if (!isLoading && logs) {
             const timer = setTimeout(() => {
-                const cmEditor = document.querySelector('.host-logs-modal .cm-editor .cm-scroller');
-                if (cmEditor) {
-                    cmEditor.scrollTop = cmEditor.scrollHeight;
+                // Scoped to this modal's own editor. A document-wide lookup
+                // finds the expanded-editor overlay first once it is open.
+                const scroller = editorContainerRef.current?.querySelector('.cm-scroller');
+                if (scroller) {
+                    scroller.scrollTop = scroller.scrollHeight;
                 }
             }, 100);
             return () => clearTimeout(timer);
@@ -142,7 +154,7 @@ function HostLogsModal({ isOpen, onClose, host }) {
                                                 <Maximize size={14} />
                                             </button>
                                         </div>
-                                        <div className="flex-1 border-2 border-theme-strong rounded-lg overflow-hidden logs-modal-editor-container">
+                                        <div ref={editorContainerRef} className="flex-1 border-2 border-theme-strong rounded-lg overflow-hidden logs-modal-editor-container">
                                             <CodeMirrorEditor
                                                 value={logs}
                                                 onChange={() => { }}

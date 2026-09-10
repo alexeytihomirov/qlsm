@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.30.0` | 2026-09-10 | [#202](https://github.com/dngrtech/qlsm/pull/202) | Add a Host Logs page and a View Logs action on each host, for reading a host's provisioning and setup output. |
 | `v1.29.0` | 2026-09-09 | [#201](https://github.com/dngrtech/qlsm/pull/201) | Add the **ql-watchdog** add-on: opt-in per-host detection and automatic restart of a QLDS instance whose game loop has frozen. |
 | `v1.28.5` | 2026-08-27 | [#200](https://github.com/dngrtech/qlsm/pull/200) | Bug fixes and improvements. |
 | `v1.28.4` | 2026-08-27 | [#199](https://github.com/dngrtech/qlsm/pull/199) | Bug fixes and improvements. |
