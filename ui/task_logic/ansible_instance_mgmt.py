@@ -684,7 +684,19 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
 
             try:
                 from .access_permission_sync import sync_instance_access_permissions
-                sync_instance_access_permissions(instance)
+                permission_sync_result = sync_instance_access_permissions(instance)
+                if permission_sync_result is False:
+                    log.warning(
+                        "access.txt permission sync failed for instance %s (non-fatal)",
+                        instance_id,
+                    )
+                    append_log(
+                        instance,
+                        "Warning: access.txt admin permissions could not be synced to the "
+                        "running instance (SSH/Redis unreachable). access.txt was saved, but "
+                        "in-game permissions may be stale until the next successful apply.",
+                    )
+                    db.session.commit()
             except Exception:
                 log.warning(
                     "access.txt permission sync failed for instance %s (non-fatal)",

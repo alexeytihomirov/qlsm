@@ -86,13 +86,17 @@ def test_parse_access_entries_matches_frontend_shape():
     assert entries == {"76561197999064274": 4, "76561198257351377": 3}
 
 
-def test_parse_access_entries_defaults_and_clamps_level():
+def test_parse_access_entries_rejects_invalid_or_out_of_range_level():
+    """A missing/non-numeric/out-of-range level must be dropped, not
+    defaulted or clamped to 5 -- level 5 is what !setperm requires, so
+    silently granting it from a typo would be a privilege escalation."""
     from ui.task_logic.access_permission_sync import parse_access_entries
 
-    entries = parse_access_entries("76561197999064274|\n76561198257351377|99\n")
+    entries = parse_access_entries(
+        "76561197999064274|\n76561198257351377|99\n76561197111111111|e\n76561197222222222|3\n"
+    )
 
-    assert entries["76561197999064274"] == 5  # missing level -> UI default
-    assert entries["76561198257351377"] == 5  # clamped to max
+    assert entries == {"76561197222222222": 3}
 
 
 def test_parse_access_entries_empty_input():
@@ -199,7 +203,10 @@ def test_sync_access_permissions_uses_self_host_redis_password(monkeypatch):
     assert "password_b64" in script
 
 
-def test_sync_access_permissions_returns_none_on_nonzero_exit(monkeypatch):
+def test_sync_access_permissions_returns_false_on_nonzero_exit(monkeypatch):
+    """False (not None) distinguishes "we tried and it failed" from "there
+    was nothing to sync" -- callers use this to decide whether to warn the
+    operator that in-game permissions may be stale."""
     from ui.task_logic import access_permission_sync as module
 
     monkeypatch.setattr(
@@ -207,10 +214,10 @@ def test_sync_access_permissions_returns_none_on_nonzero_exit(monkeypatch):
         lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr="connection refused"),
     )
     result = module.sync_access_permissions(_instance(host=_host()), "76561197999064274|5")
-    assert result is None
+    assert result is False
 
 
-def test_sync_access_permissions_returns_none_on_timeout(monkeypatch):
+def test_sync_access_permissions_returns_false_on_timeout(monkeypatch):
     from ui.task_logic import access_permission_sync as module
 
     def raise_timeout(*a, **k):
@@ -218,7 +225,7 @@ def test_sync_access_permissions_returns_none_on_timeout(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", raise_timeout)
     result = module.sync_access_permissions(_instance(host=_host()), "76561197999064274|5")
-    assert result is None
+    assert result is False
 
 
 # --- sync_instance_access_permissions (disk read wrapper) -------------------

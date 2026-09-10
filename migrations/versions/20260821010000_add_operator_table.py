@@ -1,7 +1,7 @@
 """add operator table
 
 Revision ID: 20260821010000
-Revises: 20260818000001
+Revises: 20260823120000
 Create Date: 2026-08-21 01:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20260821010000'
-down_revision = '20260818000001'
+down_revision = '20260823120000'  # #201 (watchdog) merged since this was branched
 branch_labels = None
 depends_on = None
 

@@ -46,7 +46,7 @@ export function upsertAdminLine(accessText, steamId64, level) {
     lines[existingIndex] = line;
     return lines.join('\n');
   }
-  if (lines.length === 0 || lines[lines.length - 1].trim() === '') {
+  if (lines.length > 0 && lines[lines.length - 1].trim() === '') {
     lines[lines.length - 1] = line;
     return lines.join('\n');
   }

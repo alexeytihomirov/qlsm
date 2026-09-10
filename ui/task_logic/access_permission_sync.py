@@ -54,9 +54,12 @@ def parse_access_entries(access_text):
     parseAdminEntries does on the frontend.
 
     Blank lines and lines starting with '#' are skipped, matching the UI. A
-    line whose first token is not a SteamID64 is skipped too. Levels are
-    clamped to 0-5; a missing or non-numeric level defaults to 5 (the UI's own
-    default when adding an admin without touching the level dropdown).
+    line whose first token is not a SteamID64 is skipped too. A missing,
+    non-numeric, or out-of-range (not 0-5) level is rejected -- the line is
+    skipped entirely rather than clamped or defaulted, matching minqlx's own
+    permission.py (which rejects an invalid level rather than coercing it).
+    Clamping a typo like "|99" or "|e" to 5 would hand a community admin
+    !setperm-level access from a malformed line in the raw access.txt editor.
 
     Returns a {steam_id: level} dict -- last line for a given ID wins, same as
     upsertAdminLine's in-place update.
@@ -74,8 +77,12 @@ def parse_access_entries(access_text):
         try:
             level = int(level_part)
         except ValueError:
-            level = 5
-        entries[steam_id] = max(0, min(5, level))
+            logger.warning("Rejecting access.txt entry for %s: invalid level %r", steam_id, level_part)
+            continue
+        if not 0 <= level <= 5:
+            logger.warning("Rejecting access.txt entry for %s: level %d out of range 0-5", steam_id, level)
+            continue
+        entries[steam_id] = level
     return entries
 
 
@@ -141,9 +148,11 @@ def build_sync_command(host, db, entries, redis_password=None):
 
 def sync_access_permissions(instance, access_text):
     """Best-effort push of access.txt entries into the instance's minqlx
-    permission DB. Returns {"synced": [...], "reset": [...]} on success, or
-    None if the host is missing or the SSH round-trip failed -- callers
-    should log a warning on None and never fail the config apply for this."""
+    permission DB. Returns {"synced": [...], "reset": [...]} on success,
+    False if the round-trip actually failed (SSH/Redis unreachable, bad
+    output) -- callers should surface that to the operator, since access.txt
+    was saved but in-game permissions did not follow -- or None if there was
+    no host to sync against at all (a structural no-op, not a failure)."""
     host = getattr(instance, "host", None)
     if host is None:
         return None
@@ -161,19 +170,19 @@ def sync_access_permissions(instance, access_text):
         logger.warning(
             "Timed out syncing access.txt permissions for instance %s", getattr(instance, "id", "?")
         )
-        return None
+        return False
     except Exception:
         logger.exception(
             "Failed to sync access.txt permissions for instance %s", getattr(instance, "id", "?")
         )
-        return None
+        return False
 
     if result.returncode != 0:
         logger.warning(
             "access.txt permission sync failed for instance %s: %s",
             getattr(instance, "id", "?"), (result.stderr or "")[:200],
         )
-        return None
+        return False
 
     try:
         payload = json.loads(result.stdout)
@@ -182,7 +191,7 @@ def sync_access_permissions(instance, access_text):
             "access.txt permission sync returned unparseable output for instance %s",
             getattr(instance, "id", "?"),
         )
-        return None
+        return False
 
     return payload
 
@@ -192,7 +201,10 @@ def sync_instance_access_permissions(instance):
 
     No-op (returns None) if the instance has no host or no access.txt on disk
     yet -- matches sync_instance_server_id_from_config's "nothing written yet"
-    handling in telemetry_relay_instance.py.
+    handling in telemetry_relay_instance.py. Otherwise defers to
+    sync_access_permissions's return value: a payload dict on success, False
+    if the sync actually ran and failed (callers should surface this -- see
+    apply_instance_config_logic in ansible_instance_mgmt.py).
     """
     if not instance.host:
         return None
