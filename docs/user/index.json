@@ -43,6 +43,11 @@
         "path": "/docs/operations/update-workshop-item.md"
       },
       {
+        "id": "watchdog",
+        "title": "Configure Watchdog",
+        "path": "/docs/operations/watchdog.md"
+      },
+      {
         "id": "instance-actions",
         "title": "Instance Actions Menu",
         "path": "/docs/operations/instance-actions-menu.md"
