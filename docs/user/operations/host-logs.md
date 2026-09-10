@@ -11,7 +11,7 @@ A host's log includes:
 - **Automatic recovery**, when a host in **Error** becomes reachable again
 - Any of these tasks **timing out or crashing**
 
-Routine actions such as restarts, workshop updates, and QLFilter changes are not recorded here.
+Host restarts, workshop updates, and QLFilter installs or removals are recorded too, but differently: their result is a single line placed at the **top** of the log, without a timestamp.
 
 ## Host Logs vs Server Logs
 
@@ -42,9 +42,9 @@ Open **Settings** → **Host Logs** from the top menu. This page adds a host pic
 
 ## Reading The Log
 
-Every line starts with a timestamp, and each background task opens with a `Task started:` line naming the task. When a task runs Terraform or Ansible, its full output is included under that line — `PLAY RECAP` at the end of an Ansible run shows how many steps changed or failed.
+Each background task opens with a timestamped `Task started:` line naming the task. When a task runs Terraform or Ansible, its full output is included under that line — `PLAY RECAP` at the end of an Ansible run shows how many steps changed or failed.
 
-The log keeps growing over the life of the host: each provision, setup run, or restart adds to the end. Scroll up for older activity.
+The log keeps growing over the life of the host: each provision, setup run, or resize adds to the end. Scroll up for older activity. Restart, workshop, and QLFilter results are the exception — they appear at the top instead.
 
 - Use `Ctrl+F` inside the viewer to search.
 - **Refresh** loads anything added since you opened it.
@@ -53,8 +53,9 @@ The log keeps growing over the life of the host: each provision, setup run, or r
 ## Diagnosing A Failed Host
 
 1. Open **View Logs** on the host in **Error**.
-2. Scroll to the bottom and find the most recent `Task started:` line — the failure is below it.
-3. Look for a line beginning `Failed`, `Error`, or `Task failed`, and the `Stderr:` output under it.
+2. If the host failed during a restart or workshop update, the error is the first line at the **top** of the log — scroll up to read it.
+3. Otherwise, scroll to the bottom and find the most recent `Task started:` line — the failure is below it.
+4. Look for a line beginning `Failed`, `Error`, or `Task failed`, and the `Stderr:` output under it.
 
 Some common ones:
 

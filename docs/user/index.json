@@ -68,6 +68,11 @@
         "path": "/docs/operations/global-rcon.md"
       },
       {
+        "id": "host-logs",
+        "title": "Host Logs",
+        "path": "/docs/operations/host-logs.md"
+      },
+      {
         "id": "server-logs",
         "title": "Server Logs",
         "path": "/docs/operations/server-logs.md"
