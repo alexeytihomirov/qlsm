@@ -249,7 +249,7 @@ mkdir -p logs/dev
 
 # Start Flask app (dev) in background via custom runner for SocketIO support
 echo "Starting development Flask-SocketIO server on port $FLASK_PORT..."
-python run_dev.py --port=$FLASK_PORT 2>&1 | tee logs/dev/flask.log &
+python3 run_dev.py --port=$FLASK_PORT 2>&1 | tee logs/dev/flask.log &
 FLASK_PID=$!
 
 # Start RQ worker (dev) in background
@@ -259,7 +259,7 @@ RQ_PID=$!
 
 # Start RCON service in background
 echo "Starting RCON service..."
-python -m rcon_service 2>&1 | tee logs/dev/rcon.log &
+python3 -m rcon_service 2>&1 | tee logs/dev/rcon.log &
 RCON_PID=$!
 
 # Start status poller in background
