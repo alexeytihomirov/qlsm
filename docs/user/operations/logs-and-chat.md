@@ -12,6 +12,12 @@ From instance **Actions** menu:
 
 Action reference: [Instance Actions Menu](instance-actions-menu.md)
 
+From host **Actions** menu:
+
+- **View Logs** for provisioning and host setup output — the place to look when a whole host is in **Error** rather than a single instance
+
+Action reference: [Host Logs](host-logs.md)
+
 ## Server Logs: Practical Usage
 
 - Start with **Last 500 lines**.
@@ -41,6 +47,7 @@ Action reference: [Instance Actions Menu](instance-actions-menu.md)
 
 ## Related Pages
 
+- [Host Logs](host-logs.md)
 - [Server Logs](server-logs.md)
 - [Chat Logs](chat-logs.md)
 - [MinQLX Logs](minqlx-logs.md)

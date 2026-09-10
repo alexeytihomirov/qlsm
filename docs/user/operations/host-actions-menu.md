@@ -7,8 +7,10 @@ Open from host row **Actions** in the Servers page.
 ## Actions In This Menu
 
 - **View Details**: opens host details drawer.
+- **[View Logs](host-logs.md)**: opens this host's provisioning and setup log. Start here when a host is in **Error**.
 - **Restart Host**: queues host reboot flow. If the host takes longer than expected to come back and briefly shows **Error**, QLSM keeps probing it and restores it to **Active** automatically once it's reachable again — no manual action needed in that case.
 - **[Configure Auto-Restart](auto-restart.md)**: opens restart schedule modal.
+- **Configure Watchdog**: turns on automatic restart of any instance on this host whose game loop has frozen. Off by default.
 - **[Update Workshop Item](update-workshop-item.md)**: triggers workshop update on this host.
 - **[Install/Uninstall QLFilter](../features/qlfilter.md)**: depends on current QLFilter state.
 - **Re-run Host Setup**: re-applies the host configuration playbook on an existing host.
@@ -65,5 +67,6 @@ After the playbook completes, the host returns to **Active** status.
 
 - [Instance Actions Menu](instance-actions-menu.md)
 - [Update Workshop Item](update-workshop-item.md)
+- [Host Logs](host-logs.md)
 - [Use Logs And Chat Logs](logs-and-chat.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)
