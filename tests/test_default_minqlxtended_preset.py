@@ -37,14 +37,20 @@ def test_preset_is_builtin_and_stamped_minqlxtended(manifest):
     assert manifest['description'].strip()
 
 
-def test_the_declared_binary_is_the_highfps_hook(manifest):
-    """P4 ships one .so companion, and only one.
+def test_the_declared_binaries_are_the_known_hooks(manifest):
+    """The preset ships these .so companions, and only these.
 
     _validate_binary_descriptions (ui/builtin_presets.py:27) rejects the whole preset
     at seed time if a declared key has no file behind it, so a typo here takes the
     preset out entirely rather than degrading it.
+
+    Spelled as an equality rather than a subset on purpose: a binary that appears here
+    without anyone deciding to ship it is exactly what this is for.
     """
-    assert set(manifest.get('binary_descriptions', {})) == {'scripts/highfps_hook.so'}
+    assert set(manifest.get('binary_descriptions', {})) == {
+        'scripts/highfps_hook.so',
+        'scripts/footsteps_hook.so',
+    }
 
 
 def test_every_declared_binary_exists(manifest):
@@ -112,6 +118,76 @@ def test_the_hook_description_matches_the_minqlx_one(manifest):
     assert manifest['binary_descriptions']['scripts/highfps_hook.so'] == theirs
 
 
+#: sha256 of footsteps_hook.so as built in dngrtech/qlsm_plugins at `c9b78d4`.
+#:
+#: That build removed the scanner's fixed 16-segment cap. minqlxtended restores page
+#: protection after each of its ~12 qagame detours, which splits qagamex64.so's text
+#: into ~19 r-xp VMAs (minqlx: ~5); the previous build overflowed at 17 and refused
+#: with FS_AMBIGUOUS on every minqlxtended host without scanning anything. Pinning the
+#: fixed build here is what keeps a stale copy from being re-shipped to the one runtime
+#: it was broken on.
+#:
+#: The hook patches PM_Footsteps inside qagamex64.so and knows nothing about either
+#: Python runtime, so there is one build and both runtimes ship it. Pinned by hash *as
+#: well as* compared against the minqlx copy below, for the same reason the highfps pin
+#: above is: rebuilding both at once still has to be a deliberate act that updates
+#: this line.
+FOOTSTEPS_HOOK_SHA256 = '65349129aa7669374665810da4ef8707ebfdaa1f6beec67a2a7846413e6be0a4'
+
+
+def test_the_footsteps_hook_binary_is_the_current_qlsm_plugins_build():
+    import hashlib
+    with open(os.path.join(PRESET_DIR, 'scripts', 'footsteps_hook.so'), 'rb') as handle:
+        digest = hashlib.sha256(handle.read()).hexdigest()
+    assert digest == FOOTSTEPS_HOOK_SHA256, (
+        "footsteps_hook.so is not the build this preset was written against; "
+        "re-copy from qlsm_plugins/footsteps/ after running `make` there")
+
+
+def test_the_two_presets_ship_the_same_footsteps_hook_build():
+    """Runtime-agnostic native code: one build, shipped by both presets."""
+    import filecmp
+    ours = os.path.join(PRESET_DIR, 'scripts', 'footsteps_hook.so')
+    theirs = os.path.join(MINQLX_PRESET_DIR, 'scripts', 'footsteps_hook.so')
+    assert filecmp.cmp(ours, theirs, shallow=False), (
+        "footsteps_hook.so differs between the two presets; it is runtime-agnostic and "
+        "should be the same binary in both — rebuild via `make` in qlsm_plugins and "
+        "re-copy, rather than rebuilding one of them alone")
+
+
+def test_the_two_presets_ship_the_same_footsteps_source():
+    """The .py differs only by runtime; everything else must track together.
+
+    Deliberately NOT a blanket `minqlx.` -> `minqlxtended.` swap, which is the obvious
+    shortcut and the wrong assertion: minqlxtended has no `RET_STOP_ALL` module
+    constant, it moved those into a `Return` enum. A prefix swap would derive
+    `minqlxtended.RET_STOP_ALL` and this test would then happily green-light a port
+    that raises AttributeError the moment a player types the command — at command
+    time, not at plugin load. Spelling the enum mapping out is what makes this a guard
+    rather than a rubber stamp. footsteps hits this and highfps does not, which is why
+    the two replacement lists differ.
+    """
+    with open(os.path.join(PRESET_DIR, 'scripts', 'footsteps.py'), encoding='utf-8') as handle:
+        ours = handle.read()
+    with open(os.path.join(MINQLX_PRESET_DIR, 'scripts', 'footsteps.py'), encoding='utf-8') as handle:
+        theirs = handle.read()
+    assert ours == theirs.replace('import minqlx\n', 'import minqlxtended\n') \
+                         .replace('minqlx.Plugin', 'minqlxtended.Plugin') \
+                         .replace('minqlx.console_print', 'minqlxtended.console_print') \
+                         .replace('minqlx.next_frame', 'minqlxtended.next_frame') \
+                         .replace('minqlx.RET_STOP_ALL', 'minqlxtended.Return.STOP_ALL') \
+                         .replace('MinQLX plugin', 'minqlxtended plugin'), (
+        "the two footsteps copies have diverged by more than the runtime rename")
+
+
+def test_the_footsteps_hook_description_matches_the_minqlx_one(manifest):
+    """Same binary, same explanation. The UI shows this text next to the file."""
+    import json as _json
+    with open(os.path.join(MINQLX_PRESET_DIR, 'preset.json'), 'r', encoding='utf-8') as handle:
+        theirs = _json.load(handle)['binary_descriptions']['scripts/footsteps_hook.so']
+    assert manifest['binary_descriptions']['scripts/footsteps_hook.so'] == theirs
+
+
 def test_checked_plugins_mirror_the_minqlx_default(checked_plugins):
     with open(os.path.join(MINQLX_PRESET_DIR, 'checked_plugins.json'), 'r', encoding='utf-8') as handle:
         minqlx_checked = json.load(handle)
@@ -141,9 +217,10 @@ BASELINE_ONLY = {'serverchecker.py'}
 
 #: Pickable plugins that are not in the vendored baseline.
 #:
-#: highfps lives in dngrtech/qlsm_plugins, not in ql-assets/data/. It ships only in the
-#: preset on both runtimes, exactly as its minqlx counterpart does, because it needs a
-#: native .so companion beside it and the baseline directory carries no binaries.
+#: highfps and footsteps live in dngrtech/qlsm_plugins, not in ql-assets/data/. They ship
+#: only in the preset on both runtimes, exactly as their minqlx counterparts do, because
+#: each needs a native .so companion beside it — loaded by ctypes.CDLL out of the
+#: plugin's own directory — and the baseline directory carries no binaries.
 #:
 #: The rest are third-party plugins QLSM ported so the cross-runtime import dialog has
 #: something to offer for them. They are deliberately preset-only rather than vendored:
@@ -156,7 +233,7 @@ BASELINE_ONLY = {'serverchecker.py'}
 #: (cmo.getServers(), ServerLifeCycleRuntimes) written in Python 2, which reads
 #: sys.argv[1:6] at import. There is nothing to port.
 PRESET_ONLY = {
-    'highfps.py',
+    'highfps.py', 'footsteps.py',
     # BarelyMiSSeD
     'clanmembers.py', 'getmap.py', 'listmaps.py', 'mapLimiter.py', 'players_db.py',
     'protect.py', 'restartserver.py', 'serverBDM.py', 'specall.py', 'voteban.py',
@@ -184,13 +261,20 @@ def test_scripts_match_the_vendored_baseline():
     assert preset_scripts == (baseline - BASELINE_ONLY) | PRESET_ONLY
 
 
-def test_the_preset_offers_highfps_exactly_as_the_minqlx_default_does():
+@pytest.mark.parametrize('plugin', ['highfps.py', 'footsteps.py'])
+def test_the_preset_offers_the_native_plugins_as_the_minqlx_default_does(plugin):
     """Parity is the point: an operator moving between runtimes is offered the same
-    set. highfps ships in both presets' scripts/ and is checked in neither."""
+    set. Each ships in both presets' scripts/ and is checked in neither.
+
+    Shipped-but-unchecked is the whole contract for these two. Absence from
+    checked_plugins.json *is* the off switch — there is no separate disabled flag — so a
+    name leaking into that list is what silently turns a native hook on for every new
+    instance on both runtimes.
+    """
     for directory in (PRESET_DIR, MINQLX_PRESET_DIR):
-        assert os.path.isfile(os.path.join(directory, 'scripts', 'highfps.py')), directory
+        assert os.path.isfile(os.path.join(directory, 'scripts', plugin)), directory
         with open(os.path.join(directory, 'checked_plugins.json'), 'r', encoding='utf-8') as handle:
-            assert 'highfps.py' not in json.load(handle), directory
+            assert plugin not in json.load(handle), directory
 
 
 def test_the_ported_highfps_is_the_current_qlsm_plugins_version():

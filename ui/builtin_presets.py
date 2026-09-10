@@ -19,6 +19,17 @@ from ui.runtime import DEFAULT_RUNTIME, VALID_RUNTIMES, is_valid_runtime, normal
 _DESCRIPTION_MAX_LEN = 1000
 _DESCRIPTION_RE = re.compile(r'^[\w .,;:()\'\-/\n]*$')
 
+#: preset.json addresses a binary from the preset root ("scripts/highfps_hook.so")
+#: because _validate_binary_descriptions() resolves the key against the preset
+#: directory to prove the file is really there. Readers address the same file from
+#: inside scripts/: the plugin file manager builds its tree with scripts/ as the base
+#: (draft_routes._build_draft_tree), so it asks binary_meta_routes.get_binary_meta()
+#: for the bare "highfps_hook.so". That lookup is an exact string match, so a row
+#: stored under the preset-root form is never found and the description box renders
+#: empty. Strip the prefix on the way in so the row is filed under the name the
+#: reader uses.
+_SCRIPTS_PREFIX = 'scripts/'
+
 
 class BuiltinPresetError(ValueError):
     pass
@@ -95,8 +106,20 @@ def _iter_builtin_dirs():
             yield name, preset_dir
 
 
+def _binary_row_path(manifest_key):
+    """The path the UI addresses this binary by. See _SCRIPTS_PREFIX."""
+    if manifest_key.startswith(_SCRIPTS_PREFIX):
+        return manifest_key[len(_SCRIPTS_PREFIX):]
+    return manifest_key
+
+
 def _sync_binary_metadata(preset_name, desired):
     """Upsert BinaryMetadata rows for a builtin preset and delete stale ones."""
+    desired = {
+        _binary_row_path(key): description
+        for key, description in desired.items()
+    }
+
     existing_rows = BinaryMetadata.query.filter_by(
         context_type='preset',
         context_key=preset_name,
