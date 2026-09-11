@@ -17,13 +17,22 @@ You can also create **subfolders** (one level deep) to hold `.ent` entity overri
 
 ## Owner & Admins
 
-Above the file manager, the **Owner & Admins** panel lets you assign
-operators from the [Operators](../administration/operators.md) directory
-without hand-editing `server.cfg` or `access.txt`: pick an Owner (writes
-`qlx_owner`), or add an operator as an Admin with a level 0-5 (writes a
-`steamid|level` line to `access.txt`). Typing a SteamID directly in the
-`access.txt` editor also offers autocomplete suggestions from the same
-directory.
+Above the file manager, the **Owner & Admins** panel lets you assign people
+from the [Operators](../administration/operators.md) directory without
+hand-editing `server.cfg` or `access.txt`. Pick an **Owner** to write
+`qlx_owner`, or add an operator as an **Admin** with a level from 0 to 5 to
+write a `steamid|level` line to `access.txt`.
+
+![Owner & Admins panel](../images/owner-admins-panel.png)
+
+When you click **Save Configuration**, QLSM also pushes the admin levels into
+the running server's minqlx permissions. They can take up to about 30 seconds
+to apply. Removing an admin sets their in-game level back to 0. If the push
+fails, a warning appears in the instance log. See
+[What Happens In-Game](../administration/operators.md#what-happens-in-game).
+
+Typing a SteamID directly in the `access.txt` editor also suggests operators
+from the directory.
 
 
 ## Editor Buttons
