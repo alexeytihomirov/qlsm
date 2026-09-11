@@ -1347,16 +1347,15 @@ function AddInstanceForm({
                 />
               </div>
             )}
-            {activeMainTab === 'admins' && (
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                <OwnerAdminEditor
-                  serverCfgContent={configContents['server.cfg'] || ''}
-                  accessTxtContent={configContents['access.txt'] || ''}
-                  onServerCfgChange={handleOwnerChange}
-                  onAccessTxtChange={handleAccessTxtChange}
-                />
-              </div>
-            )}
+            {/* Kept mounted: OwnerAdminEditor fills the operators cache the access.txt autocomplete reads. */}
+            <div className={activeMainTab === 'admins' ? 'flex-1 min-h-0 overflow-y-auto' : 'hidden'}>
+              <OwnerAdminEditor
+                serverCfgContent={configContents['server.cfg'] || ''}
+                accessTxtContent={configContents['access.txt'] || ''}
+                onServerCfgChange={handleOwnerChange}
+                onAccessTxtChange={handleAccessTxtChange}
+              />
+            </div>
           </div>
         </div>
       </div>

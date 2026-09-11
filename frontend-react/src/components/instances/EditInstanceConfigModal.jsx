@@ -1187,16 +1187,15 @@ function EditInstanceConfigModal({
                               />
                             </div>
                           )}
-                          {activeMainTab === 'admins' && (
-                            <div className="flex-1 min-h-0 overflow-y-auto">
-                              <OwnerAdminEditor
-                                serverCfgContent={serverCfgContent}
-                                accessTxtContent={accessTxtContent}
-                                onServerCfgChange={handleServerCfgOwnerChange}
-                                onAccessTxtChange={handleAccessTxtChange}
-                              />
-                            </div>
-                          )}
+                          {/* Kept mounted: OwnerAdminEditor fills the operators cache the access.txt autocomplete reads. */}
+                          <div className={activeMainTab === 'admins' ? 'flex-1 min-h-0 overflow-y-auto' : 'hidden'}>
+                            <OwnerAdminEditor
+                              serverCfgContent={serverCfgContent}
+                              accessTxtContent={accessTxtContent}
+                              onServerCfgChange={handleServerCfgOwnerChange}
+                              onAccessTxtChange={handleAccessTxtChange}
+                            />
+                          </div>
                         </div>
 
                         <div className="mt-4 flex justify-between items-center flex-shrink-0">
