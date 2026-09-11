@@ -1029,6 +1029,50 @@ Accepting a replacement carries the **file** over. It does not enable the plugin
 - Reserved names: `default`
 - Must be unique
 
+## Operators
+
+The directory behind the Owner & Admins panel (see [Operators](user/administration/operators.md)). It only stores names and SteamIDs: no endpoint here touches `server.cfg`, `access.txt` or in-game permissions.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/operators/` | GET | List all operators, ordered by name |
+| `/operators/` | POST | Add an operator (`201`) |
+| `/operators/<id>` | PATCH | Update any of `name`, `steam_id64`, `default_level` |
+| `/operators/<id>` | DELETE | Remove an operator from the directory. Existing `qlx_owner` / `access.txt` entries are left in place |
+
+### Create Operator Request
+
+```json
+{
+  "name": "Vex",
+  "steam_id64": "76561198012345678",
+  "default_level": 5
+}
+```
+
+- `name`: required, trimmed, at most 128 characters.
+- `steam_id64`: required, must match `^7656119\d{10}$`. `409` if another operator already has it.
+- `default_level`: optional integer 0-5, defaults to `5`. Only the `access.txt` editor's autocomplete uses it.
+
+### Operator Response
+
+```json
+{
+  "data": {
+    "id": 1,
+    "name": "Vex",
+    "steam_id64": "76561198012345678",
+    "default_level": 5,
+    "created_at": "2026-09-11T08:08:58.764120",
+    "updated_at": "2026-09-11T08:08:58.764120"
+  }
+}
+```
+
+### In-Game Permission Sync
+
+This isn't an endpoint. After a successful `apply_instance_config` task, `ui/task_logic/access_permission_sync.py` parses the instance's `access.txt` and, over one SSH round trip, sets `minqlx:players:<steamid>:permission` in the instance's Redis DB for every valid `steamid|0-5` line. IDs it pushed last time but that are now gone are set to `0`, tracked in the `minqlx:qlsm:managed_admins` set, so levels granted in-game with `!setperm` are never touched. Lines with a missing, non-integer or out-of-range level (including QL-native `admin`/`mod`/`ban`) are skipped. A failed round trip returns `False` and appends a warning to the instance log. The config apply itself still succeeds. Instance deploy doesn't run the sync.
+
 ## Settings
 
 | Endpoint | Method | Description |

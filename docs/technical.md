@@ -116,6 +116,7 @@ The Flask application follows the application factory pattern, which provides se
     *   `server_status_routes.py`: Handles live status retrieval (`GET /api/server-status`) and workshop preview lookup (`GET /api/server-status/workshop-preview/<workshop_id>`).
     *   `settings_routes.py`: Handles application settings management (API keys, rate limit config).
     *   `user_routes.py`: Handles user management endpoints.
+    *   `operator_routes.py`: CRUD for the Operator directory (name + SteamID64 + default admin level) at `/api/operators`.
     *   `draft_routes.py`: Handles server-side plugin draft workspaces for preset and instance editing, including tree/content reads, upload, delete, rename, touch, and commit.
     *   `binary_meta_routes.py`: Handles `.so` plugin descriptions for draft file manager sessions.
     *   `script_routes.py`: Handles script management endpoints.
@@ -124,7 +125,7 @@ The Flask application follows the application factory pattern, which provides se
 
 ### Database Models
 
-The application has six database models: `User`, `Host`, `QLInstance`, `ConfigPreset`, `ApiKey`, and `AppSetting`.
+The application has database models including `User`, `Host`, `QLInstance`, `ConfigPreset`, `ApiKey`, `AppSetting`, `BinaryMetadata`, and `Operator`.
 
 **Host Model:** Represents a target server where Quake Live instances can be deployed. These hosts are provisioned via Terraform triggered by the UI.
 
@@ -288,6 +289,8 @@ That hook is runtime-agnostic — it detours `SV_ClientThink` inside `qzeroded` 
 **`auto_accepted` must reach the draft.** `combineAcceptedPaths()` unions it with the operator's ticks and both call sites send the result to `POST /api/drafts` — including the path where `stripped` is empty and no dialog opens. `_apply_runtime_filter()` deletes the source file and only writes back what it is handed, so dropping that list would leave the instance missing the target runtime's own standard plugins.
 
 **Backups:** `ui/task_logic/backup_files.py` registers both runtimes' `ql-assets/data/` plugin baselines as separate archive trees (`plugins/minqlx-plugins`, `plugins/minqlxtended-plugins`), so a restore onto a fresh machine carries whichever baselines exist regardless of which runtimes are actually in use.
+
+**Operator Model:** Directory of named operators (`name`, `steam_id64` unique, `default_level` 0-5) assignable as Owner (`qlx_owner` in `server.cfg`) or Admin (`steamid|level` line in `access.txt`) from the Owner & Admins panel on the instance/preset config editors. Managed via `operator_routes.py` at `/api/operators`.
 
 ## Testing Framework
 

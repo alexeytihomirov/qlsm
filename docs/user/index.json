@@ -123,6 +123,11 @@
         "path": "/docs/administration/user-management.md"
       },
       {
+        "id": "operators",
+        "title": "Operators",
+        "path": "/docs/administration/operators.md"
+      },
+      {
         "id": "backup-restore",
         "title": "Backup & Restore",
         "path": "/docs/administration/backup-restore.md"

@@ -9,6 +9,7 @@ import PresetsPage from './pages/PresetsPage';
 import AddPresetPage from './pages/AddPresetPage';
 import EditPresetPage from './pages/EditPresetPage';
 import UserManagementPage from './pages/UserManagementPage';
+import OperatorsPage from './pages/OperatorsPage';
 import SettingsPage from './pages/SettingsPage';
 import ServersPage from './pages/ServersPage';
 import GlobalRconPage from './pages/GlobalRconPage';
@@ -41,6 +42,7 @@ function App() {
                   <Route path="/presets/edit/:presetId" element={<EditPresetPage />} />
                   <Route path="/docs/*" element={<DocsPage />} />
                   <Route path="/settings/users" element={<UserManagementPage />} />
+                  <Route path="/settings/operators" element={<OperatorsPage />} />
                   <Route path="/settings/backup" element={<BackupRestorePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>

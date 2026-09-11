@@ -20,10 +20,13 @@ import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput } fr
 import { tags as t } from '@lezer/highlight';
 import { useTheme } from '../context/ThemeContext';
 // Imports for custom tags are still needed for highlight style, but specific linters aren't needed for the check anymore
+import { completionKeymap } from '@codemirror/autocomplete';
 import {
   modTag,
   adminTag,
-  banTag
+  banTag,
+  qlaccessLanguage,
+  qlAccessCompletion,
 } from '../codemirror-lang-qlaccess';
 
 import { chatLogLanguage, chatDarkHighlighting, chatLightHighlighting } from '../utils/chatLogLanguage';
@@ -137,6 +140,7 @@ const getExtensions = (currentLanguage, currentLinterSource, onChangeCallback, i
     highlightSelectionMatches(),
     search(),
     Prec.highest(keymap.of([
+      ...completionKeymap,
       ...searchKeymap,
       ...defaultKeymap,
       ...historyKeymap,
@@ -167,6 +171,11 @@ const getExtensions = (currentLanguage, currentLinterSource, onChangeCallback, i
     // Add dedicated minqlx log highlighting (non-fallback, so custom tags are styled)
     if (currentLanguage === minqlxLogLanguage) {
       baseExtensions.push(isDark ? minqlxDarkHighlighting : minqlxLightHighlighting);
+    }
+
+    // Suggest known operators (Settings -> Operators) while typing a SteamID in access.txt
+    if (currentLanguage === qlaccessLanguage) {
+      baseExtensions.push(qlAccessCompletion);
     }
 
     // Determine the linter function to use
