@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.31.1` | 2026-09-11 | [#208](https://github.com/dngrtech/qlsm/pull/208) | Move **Owner & Admins** out of the Configuration Files tab into its own tab next to **Hooks**, in both Edit Config and Add Instance. |
 | `v1.31.0` | 2026-09-11 | [#204](https://github.com/dngrtech/qlsm/pull/204) | Add an **Operators** directory and an **Owner & Admins** panel for assigning server owners and admins from a list instead of typing SteamIDs. Admin levels are applied in-game when the config is saved. |
 | `v1.30.0` | 2026-09-10 | [#202](https://github.com/dngrtech/qlsm/pull/202) | Add a Host Logs page and a View Logs action on each host, for reading a host's provisioning and setup output. |
 | `v1.29.0` | 2026-09-09 | [#201](https://github.com/dngrtech/qlsm/pull/201) | Add the **ql-watchdog** add-on: opt-in per-host detection and automatic restart of a QLDS instance whose game loop has frozen. |
