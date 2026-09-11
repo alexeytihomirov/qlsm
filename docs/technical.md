@@ -290,7 +290,7 @@ That hook is runtime-agnostic — it detours `SV_ClientThink` inside `qzeroded` 
 
 **Backups:** `ui/task_logic/backup_files.py` registers both runtimes' `ql-assets/data/` plugin baselines as separate archive trees (`plugins/minqlx-plugins`, `plugins/minqlxtended-plugins`), so a restore onto a fresh machine carries whichever baselines exist regardless of which runtimes are actually in use.
 
-**Operator Model:** Directory of named operators (`name`, `steam_id64` unique, `default_level` 0-5) assignable as Owner (`qlx_owner` in `server.cfg`) or Admin (`steamid|level` line in `access.txt`) from the Owner & Admins panel on the instance/preset config editors. Managed via `operator_routes.py` at `/api/operators`.
+**Operator Model:** Directory of named operators (`name`, `steam_id64` unique, `default_level` 0-5) assignable as Owner (`qlx_owner` in `server.cfg`) or Admin (`steamid|level` line in `access.txt`) from the Owner & Admins tab (instance editors) or panel (preset pages). Managed via `operator_routes.py` at `/api/operators`.
 
 ## Testing Framework
 

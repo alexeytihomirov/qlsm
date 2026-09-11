@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Dialog, DialogBackdrop } from '@headlessui/react';
-import { X, LoaderCircle, Zap, AlertTriangle, Settings, Code2, LayoutGrid, Save, FolderOpen, RotateCw, Webhook } from 'lucide-react';
+import { X, LoaderCircle, Zap, AlertTriangle, Settings, Code2, LayoutGrid, Save, FolderOpen, RotateCw, Webhook, Crown } from 'lucide-react';
 import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
 import { getInstanceConfig, updateInstanceConfig, getInstanceById, getPresets, getPresetById, createPreset, updatePreset, getFactoryTree, getFactoryContent, fetchInstanceHooks } from '../../services/api';
@@ -129,7 +129,7 @@ function EditInstanceConfigModal({
   const [pendingPreset, setPendingPreset] = useState(null); // { id, data } awaiting compat confirmation
 
   // Scripts tab state
-  const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'config' | 'scripts' | 'factories' | 'hooks'
+  const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'config' | 'scripts' | 'factories' | 'hooks' | 'admins'
   const [checkedPlugins, setCheckedPlugins] = useState(new Set());
   const [initialCheckedPlugins, setInitialCheckedPlugins] = useState(new Set());
   const [scriptHostName, setScriptHostName] = useState(null);
@@ -1105,6 +1105,7 @@ function EditInstanceConfigModal({
                             { key: 'scripts', icon: Code2, label: 'Plugins' },
                             { key: 'factories', icon: LayoutGrid, label: 'Factories' },
                             { key: 'hooks', icon: Webhook, label: 'Hooks' },
+                            { key: 'admins', icon: Crown, label: 'Owner & Admins' },
                           ].map((tab) => (
                             <button
                               key={tab.key}
@@ -1123,23 +1124,15 @@ function EditInstanceConfigModal({
 
                         {/* Content area */}
                         <div className="flex-grow min-h-0 bg-[var(--surface-base)] border-x border-b border-[var(--surface-border)] rounded-b-xl p-4 flex flex-col">
-                          <div className={activeMainTab === 'config' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
-                            <OwnerAdminEditor
-                              serverCfgContent={serverCfgContent}
-                              accessTxtContent={accessTxtContent}
-                              onServerCfgChange={handleServerCfgOwnerChange}
-                              onAccessTxtChange={handleAccessTxtChange}
+                          <div className={activeMainTab === 'config' ? 'flex-1 min-h-0' : 'hidden'}>
+                            <FileManager
+                              adapter={configsAdapter}
+                              capabilities={CONFIG_CAPS}
+                              defaultSelectedPath="server.cfg"
+                              onExpandEditor={handleExpandEditor}
+                              getLanguageForFile={getLanguageForFile}
+                              getLinterSourceForFile={getLinterSource}
                             />
-                            <div className="flex-1 min-h-0">
-                              <FileManager
-                                adapter={configsAdapter}
-                                capabilities={CONFIG_CAPS}
-                                defaultSelectedPath="server.cfg"
-                                onExpandEditor={handleExpandEditor}
-                                getLanguageForFile={getLanguageForFile}
-                                getLinterSourceForFile={getLinterSource}
-                              />
-                            </div>
                           </div>
                           <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
                             <SubfolderPluginNotice
@@ -1191,6 +1184,16 @@ function EditInstanceConfigModal({
                                 onRemoveMissing={handleRemoveMissingHook}
                                 onRefresh={handleRefreshHooks}
                                 instanceStatus={instanceStatus}
+                              />
+                            </div>
+                          )}
+                          {activeMainTab === 'admins' && (
+                            <div className="flex-1 min-h-0 overflow-y-auto">
+                              <OwnerAdminEditor
+                                serverCfgContent={serverCfgContent}
+                                accessTxtContent={accessTxtContent}
+                                onServerCfgChange={handleServerCfgOwnerChange}
+                                onAccessTxtChange={handleAccessTxtChange}
                               />
                             </div>
                           )}

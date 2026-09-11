@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { LoaderCircle, Save, FolderOpen, Settings, Code2, LayoutGrid, Webhook, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { LoaderCircle, Save, FolderOpen, Settings, Code2, LayoutGrid, Webhook, Crown, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
 import { getAvailablePortsForHost, getFactoryContent, getFactoryTree, getPresetById, getPresets, savePreset, updatePreset } from '../../services/api';
@@ -197,7 +197,7 @@ function AddInstanceForm({
   const [presetClearedNotice, setPresetClearedNotice] = useState(null);
 
   // Scripts tab state
-  const [activeMainTab, setActiveMainTab] = useState('config'); // 'config' | 'scripts' | 'factories'
+  const [activeMainTab, setActiveMainTab] = useState('config'); // 'config' | 'scripts' | 'factories' | 'hooks' | 'admins'
   const initialPluginSeed = seedCheckedPlugins(initialSeed.checkedPlugins);
   const [checkedPlugins, setCheckedPlugins] = useState(initialPluginSeed.selectable);
   const [droppedPluginCount, setDroppedPluginCount] = useState(initialPluginSeed.dropped.length);
@@ -1263,6 +1263,7 @@ function AddInstanceForm({
               { key: 'scripts', icon: Code2, label: 'Plugins' },
               { key: 'factories', icon: LayoutGrid, label: 'Factories' },
               { key: 'hooks', icon: Webhook, label: 'Hooks' },
+              { key: 'admins', icon: Crown, label: 'Owner & Admins' },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -1283,23 +1284,15 @@ function AddInstanceForm({
           <div
             className="flex-grow min-h-0 bg-[var(--surface-base)] border-x border-b border-[var(--surface-border)] rounded-b-xl p-4 flex flex-col"
           >
-            <div className={activeMainTab === 'config' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
-              <OwnerAdminEditor
-                serverCfgContent={configContents['server.cfg'] || ''}
-                accessTxtContent={configContents['access.txt'] || ''}
-                onServerCfgChange={handleOwnerChange}
-                onAccessTxtChange={handleAccessTxtChange}
+            <div className={activeMainTab === 'config' ? 'flex-1 min-h-0' : 'hidden'}>
+              <FileManager
+                adapter={configsAdapter}
+                capabilities={CONFIG_CAPS}
+                defaultSelectedPath="server.cfg"
+                onExpandEditor={handleExpandEditor}
+                getLanguageForFile={getConfigLanguage}
+                getLinterSourceForFile={getLinterSourceForFile}
               />
-              <div className="flex-1 min-h-0">
-                <FileManager
-                  adapter={configsAdapter}
-                  capabilities={CONFIG_CAPS}
-                  defaultSelectedPath="server.cfg"
-                  onExpandEditor={handleExpandEditor}
-                  getLanguageForFile={getConfigLanguage}
-                  getLinterSourceForFile={getLinterSourceForFile}
-                />
-              </div>
             </div>
             <div className={activeMainTab === 'scripts' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
               <SubfolderPluginNotice
@@ -1351,6 +1344,16 @@ function AddInstanceForm({
                   onRemoveMissing={handleRemoveMissingHook}
                   uploadHook={pluginDraftId ? handleUploadHook : undefined}
                   deleteHook={pluginDraftId ? handleDeleteHook : undefined}
+                />
+              </div>
+            )}
+            {activeMainTab === 'admins' && (
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <OwnerAdminEditor
+                  serverCfgContent={configContents['server.cfg'] || ''}
+                  accessTxtContent={configContents['access.txt'] || ''}
+                  onServerCfgChange={handleOwnerChange}
+                  onAccessTxtChange={handleAccessTxtChange}
                 />
               </div>
             )}

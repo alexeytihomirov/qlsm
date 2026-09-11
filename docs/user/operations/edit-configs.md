@@ -17,7 +17,7 @@ You can also create **subfolders** (one level deep) to hold `.ent` entity overri
 
 ## Owner & Admins
 
-Above the file manager, the **Owner & Admins** panel lets you assign people
+The **Owner & Admins** tab, to the right of **Hooks**, lets you assign people
 from the [Operators](../administration/operators.md) directory without
 hand-editing `server.cfg` or `access.txt`. Pick an **Owner** to write
 `qlx_owner`, or add an operator as an **Admin** with a level from 0 to 5 to

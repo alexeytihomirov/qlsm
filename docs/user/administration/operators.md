@@ -6,7 +6,7 @@ a server's **Owner** or **Admin** by picking their name, instead of looking up
 and retyping their SteamID in `server.cfg` and `access.txt`.
 
 Operators are managed in **Settings → Operators** and assigned from the
-**Owner & Admins** panel wherever server configs are edited.
+**Owner & Admins** tab wherever server configs are edited.
 
 ![Operators page](../images/operators-page.png)
 
@@ -32,14 +32,14 @@ Each SteamID64 can only be in the directory once.
 Deleting an operator only removes them from the directory. It does **not**
 remove them from any server: an existing `qlx_owner` or `access.txt` entry
 with their SteamID64 stays in place, and so does their in-game permission.
-To take someone's access away, remove them in the Owner & Admins panel (or
+To take someone's access away, remove them in the Owner & Admins tab (or
 from `access.txt`) and save.
 
 ## Assign Owner Or Admin
 
-The **Owner & Admins** panel sits above the file list on the
-**Configuration Files** tab. It appears in the instance **Edit Config**
-window, the **Add Instance** form, and the preset add and edit pages.
+In the instance **Edit Config** window and the **Add Instance** form, the
+**Owner & Admins** controls have their own tab, to the right of **Hooks**. On
+the preset add and edit pages they appear as a panel above the config fields.
 
 ![Owner & Admins panel](../images/owner-admins-panel.png)
 
