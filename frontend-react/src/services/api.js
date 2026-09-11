@@ -177,6 +177,16 @@ export const configureAutoRestart = async (hostId, schedule) => {
   }
 };
 
+export const configureWatchdog = async (hostId, enabled, config) => {
+  try {
+    const response = await apiClient.post(`/hosts/${hostId}/watchdog`, { enabled, config });
+    return response.data; // Assuming API returns { "message": "...", "data": {...} }
+  } catch (error) {
+    console.error(`Failed to configure ql-watchdog for host ${hostId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to configure ql-watchdog for host ${hostId}`);
+  }
+};
+
 // Test SSH connection for standalone hosts
 export const testHostConnection = async (connectionData) => {
   try {

@@ -43,6 +43,11 @@
         "path": "/docs/operations/update-workshop-item.md"
       },
       {
+        "id": "watchdog",
+        "title": "Configure Watchdog",
+        "path": "/docs/operations/watchdog.md"
+      },
+      {
         "id": "instance-actions",
         "title": "Instance Actions Menu",
         "path": "/docs/operations/instance-actions-menu.md"
@@ -66,6 +71,11 @@
         "id": "global-rcon",
         "title": "Global RCON",
         "path": "/docs/operations/global-rcon.md"
+      },
+      {
+        "id": "host-logs",
+        "title": "Host Logs",
+        "path": "/docs/operations/host-logs.md"
       },
       {
         "id": "server-logs",

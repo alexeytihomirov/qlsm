@@ -36,11 +36,15 @@ import { useHostOrder } from '../hooks/useHostOrder';
 import SortableHostList from '../components/hosts/SortableHostList';
 import { useWorkshopUpdate } from '../hooks/useWorkshopUpdate';
 import { useHostAutoRestart } from '../hooks/useHostAutoRestart';
+import { useHostWatchdog } from '../hooks/useHostWatchdog';
 import { useHostResize } from '../hooks/useHostResize';
 import { rerunHostSetup } from '../services/api';
 import ForceUpdateWorkshopModal from '../components/hosts/ForceUpdateWorkshopModal';
 import HostAutoRestartScheduleModal from '../components/hosts/HostAutoRestartScheduleModal';
+import HostWatchdogModal from '../components/hosts/HostWatchdogModal';
 import ResizeHostModal from '../components/hosts/ResizeHostModal';
+import HostLogsModal from '../components/hosts/HostLogsModal';
+import { useHostLogsModal } from '../hooks/useHostLogsModal';
 import { useServerStatus } from '../hooks/useServerStatus';
 import { clearAutoOpenAddHost, shouldAutoOpenAddHost } from '../utils/addHostAutoOpen';
 
@@ -77,7 +81,9 @@ export default function ServersPage() {
     const { stopStartAction, isStopStartModalOpen, requestStop, requestStart, confirmStopStart, closeStopStartModal } = useInstanceStopStart(showSuccess, showError, () => refreshData(false));
     const { isWorkshopModalOpen, hostForWorkshopUpdate, openWorkshopModal, closeWorkshopModal, handleWorkshopUpdateSubmit } = useWorkshopUpdate(showSuccess, showError, () => refreshData(false));
     const { isAutoRestartModalOpen, hostForAutoRestart, openAutoRestartModal, closeAutoRestartModal, handleAutoRestartSubmit } = useHostAutoRestart(showSuccess, showError, () => refreshData(false));
+    const { isWatchdogModalOpen, hostForWatchdog, openWatchdogModal, closeWatchdogModal, handleWatchdogSubmit } = useHostWatchdog(showSuccess, showError, () => refreshData(false));
     const { isResizeModalOpen, isResizeSubmitting, resizeError, hostForResize, openResizeModal, closeResizeModal, handleResizeSubmit } = useHostResize(showSuccess, showError, () => refreshData(false));
+    const { isHostLogsModalOpen, hostForLogs, openHostLogs, closeHostLogs } = useHostLogsModal();
     const serverStatusMap = useServerStatus();
 
     const handleRerunSetup = async (hostId) => {
@@ -292,7 +298,7 @@ export default function ServersPage() {
                                     <QLFilterIndicator qlfilterStatus={host.qlfilter_status} />
                                 </div>
                                 <div className="host-actions-cell flex justify-end" onClick={(e) => e.stopPropagation()}>
-                                    <HostActionsMenu host={host} handleDelete={(id, name) => requestDeleteHost(id, name)} onOpenDrawer={handleOpenHostDrawer} onInstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'install')} onUninstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'uninstall')} onRequestRestart={handleRequestHostRestart} onOpenUpdateWorkshop={openWorkshopModal} onOpenAutoRestart={openAutoRestartModal} onOpenResize={openResizeModal} onRerunSetup={handleRerunSetup} />
+                                    <HostActionsMenu host={host} handleDelete={(id, name) => requestDeleteHost(id, name)} onOpenDrawer={handleOpenHostDrawer} onInstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'install')} onUninstallQlfilter={(hostId) => handleQlfilterAction(hostId, 'uninstall')} onRequestRestart={handleRequestHostRestart} onOpenUpdateWorkshop={openWorkshopModal} onOpenAutoRestart={openAutoRestartModal} onOpenWatchdog={openWatchdogModal} onOpenViewLogs={openHostLogs} onOpenResize={openResizeModal} onRerunSetup={handleRerunSetup} />
                                 </div>
                             </div>
 
@@ -382,7 +388,9 @@ export default function ServersPage() {
             <ConfirmationModal isOpen={isStopStartModalOpen} onClose={closeStopStartModal} onConfirm={confirmStopStart} title={stopStartAction?.action === 'stop' ? 'Stop Instance' : 'Start Instance'} message={stopStartAction?.action === 'stop' ? `Are you sure you want to stop instance "${stopStartAction?.name}"? The server will go offline.` : `Are you sure you want to start instance "${stopStartAction?.name}"?`} confirmButtonText={stopStartAction?.action === 'stop' ? 'Stop' : 'Start'} confirmButtonVariant={stopStartAction?.action === 'stop' ? 'warning' : 'primary'} />
             <ForceUpdateWorkshopModal isOpen={isWorkshopModalOpen} onClose={closeWorkshopModal} onSubmit={handleWorkshopUpdateSubmit} host={hostForWorkshopUpdate} />
             <HostAutoRestartScheduleModal isOpen={isAutoRestartModalOpen} onClose={closeAutoRestartModal} onSubmit={handleAutoRestartSubmit} host={hostForAutoRestart} />
+            <HostWatchdogModal isOpen={isWatchdogModalOpen} onClose={closeWatchdogModal} onSubmit={handleWatchdogSubmit} host={hostForWatchdog} />
             <ResizeHostModal isOpen={isResizeModalOpen} onClose={closeResizeModal} onSubmit={handleResizeSubmit} host={hostForResize} error={resizeError} isSubmitting={isResizeSubmitting} />
+            <HostLogsModal isOpen={isHostLogsModalOpen} onClose={closeHostLogs} host={hostForLogs} />
             {rconInstance && (
                 <RconConsoleModal isOpen={isRconConsoleOpen} onClose={handleCloseRconConsole} instance={rconInstance} />
             )}

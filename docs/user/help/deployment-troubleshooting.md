@@ -6,6 +6,14 @@ Use this page when a new instance does not become playable or stable.
 If something isn't working, start by clicking "Re-run host setup" from the [host actions menu](../operations/host-actions-menu.md). If the issue persists, restart the instance. 
 
 
+## Problem: A host is in Error after being added or re-run
+
+1. Open host **Actions** → **View Logs**: [Host Logs](../operations/host-logs.md)
+2. Scroll to the most recent `Task started:` line; the failure is below it.
+3. Fix what the error names, then use **Re-run Host Setup**.
+
+Host logs are stored by QLSM, so they are readable even when the host itself is unreachable.
+
 ## Problem: Instance stuck in deploying/restarting/configuring
 
 1. Wait a bit and refresh.
@@ -68,6 +76,7 @@ See: [Configure Auto-Restart](../operations/auto-restart.md)
 
 ## Related Pages
 
+- [Host Logs](../operations/host-logs.md)
 - [Host Actions Menu](../operations/host-actions-menu.md)
 - [Instance Actions Menu](../operations/instance-actions-menu.md)
 - [Deploy A New Instance](../getting-started/deploy-new-instance.md)
