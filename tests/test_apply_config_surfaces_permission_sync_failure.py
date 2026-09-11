@@ -63,3 +63,40 @@ def test_apply_config_stays_quiet_when_nothing_to_sync(app, instance_in_db, monk
         mod.apply_instance_config_logic(instance_in_db.id)
         refreshed = db.session.get(QLInstance, instance_in_db.id)
         assert "could not be synced" not in refreshed.logs
+
+
+def test_apply_config_warns_when_permission_sync_raises(app, instance_in_db, monkeypatch):
+    """An error before the SSH round trip (unreadable access.txt, self-host
+    target detection) used to reach only the server log."""
+    from ui.task_logic import access_permission_sync
+
+    def boom(inst):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(access_permission_sync, "sync_instance_access_permissions", boom)
+
+    with app.app_context():
+        result = mod.apply_instance_config_logic(instance_in_db.id)
+        refreshed = db.session.get(QLInstance, instance_in_db.id)
+        assert "successful" in result
+        assert "could not be synced" in refreshed.logs
+
+
+def test_deploy_syncs_permissions_after_success(app, instance_in_db, monkeypatch):
+    """Admins set in the Add Instance form get their in-game level on deploy,
+    not only on the first config save."""
+    from ui.task_logic import access_permission_sync
+
+    calls = []
+    monkeypatch.setattr(
+        access_permission_sync, "sync_instance_access_permissions",
+        lambda inst: calls.append(inst.id) or False,
+    )
+
+    with app.app_context():
+        result = mod.deploy_instance_logic(instance_in_db.id)
+        refreshed = db.session.get(QLInstance, instance_in_db.id)
+        assert "successful" in result
+        assert calls == [instance_in_db.id]
+        assert refreshed.status == InstanceStatus.RUNNING
+        assert "could not be synced" in refreshed.logs

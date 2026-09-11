@@ -34,7 +34,8 @@ def _remote_script(command):
 
 class FakeRedis:
     """In-memory stand-in with just enough of the redis-py surface the
-    remote sync script uses: get/set strings, and a SET via smembers/srem/sadd."""
+    remote sync script uses: get/set strings, and named SETs via
+    smembers/srem/sadd/delete. sets is {db: {key: set()}}."""
 
     store = {}
     sets = {}
@@ -43,20 +44,30 @@ class FakeRedis:
         self.db = kwargs["db"]
         FakeRedis.last_kwargs = kwargs
         self.store.setdefault(self.db, {})
-        self.sets.setdefault(self.db, set())
+        self.sets.setdefault(self.db, {})
 
     def set(self, key, value):
         self.store[self.db][key] = value
 
     def smembers(self, key):
-        return {v.encode() for v in self.sets[self.db]}
+        return {v.encode() for v in self.sets[self.db].get(key, set())}
 
     def srem(self, key, *values):
+        members = self.sets[self.db].get(key, set())
         for v in values:
-            self.sets[self.db].discard(v)
+            members.discard(v)
+        if not members:
+            self.sets[self.db].pop(key, None)  # Redis drops empty sets
 
     def sadd(self, key, *values):
-        self.sets[self.db].update(values)
+        self.sets[self.db].setdefault(key, set()).update(values)
+
+    def delete(self, key):
+        self.sets[self.db].pop(key, None)
+
+
+KEY_99 = "minqlx:qlsm:managed_admins:99"
+LEGACY_KEY = "minqlx:qlsm:managed_admins"
 
 
 def _install_fake_redis(monkeypatch):
@@ -111,14 +122,14 @@ def test_parse_access_entries_empty_input():
 def test_build_sync_command_shape():
     from ui.task_logic.access_permission_sync import build_sync_command
 
-    command = build_sync_command(_host(), 2, {"76561197999064274": 5})
+    command = build_sync_command(_host(), 2, {"76561197999064274": 5}, 99)
     script = _remote_script(command)
 
     assert command[:2] == ["ssh", "-i"]
     assert command.count("91.99.3.72") == 1
     assert "ConnectTimeout=5" in command
     assert "db=2" in script
-    assert "minqlx:qlsm:managed_admins" in script
+    assert repr(KEY_99) in script
 
 
 # --- remote script behaviour (executed against FakeRedis) -----------------
@@ -130,13 +141,13 @@ def test_remote_script_upserts_then_resets_removed_admin(monkeypatch):
 
     printed = []
     script_v1 = _remote_sync_script(
-        {"76561197999064274": 5, "76561198257351377": 3}, db=2, redis_password=None
+        {"76561197999064274": 5, "76561198257351377": 3}, db=2, redis_password=None, instance_id=99
     )
     exec(script_v1, {"__name__": "sync", "print": printed.append})
 
     assert fake_redis.store[2]["minqlx:players:76561197999064274:permission"] == "5"
     assert fake_redis.store[2]["minqlx:players:76561198257351377:permission"] == "3"
-    assert fake_redis.sets[2] == {"76561197999064274", "76561198257351377"}
+    assert fake_redis.sets[2][KEY_99] == {"76561197999064274", "76561198257351377"}
     result_v1 = json.loads(printed[0])
     assert sorted(result_v1["synced"]) == ["76561197999064274", "76561198257351377"]
     assert result_v1["reset"] == []
@@ -145,12 +156,14 @@ def test_remote_script_upserts_then_resets_removed_admin(monkeypatch):
     # the other's grant (potentially changed by hand via !setperm) untouched
     # except for the upsert this sync itself performs.
     printed.clear()
-    script_v2 = _remote_sync_script({"76561197999064274": 5}, db=2, redis_password=None)
+    script_v2 = _remote_sync_script(
+        {"76561197999064274": 5}, db=2, redis_password=None, instance_id=99
+    )
     exec(script_v2, {"__name__": "sync", "print": printed.append})
 
     assert fake_redis.store[2]["minqlx:players:76561197999064274:permission"] == "5"
     assert fake_redis.store[2]["minqlx:players:76561198257351377:permission"] == "0"
-    assert fake_redis.sets[2] == {"76561197999064274"}
+    assert fake_redis.sets[2][KEY_99] == {"76561197999064274"}
     result_v2 = json.loads(printed[0])
     assert result_v2["synced"] == ["76561197999064274"]
     assert result_v2["reset"] == ["76561198257351377"]
@@ -163,14 +176,57 @@ def test_remote_script_never_resets_ids_it_did_not_previously_manage(monkeypatch
 
     fake_redis = _install_fake_redis(monkeypatch)
     fake_redis.store[2] = {"minqlx:players:76561199000000000:permission": "5"}
-    fake_redis.sets[2] = set()  # never synced via this mechanism
+    fake_redis.sets[2] = {}  # never synced via this mechanism
 
     printed = []
-    script = _remote_sync_script({"76561197999064274": 5}, db=2, redis_password=None)
+    script = _remote_sync_script(
+        {"76561197999064274": 5}, db=2, redis_password=None, instance_id=99
+    )
     exec(script, {"__name__": "sync", "print": printed.append})
 
     assert fake_redis.store[2]["minqlx:players:76561199000000000:permission"] == "5"
     assert json.loads(printed[0])["reset"] == []
+
+
+def test_remote_script_instances_sharing_a_db_do_not_reset_each_others_admins(monkeypatch):
+    """Two instances may deliberately share a Redis DB. Saving B, which
+    doesn't list A's admin, must not reset that admin -- B never managed them."""
+    from ui.task_logic.access_permission_sync import _remote_sync_script
+
+    fake_redis = _install_fake_redis(monkeypatch)
+    printed = []
+
+    exec(_remote_sync_script({"76561197999064274": 5}, db=2, redis_password=None, instance_id=1),
+         {"__name__": "sync", "print": printed.append})
+    exec(_remote_sync_script({"76561198257351377": 3}, db=2, redis_password=None, instance_id=2),
+         {"__name__": "sync", "print": printed.append})
+    # B saved again with its admin removed: only B's own admin is reset.
+    exec(_remote_sync_script({}, db=2, redis_password=None, instance_id=2),
+         {"__name__": "sync", "print": printed.append})
+
+    assert fake_redis.store[2]["minqlx:players:76561197999064274:permission"] == "5"
+    assert fake_redis.store[2]["minqlx:players:76561198257351377:permission"] == "0"
+    assert json.loads(printed[-1])["reset"] == ["76561198257351377"]
+
+
+def test_remote_script_adopts_legacy_db_wide_set_once(monkeypatch):
+    """Admins pushed before the set was keyed by instance live in the old
+    DB-wide set. The first sync adopts it (so they can still be revoked)
+    and deletes it, so a second instance doesn't adopt it again."""
+    from ui.task_logic.access_permission_sync import _remote_sync_script
+
+    fake_redis = _install_fake_redis(monkeypatch)
+    fake_redis.store[2] = {"minqlx:players:76561198257351377:permission": "5"}
+    fake_redis.sets[2] = {LEGACY_KEY: {"76561198257351377"}}
+
+    printed = []
+    exec(_remote_sync_script({"76561197999064274": 5}, db=2, redis_password=None, instance_id=99),
+         {"__name__": "sync", "print": printed.append})
+
+    assert fake_redis.store[2]["minqlx:players:76561198257351377:permission"] == "0"
+    assert json.loads(printed[0])["reset"] == ["76561198257351377"]
+    assert LEGACY_KEY not in fake_redis.sets[2]
+    assert fake_redis.sets[2][KEY_99] == {"76561197999064274"}
 
 
 # --- sync_access_permissions (subprocess boundary) --------------------------

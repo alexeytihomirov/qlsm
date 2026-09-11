@@ -300,6 +300,10 @@ def deploy_instance_logic(instance_id):
                 if instance.host and instance.host.lan_rate_uses_hook and instance.lan_rate_enabled:
                     from ui.task_logic.ansible_instance_hooks import apply_instance_hooks_logic
                     apply_instance_hooks_logic(instance.id, restart_service=True)
+                # Admins set in the Add Instance form need their in-game level
+                # now, not on the first config save.
+                from .access_permission_sync import sync_and_report_access_permissions
+                sync_and_report_access_permissions(instance)
                 return f"Instance {instance_id} deployment successful. Status: RUNNING"
 
         # Handle failures (rc != 0 OR (rc == 0 AND no_hosts_matched))
@@ -682,26 +686,8 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
             instance.status = final_status
             db.session.commit()
 
-            try:
-                from .access_permission_sync import sync_instance_access_permissions
-                permission_sync_result = sync_instance_access_permissions(instance)
-                if permission_sync_result is False:
-                    log.warning(
-                        "access.txt permission sync failed for instance %s (non-fatal)",
-                        instance_id,
-                    )
-                    append_log(
-                        instance,
-                        "Warning: access.txt admin permissions could not be synced to the "
-                        "running instance (SSH/Redis unreachable). access.txt was saved, but "
-                        "in-game permissions may be stale until the next successful apply.",
-                    )
-                    db.session.commit()
-            except Exception:
-                log.warning(
-                    "access.txt permission sync failed for instance %s (non-fatal)",
-                    instance_id, exc_info=True,
-                )
+            from .access_permission_sync import sync_and_report_access_permissions
+            sync_and_report_access_permissions(instance)
 
             log.info(f"Finished task apply_instance_config for instance_id: {instance_id}. Status: {final_status.value}")
             return f"Instance {instance_id} config application successful. Status: {final_status.value}"

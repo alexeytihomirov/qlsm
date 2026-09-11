@@ -10,14 +10,19 @@ through the UI still has permission level 0 in the running instance and chat_rco
 !rcon silently denies them ("permission denied"), even though access.txt looks right.
 
 Call sync_instance_access_permissions(instance) from apply_instance_config_logic
-after every successful config apply, mirroring telemetry_relay_instance.py's
+after every successful config apply and from deploy_instance_logic after a
+successful deploy, mirroring telemetry_relay_instance.py's
 sync_instance_server_id_from_config -- same "config on disk is the source of truth,
 reconcile the running instance's external state after every apply" shape.
 
 Removed entries are reset to permission 0 rather than left stale, tracked via a
-"minqlx:qlsm:managed_admins" Redis SET scoped to the same per-instance DB: only
-steamids this sync itself previously wrote get reset, so a permission granted
-by hand via !setperm outside the UI is never touched.
+"minqlx:qlsm:managed_admins:<instance_id>" Redis SET: only steamids this
+instance's sync itself previously wrote get reset, so a permission granted by
+hand via !setperm outside the UI is never touched. The set is keyed by instance,
+not just by Redis DB, because instances may deliberately share a DB -- a
+DB-wide set let saving one instance reset admins that only the other instance
+lists. The pre-scoping DB-wide set is adopted once by the first instance to
+sync and then deleted, so admins pushed before the change can still be revoked.
 
 Caveat: minqlxtended caches permission reads for qlx_permissionCacheTime seconds
 (default 30, see minqlxtended/database.py Redis._permission_ttl) inside its own
@@ -38,7 +43,9 @@ import re
 import shlex
 import subprocess
 
+from ui import db
 from ui.constants import resolve_redis_db
+from ui.task_logic.common import append_log
 from ui.task_logic.self_host_network import resolve_self_host_management_target
 
 logger = logging.getLogger(__name__)
@@ -46,7 +53,11 @@ logger = logging.getLogger(__name__)
 STEAMID64_RE = re.compile(r"^7656119\d{10}$")
 SSH_CONNECT_TIMEOUT = 5
 SYNC_TIMEOUT = SSH_CONNECT_TIMEOUT + 5
-MANAGED_SET_KEY = "minqlx:qlsm:managed_admins"
+LEGACY_MANAGED_SET_KEY = "minqlx:qlsm:managed_admins"
+
+
+def managed_set_key(instance_id):
+    return f"{LEGACY_MANAGED_SET_KEY}:{int(instance_id)}"
 
 
 def parse_access_entries(access_text):
@@ -92,8 +103,9 @@ def _ssh_target_for_host(host):
     return host.ip_address
 
 
-def _remote_sync_script(entries, db, redis_password):
+def _remote_sync_script(entries, db, redis_password, instance_id):
     entries_b64 = base64.b64encode(json.dumps(entries).encode()).decode()
+    managed_key = managed_set_key(instance_id)
     password_b64 = (
         base64.b64encode(redis_password.encode()).decode() if redis_password is not None else None
     )
@@ -107,10 +119,17 @@ password = base64.b64decode(password_b64).decode() if password_b64 is not None e
 
 client = redis.Redis(db={db}, password=password, socket_connect_timeout=3, socket_timeout=3)
 
-managed_key = {MANAGED_SET_KEY!r}
-previously_managed = {{
-    m.decode() if isinstance(m, bytes) else m for m in client.smembers(managed_key)
-}}
+def members(key):
+    return {{m.decode() if isinstance(m, bytes) else m for m in client.smembers(key)}}
+
+managed_key = {managed_key!r}
+legacy_key = {LEGACY_MANAGED_SET_KEY!r}
+previously_managed = members(managed_key)
+if not previously_managed:
+    legacy = members(legacy_key)
+    if legacy:
+        previously_managed = legacy
+        client.delete(legacy_key)
 new_ids = set(entries.keys())
 
 for steam_id, level in entries.items():
@@ -129,10 +148,10 @@ print(json.dumps({{"synced": sorted(new_ids), "reset": sorted(removed)}}))
 '''
 
 
-def build_sync_command(host, db, entries, redis_password=None):
+def build_sync_command(host, db, entries, instance_id, redis_password=None):
     """One bounded SSH command that reconciles a single instance's permission
     keys, mirroring service_runtime.py's build_runtime_probe_command shape."""
-    script = _remote_sync_script(entries, db, redis_password)
+    script = _remote_sync_script(entries, db, redis_password, instance_id)
     return [
         "ssh",
         "-i", os.path.abspath(host.ssh_key_path),
@@ -163,7 +182,7 @@ def sync_access_permissions(instance, access_text):
         os.environ.get("REDIS_PASSWORD") if getattr(host, "provider", None) == "self" else None
     )
 
-    command = build_sync_command(host, db, entries, redis_password=redis_password)
+    command = build_sync_command(host, db, entries, instance.id, redis_password=redis_password)
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=SYNC_TIMEOUT)
     except subprocess.TimeoutExpired:
@@ -204,7 +223,7 @@ def sync_instance_access_permissions(instance):
     handling in telemetry_relay_instance.py. Otherwise defers to
     sync_access_permissions's return value: a payload dict on success, False
     if the sync actually ran and failed (callers should surface this -- see
-    apply_instance_config_logic in ansible_instance_mgmt.py).
+    sync_and_report_access_permissions).
     """
     if not instance.host:
         return None
@@ -216,3 +235,31 @@ def sync_instance_access_permissions(instance):
         return None
 
     return sync_access_permissions(instance, text)
+
+
+SYNC_FAILED_LOG_MESSAGE = (
+    "Warning: access.txt admin permissions could not be synced to the running "
+    "instance (SSH/Redis unreachable). access.txt was saved, but in-game "
+    "permissions may be stale until the next successful apply."
+)
+
+
+def sync_and_report_access_permissions(instance):
+    """Run the permission sync after a successful deploy or config apply.
+
+    Never raises and never fails the calling task. Any failure -- a failed
+    round trip, or an unexpected error before it (unreadable access.txt,
+    self-host target detection) -- appends a warning to the instance log, so a
+    revocation that did not happen is visible to the operator."""
+    try:
+        result = sync_instance_access_permissions(instance)
+    except Exception:
+        logger.warning(
+            "access.txt permission sync raised for instance %s", getattr(instance, "id", "?"),
+            exc_info=True,
+        )
+        result = False
+    if result is False:
+        append_log(instance, SYNC_FAILED_LOG_MESSAGE)
+        db.session.commit()
+    return result

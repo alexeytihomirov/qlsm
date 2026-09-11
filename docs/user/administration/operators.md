@@ -58,19 +58,20 @@ The **Manage operators** link opens **Settings → Operators** in a new tab.
 
 ## What Happens In-Game
 
-When you click **Save Configuration** on an instance, QLSM also pushes the
-admin levels from `access.txt` into the running server's minqlx permissions.
-They can take up to about 30 seconds to apply.
+When a new instance finishes deploying, and whenever you click **Save
+Configuration** on an instance, QLSM also pushes the admin levels from
+`access.txt` into the running server's minqlx permissions. They can take up to
+about 30 seconds to apply.
 
 - **Adding** an admin gives them that level in-game.
 - **Removing** an admin sets their in-game level back to 0.
 - **Players promoted in-game** with `!setperm`, and never added through
   QLSM, are left alone.
 
-**New instances:** admins set in the **Add Instance** form are written to
-`access.txt`, but they don't get their in-game level until the instance's
-config is saved once. After the deploy finishes, open **Edit Config** and
-click **Save Configuration**.
+Instances that share a Redis database also share in-game permissions: an admin
+on one is an admin on the other. Each instance only resets the admins it added
+itself, so removing someone from one instance's list doesn't remove an admin
+the other instance still lists.
 
 Presets only store the files. Nothing is applied in-game until an instance
 using them is saved.
