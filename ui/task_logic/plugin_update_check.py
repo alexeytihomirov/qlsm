@@ -1,8 +1,8 @@
 # ui/task_logic/plugin_update_check.py
 #
 # "Check for Updates" — replaces the old blind "Update Plugins" button.
-# ql-assets/data/minqlx-plugins/ is the source of truth (see
-# ui/plugin_manifest.py). Two independent diffs against it:
+# ql-assets/data/<runtime's pool>/ is the source of truth. Two independent
+# diffs against it:
 #
 #  - host common pool (/home/ql/assets/common/minqlx-plugins/ on the VPS) —
 #    the shared baseline every instance backfills from on restart.
@@ -29,7 +29,6 @@
 import os
 
 from ui.update_checks import hash_local_tree, parse_sha256sum_output, diff_trees, PLUGIN_EXTENSIONS
-from ui.plugin_manifest import MINQLX_PLUGINS_POOL_DIR, MINQLXTENDED_PLUGINS_POOL_DIR
 from ui.runtime import host_runtime, runtime_paths
 from .ansible_runner import run_host_ansible_adhoc
 
@@ -37,13 +36,13 @@ COMMON_ASSETS_REMOTE_DIR = "/home/ql/assets/common"
 
 
 def _pool_dir(host):
-    """The ql-assets pool matching this host's runtime. Selected by pool
-    *name* (asset_plugins_dir), not by a runtime == 'minqlx' check — minqlx
-    and minqlxtended-patched share the same pool, and a two-way check would
-    silently break the moment a third runtime shares it too."""
+    """The ql-assets pool matching this host's runtime, e.g.
+    ql-assets/data/minqlx-plugins/. Resolved through runtime_paths()'s
+    asset_plugins_dir rather than a runtime == 'minqlx' check, so minqlx and
+    minqlxtended-patched (which share this pool) don't need special-casing,
+    and it keeps working once a third runtime shares it too."""
     pool_name = runtime_paths(host_runtime(host))['asset_plugins_dir']
-    pool = MINQLXTENDED_PLUGINS_POOL_DIR if pool_name == 'minqlxtended-plugins' else MINQLX_PLUGINS_POOL_DIR
-    return os.path.abspath(pool)
+    return os.path.abspath(os.path.join('ql-assets', 'data', pool_name))
 
 
 def _common_pool_remote_dir(host):

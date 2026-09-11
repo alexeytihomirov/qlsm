@@ -3,10 +3,13 @@ import pytest
 from unittest.mock import patch
 from ui.database import create_host
 from ui.models import HostStatus, InstanceStatus
-from ui.plugin_manifest import MINQLX_PLUGINS_POOL_DIR
 from ui.task_logic.plugin_update_check import (
     check_common_pool, check_instance_selected_plugins, check_host_updates,
 )
+
+# The default-runtime (minqlx) pool -- these tests use hosts with no
+# explicit runtime, which normalizes to minqlx.
+MINQLX_PLUGINS_POOL_DIR = os.path.join('ql-assets', 'data', 'minqlx-plugins')
 
 
 @pytest.fixture

@@ -24,7 +24,6 @@ from flask import current_app
 
 from ui.models import HostStatus, InstanceStatus
 from ui.database import get_host, update_host, update_instance
-from ui.plugin_manifest import MINQLX_PLUGINS_POOL_DIR, MINQLXTENDED_PLUGINS_POOL_DIR
 from ui.runtime import host_runtime, runtime_extravars, runtime_paths
 from .ansible_runner import _run_host_ansible_playbook
 
@@ -33,13 +32,13 @@ log = logging.getLogger(__name__)
 
 
 def _pool_dir_for_host(host):
-    """The ql-assets pool matching this host's runtime. Selected by pool
-    *name* (asset_plugins_dir), not by a runtime == 'minqlx' check — minqlx
-    and minqlxtended-patched share the same pool, and a two-way check would
-    silently break the moment a third runtime shares it too."""
+    """The ql-assets pool matching this host's runtime, e.g.
+    ql-assets/data/minqlx-plugins/. Resolved through runtime_paths()'s
+    asset_plugins_dir rather than a runtime == 'minqlx' check, so minqlx and
+    minqlxtended-patched (which share this pool) don't need special-casing,
+    and it keeps working once a third runtime shares it too."""
     pool_name = runtime_paths(host_runtime(host))['asset_plugins_dir']
-    pool = MINQLXTENDED_PLUGINS_POOL_DIR if pool_name == 'minqlxtended-plugins' else MINQLX_PLUGINS_POOL_DIR
-    return os.path.abspath(pool)
+    return os.path.abspath(os.path.join('ql-assets', 'data', pool_name))
 
 
 def _copy_selected_plugin_files(host, instance, filenames):

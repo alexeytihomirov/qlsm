@@ -205,14 +205,17 @@ def _run_host_ansible_playbook(host, playbook_name, extravars=None, capture_outp
         return False, "", str(e)
 
 
-def run_host_ansible_adhoc(host, module_args, module='shell', become_user=None, timeout=30):
+def run_host_ansible_adhoc(host, module_args, module='shell', become_user=None, timeout=30, connect_timeout=15):
     """Runs a single ad-hoc ansible module against a host (no playbook) and
     returns (success, stdout, stderr). Used for read-only checks (e.g. hashing
     a remote directory for "Check for Updates") where a full playbook run
     would be overkill. Runs synchronously inside a web request, so a hung
     SSH connection must not be able to block it forever — bounded by
-    `timeout` seconds, mirroring the pattern in host_routes.py's connection
-    test (subprocess.run(..., timeout=...) + TimeoutExpired).
+    `timeout` seconds overall, mirroring the pattern in host_routes.py's
+    connection test (a 15s `--timeout` SSH-connect budget under a 30s
+    subprocess.run(..., timeout=...) + TimeoutExpired). Keeping the two
+    distinct means a slow connect still surfaces ansible's own UNREACHABLE
+    message instead of always hitting the generic "Timed out" fallback.
     """
     if not host:
         return False, "", "Internal Error: Host object not provided"
@@ -236,7 +239,7 @@ def run_host_ansible_adhoc(host, module_args, module='shell', become_user=None, 
         '-m', module,
         '-a', module_args,
         '--become',
-        '--timeout', str(timeout),
+        '--timeout', str(connect_timeout),
     ]
     if become_user:
         cmd.extend(['--become-user', become_user])

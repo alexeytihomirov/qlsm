@@ -9,9 +9,10 @@ function CheckForUpdatesModal({ isOpen, onClose, onSubmit, host, isChecking, che
     const [selectedFiles, setSelectedFiles] = useState({}); // { [instanceId]: Set<filename> }
     const [restartInstances, setRestartInstances] = useState({}); // { [instanceId]: bool }
 
-    // Default to "select everything" once a check comes back, so the common
-    // case (operator just wants current) is a single click — they can still
-    // uncheck individual files/instances before submitting.
+    // Default the common pool to selected (when it has changes) and each
+    // instance's already-stale files to pre-ticked once a check comes back
+    // — newly-added files start unticked, since the operator should opt in
+    // to those explicitly (see the preTicked filter below).
     useEffect(() => {
         if (!checkResult) return;
         setUpdateCommonPool((checkResult.common_pool_changes || []).length > 0 && !checkResult.common_pool_error);

@@ -5,7 +5,10 @@ from unittest.mock import patch, MagicMock
 from ui.task_logic.ansible_plugin_update import apply_plugin_updates_logic
 from ui.models import HostStatus, InstanceStatus
 from ui.database import create_host, get_host, get_instance
-from ui.plugin_manifest import MINQLX_PLUGINS_POOL_DIR
+
+# The default-runtime (minqlx) pool -- these tests use hosts with no
+# explicit runtime, which normalizes to minqlx.
+MINQLX_PLUGINS_POOL_DIR = os.path.join('ql-assets', 'data', 'minqlx-plugins')
 
 
 @pytest.fixture
@@ -111,6 +114,8 @@ def test_apply_instance_selected_plugin_copies_file_and_queues_restart(
 
 
 def test_apply_skips_stopped_instances_for_restart(app, mock_run_playbook, mock_get_current_job, mock_restart_instance_queue, temp_config_dir):
+    mock_run_playbook.return_value = (True, "mock stdout", "mock stderr")
+
     with app.app_context():
         from ui.database import db
         from ui.models import QLInstance
