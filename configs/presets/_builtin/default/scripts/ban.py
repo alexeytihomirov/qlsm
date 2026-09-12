@@ -53,8 +53,6 @@ class ban(minqlx.Plugin):
         self.set_cvar_limit_once("qlx_leaverBanThreshold", "0.63", "0", "1")
         self.set_cvar_limit_once("qlx_leaverBanWarnThreshold", "0.78", "0", "1")
         self.set_cvar_once("qlx_leaverBanMinimumGames", "15")
-        # Maximum ban duration in days. 0 means no limit.
-        self.set_cvar_once("qlx_banMaxDays", "0")
 
         # List of players playing that could potentially be considered leavers.
         self.players_start = []
@@ -204,27 +202,13 @@ class ban(minqlx.Plugin):
             elif scale == "year":
                 td = datetime.timedelta(weeks=number * 52)
             
-            max_days = self.get_cvar("qlx_banMaxDays", int)
-            if max_days > 0:
-                max_td = datetime.timedelta(days=max_days)
-                if td > max_td:
-                    requested_days = round(td.total_seconds() / 86400, 2)
-                    channel.reply(
-                        "^3Warning:^7 Requested ban duration (^6{}^7 days) exceeds the server maximum "
-                        "of ^6{}^7 days. Banning for ^6{}^7 days instead.".format(
-                            requested_days, max_days, max_days
-                        )
-                    )
-                    td = max_td
-
             now = datetime.datetime.now().strftime(TIME_FORMAT)
             expires = (datetime.datetime.now() + td).strftime(TIME_FORMAT)
             base_key = PLAYER_KEY.format(ident) + ":bans"
-            ban_id = str(self.db.zcard(base_key))
+            ban_id = self.db.zcard(base_key)
             db = self.db.pipeline()
             zadd_compat(db, base_key, ban_id, time.time() + td.total_seconds())
-            issued_by = str(player.steam_id) if player.steam_id is not None else "0"
-            ban = {"expires": expires, "reason": reason, "issued": now, "issued_by": issued_by}
+            ban = {"expires": expires, "reason": reason, "issued": now, "issued_by": player.steam_id}
             db.hmset(base_key + ":{}".format(ban_id), ban)
             db.execute()
             

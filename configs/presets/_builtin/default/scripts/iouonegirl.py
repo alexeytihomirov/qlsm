@@ -68,10 +68,7 @@ class iouonegirlPlugin(minqlx.Plugin):
         def tell(m): player.tell(m)
 
         url = "{}{}.py".format(self._loc, self._name)
-        try:
-            res = requests.get(url, timeout=10)
-        except requests.exceptions.RequestException:
-            return
+        res = requests.get(url)
         last_status = res.status_code
         if res.status_code != requests.codes.ok:
             m = "^7Currently using ^3iou^7one^4girl^7's ^6{}^7 plugin version ^6{}^7."
@@ -115,10 +112,7 @@ class iouonegirlPlugin(minqlx.Plugin):
         def tell(m): player.tell(m)
 
         url = "https://raw.githubusercontent.com/dsverdlo/minqlx-plugins/master/iouonegirl.py"
-        try:
-            res = requests.get(url, timeout=10)
-        except requests.exceptions.RequestException:
-            return
+        res = requests.get(url)
         last_status = res.status_code
         if res.status_code != requests.codes.ok:
             m = "^7Currently using ^3iou^7one^4girl^7's ^6iouonegirl^7 superplugin version ^6{}^7."
