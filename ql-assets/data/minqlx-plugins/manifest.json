@@ -90,11 +90,11 @@
     },
     "match_restore.py": {
       "origin": "qlsm",
-      "sha256": "ae0fbe5264b5c92de94164fb6ed94b36dd307c9dda7f8ddf908f99b1e18367ec"
+      "sha256": "6adb052f36d49ad9b52bec562ce39fe5dd705687924daec7aa1b182c647fbc89"
     },
     "match_restore_lab.py": {
       "origin": "qlsm",
-      "sha256": "85956583e1155a6af76abc33e9611837d6cc7daa66df19d6fe2788e3dbbf7ea7"
+      "sha256": "3f9a3d055f3d194a82c23ddfc8742c3d855598c55702744c6db91981fe996782"
     },
     "match_restore_util.py": {
       "origin": "qlsm",
@@ -158,7 +158,7 @@
     },
     "stream_telemetry_unified.py": {
       "origin": "qlsm",
-      "sha256": "cb6c43f987a6cce2f45c3ffa92d11af7fb42e4f6280a3f3f20a0808f099112bf"
+      "sha256": "0bd4cac9372906bc347df380b9bc039decc6cd70b06f658fcc3ee6ca78ab21fa"
     },
     "sv_fps.py": {
       "origin": "upstream",

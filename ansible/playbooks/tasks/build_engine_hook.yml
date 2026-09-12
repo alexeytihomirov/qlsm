@@ -17,19 +17,13 @@
 # minqlxtended flavor — that's a separate, actively-maintained fork and the
 # patches were never verified against it.
 #
-# minqlxtended gets its own patch chain instead, vendored from
-# ql-server-core's build-minqlxtended CI (qlds-scripts/patch-minqlxtended-*.py
-# + minqlxtended-patches/ C sources) under ql-assets/patches/minqlxtended/,
-# with the same qlds-scripts/ + minqlxtended-patches/ sibling layout so the
-# scripts' own __file__-relative path resolution keeps working unmodified.
-# Applied as one call to the vendored patch-minqlxtended-qlhub.py orchestrator,
-# which runs all 7 patches in their required dependency order (set-position,
-# item-events, item-respawn, redis-pool, demo-cutter, demo-match,
-# demo-bindings) and then regenerates minqlxtended's gen_stub.py output so the
-# new natives are actually re-exported by `import minqlxtended` (see that
-# orchestrator's own module docstring for why the gen_stub step is not
-# optional). Update the vendored copy from ql-server-core's qlds-scripts/ +
-# minqlxtended-patches/ when that chain changes upstream.
+# The 'minqlxtended-patched' flavor now builds the alexeytihomirov/minqlxtended
+# fork (upstream + the former qlhub patch chain landed as real commits) and no
+# longer runs any patch scripts. The vendored chain under
+# ql-assets/patches/minqlxtended/ (qlds-scripts/patch-minqlxtended-*.py +
+# minqlxtended-patches/ C sources) is retained ONLY as the rollback path: the
+# apply steps below still exist behind _engine_apply_minqlxtended_qlhub_patches
+# and work as before if a flavor turns them back on.
 
 - name: Set engine hook runtime facts
   set_fact:
@@ -50,11 +44,11 @@
 # Vanilla upstream minqlxtended, unpatched -- pinned like minqlx is. Nothing
 # uses this yet (see 'minqlxtended-patched' below for the flavor host
 # "germany" actually runs), but it exists so a plain minqlxtended host is
-# possible without QLSM's own patch chain.
+# possible.
 - name: Set per-runtime build facts (minqlxtended)
   set_fact:
     _engine_repo: "https://github.com/tjone270/minqlxtended.git"
-    _engine_git_version: "{{ qlds_engine_git_version | default('97fbe6715a4802545aa7eca741d11e2486a306a4') }}"
+    _engine_git_version: "{{ qlds_engine_git_version | default('a3de9471ab5c4c5f712b47923cd6b964312bcefd') }}"
     _engine_apply_local_patches: false
     _engine_apply_minqlxtended_qlhub_patches: false
     _engine_so_name: "minqlxtended.x64.so"
@@ -62,18 +56,22 @@
     _engine_python_pkg: "minqlxtended"
   when: _engine_flavor == 'minqlxtended'
 
-# minqlxtended plus QLSM's own qlhub patch chain (see the big comment on
-# patch-minqlxtended-qlhub.py invocation below). This is what "germany" has
-# actually been running since the chain was ported (commit 82254ef) -- the
-# git_version stays unpinned (floating HEAD) exactly as it always has been;
-# see ui/runtime.py's MINQLXTENDED_PATCHED entry for why that is a known,
-# open risk rather than an oversight.
+# The alexeytihomirov/minqlxtended fork: upstream plus the former qlhub patch
+# chain landed as real commits (democut, per-match demo capture + bindings,
+# set_position, blocking redis pool). No patch scripts run against it -- the
+# item natives of the old chain are covered by upstream v1.1.0's item_touch /
+# respawn_item / writable fields, with the stock fallbacks living in the
+# plugins themselves. The vendored chain under ql-assets/patches/minqlxtended/
+# is kept only as the rollback path: repoint _engine_repo at upstream, restore
+# _engine_apply_minqlxtended_qlhub_patches: true, and it applies as before.
+# Pinned to the fork commit verified on the test VPS (all four make targets
+# with -Werror + gen_stub/field-offsets/consistency checks).
 - name: Set per-runtime build facts (minqlxtended-patched)
   set_fact:
-    _engine_repo: "https://github.com/tjone270/minqlxtended.git"
-    _engine_git_version: "{{ qlds_engine_git_version | default('HEAD') }}"
+    _engine_repo: "https://github.com/alexeytihomirov/minqlxtended.git"
+    _engine_git_version: "{{ qlds_engine_git_version | default('6ba0cc6b9398f928bc19c371e5db307bfbb09748') }}"
     _engine_apply_local_patches: false
-    _engine_apply_minqlxtended_qlhub_patches: true
+    _engine_apply_minqlxtended_qlhub_patches: false
     _engine_so_name: "minqlxtended.x64.so"
     _engine_wrapper_name: "run_server_x64_minqlxtended.sh"
     _engine_python_pkg: "minqlxtended"

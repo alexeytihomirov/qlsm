@@ -120,6 +120,9 @@ try:
 except ImportError:
     import minqlx
 
+# Raised by stock minqlxtended natives/views when the vm is not ready.
+_ENGINE_ERR = getattr(minqlx, "EngineStateError", RuntimeError)
+
 try:
     import stats_hub_pause
 except ImportError:
@@ -273,7 +276,15 @@ class stream_telemetry_unified(minqlx.Plugin):
         self._items_queue = []
         self._items_queue_warned = False
         self._items_queue_full_drops = 0
-        self._item_events_available = self._has_dispatcher("item_event")
+        # Native item_event comes from the patched runtime; on a stock
+        # minqlxtended (>= v1.1.0) the same payload is synthesized by pairing
+        # the gated item_touch with item_pickup (same C call stack, touch
+        # always dispatches first), so either shape feeds the pickup feed.
+        self._item_native_event = self._has_dispatcher("item_event")
+        self._item_events_available = self._item_native_event or (
+            self._has_dispatcher("item_touch") and self._has_dispatcher("item_pickup")
+        )
+        self._last_item_touch = {}
 
         # --- session/chat/vote/pause events state (session_events equivalent) ---
         self._session_queue = []
@@ -310,9 +321,9 @@ class stream_telemetry_unified(minqlx.Plugin):
 
         if not self._item_events_available:
             self.logger.warning(
-                "stream_telemetry_unified: item_event dispatcher missing — "
-                "run patch-minqlxtended-item-events.py, rebuild minqlx, restart "
-                "QLDS (pickup feed will stay empty)"
+                "stream_telemetry_unified: no item_event dispatcher and no "
+                "item_touch/item_pickup pair — minqlxtended too old? "
+                "(pickup feed will stay empty)"
             )
 
         # --- hooks: exactly one `frame` hook drives all three sub-schedules ---
@@ -323,8 +334,11 @@ class stream_telemetry_unified(minqlx.Plugin):
         # messages are not recorded.
         self.add_hook("client_command", self.on_client_command, priority=minqlx.Priority.HIGHEST)
         self.add_hook("client_command", self.on_client_command_chat, priority=minqlx.Priority.LOWEST)
-        if self._item_events_available:
+        if self._item_native_event:
             self.add_hook("item_event", self.on_item_event, priority=minqlx.Priority.LOWEST)
+        elif self._item_events_available:
+            self.add_hook("item_touch", self.on_item_touch_stock, priority=minqlx.Priority.LOWEST)
+            self.add_hook("item_pickup", self.on_item_pickup_stock, priority=minqlx.Priority.LOWEST)
         self.add_hook("player_connect", self.on_player_connect, priority=minqlx.Priority.LOWEST)
         self.add_hook("player_disconnect", self.on_player_disconnect, priority=minqlx.Priority.LOWEST)
         self.add_hook("vote_started", self.on_vote_started, priority=minqlx.Priority.LOWEST)
@@ -1305,6 +1319,45 @@ class stream_telemetry_unified(minqlx.Plugin):
             "stream_telemetry_unified: item queue backlog %s events (post_in_flight=%s)",
             size,
             self._items_state.post_in_flight,
+        )
+
+    def on_item_touch_stock(self, player, entity):
+        """Stock runtime: stash the touched entity; the pickup that follows (same
+        C call stack) rebuilds the item_event payload from it."""
+        try:
+            origin = entity.r.current_origin
+            self._last_item_touch[int(player.id)] = (
+                int(entity.number),
+                str(entity.classname or ""),
+                int(entity.s.modelindex),
+                float(origin.x),
+                float(origin.y),
+                float(origin.z),
+            )
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            pass
+        return minqlx.Return.NONE
+
+    def on_item_pickup_stock(self, player, item):
+        info = self._last_item_touch.pop(int(player.id), None)
+        if not info:
+            return minqlx.Return.NONE
+        eid, classname, bg_index, x, y, z = info
+        gi_type = gi_tag = gi_quantity = 0
+        try:
+            bg_item = minqlx.Item(int(bg_index))
+            gi_type = int(bg_item.gi_type)
+            gi_tag = int(bg_item.gi_tag)
+            gi_quantity = int(bg_item.quantity)
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            pass
+        try:
+            game_time = int(minqlx.level.time)
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            game_time = 0
+        return self.on_item_event(
+            "pickup", eid, player, classname or str(item or ""),
+            gi_type, gi_tag, gi_quantity, x, y, z, game_time,
         )
 
     def on_item_event(

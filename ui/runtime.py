@@ -56,7 +56,8 @@ _RUNTIME_PATHS = {
         'launch_script': 'run_server_x64_minqlxtended.sh',
         'log_filename': 'minqlxtended.log',
         'git_repo': 'https://github.com/tjone270/minqlxtended.git',
-        'git_version': '97fbe6715a4802545aa7eca741d11e2486a306a4',
+        # Upstream master with v1.1.0 + PR #7 (item_touch / respawn_item).
+        'git_version': 'a3de9471ab5c4c5f712b47923cd6b964312bcefd',
         'os_name': 'Ubuntu 24.04 LTS x64',
         'os_family': 'ubuntu',
         'os_type': 'ubuntu',
@@ -72,24 +73,27 @@ _RUNTIME_PATHS = {
         'apply_local_patches': False,
         'apply_qlhub_patches': False,
     },
-    # QLSM's own fork: vanilla minqlxtended plus the qlhub patch chain vendored
-    # under ql-assets/patches/minqlxtended/ (native item events/respawn, demo
-    # capture, a bounded redis pool, set_position -- see build_engine_hook.yml).
-    # Shares minqlx's plugin pool and shared dir rather than minqlxtended's,
-    # because that is what host "germany" has actually been running since this
-    # was ported (commit 82254ef) and nothing has ever exercised a separate
-    # minqlxtended-patched pool/dir -- changing either here would silently
-    # re-point that host's next rerun-setup at an empty/foreign location.
+    # QLSM's own build: the alexeytihomirov/minqlxtended fork, which is
+    # upstream tjone270/minqlxtended plus the former qlhub patch chain landed
+    # as real commits (democut + per-match demo capture + demo_arm/demo_disarm
+    # bindings, set_position, a blocking redis pool). The item natives/events
+    # of the old chain are NOT in the fork: upstream v1.1.0's item_touch +
+    # respawn_item + writable entity fields cover them, and the plugins
+    # (match_restore, stream_telemetry_unified) carry the stock fallbacks.
+    # The vendored chain under ql-assets/patches/minqlxtended/ is no longer
+    # applied by this flavor; it stays in the repo for the rollback path
+    # (repoint git_repo/git_version back and flip apply_qlhub_patches).
     #
-    # git_version is deliberately left floating on HEAD, matching the existing
-    # build_engine_hook.yml default: there has never been a pin for this chain.
-    # This is a known, unresolved risk (see dev-inbox finding filed alongside
-    # the runtime-model merge that introduced this constant) -- upstream
-    # minqlxtended restructured its source tree in 05f542e ("v1.0.0"), and the
-    # qlhub patch scripts were verified only against the pre-restructure layout
-    # (tjone270/minqlxtended@22e77f5). Floating HEAD today risks the patch
-    # chain failing loudly (acceptable) or applying wrongly (not). Pinning is
-    # out of scope here; do not silently "fix" this by inventing a pin.
+    # Shares minqlx's plugin pool and shared dir rather than minqlxtended's,
+    # because that is what host "germany" has actually been running since the
+    # chain was ported (commit 82254ef) and nothing has ever exercised a
+    # separate minqlxtended-patched pool/dir -- changing either here would
+    # silently re-point that host's next rerun-setup at an empty/foreign
+    # location.
+    #
+    # git_version is pinned to the fork's verified build (all four make
+    # targets with -Werror + gen_stub/field-offsets/consistency checks);
+    # bump it deliberately when the fork advances.
     MINQLXTENDED_PATCHED: {
         'runtime': MINQLXTENDED_PATCHED,
         'plugins_dirname': 'minqlx-plugins',
@@ -98,15 +102,15 @@ _RUNTIME_PATHS = {
         'engine_so': 'minqlxtended.x64.so',
         'launch_script': 'run_server_x64_minqlxtended.sh',
         'log_filename': 'minqlxtended.log',
-        'git_repo': 'https://github.com/tjone270/minqlxtended.git',
-        'git_version': 'HEAD',
+        'git_repo': 'https://github.com/alexeytihomirov/minqlxtended.git',
+        'git_version': '6ba0cc6b9398f928bc19c371e5db307bfbb09748',
         'os_name': 'Ubuntu 24.04 LTS x64',
         'os_family': 'ubuntu',
         'os_type': 'ubuntu',
         'min_python': (3, 12),
         'excluded_system_hooks': frozenset({'force_rate.so'}),
         'apply_local_patches': False,
-        'apply_qlhub_patches': True,
+        'apply_qlhub_patches': False,
     },
 }
 

@@ -79,7 +79,7 @@ def test_minqlxtended_paths_match_the_p0_spike():
     assert paths["launch_script"] == "run_server_x64_minqlxtended.sh"
     assert paths["log_filename"] == "minqlxtended.log"
     assert paths["git_repo"] == "https://github.com/tjone270/minqlxtended.git"
-    assert paths["git_version"] == "97fbe6715a4802545aa7eca741d11e2486a306a4"
+    assert paths["git_version"] == "a3de9471ab5c4c5f712b47923cd6b964312bcefd"
     assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
     assert paths["os_family"] == "ubuntu"
     assert paths["os_type"] == "ubuntu"
@@ -99,8 +99,12 @@ def test_minqlxtended_patched_shares_minqlx_pool_and_shared_dir():
     assert paths["log_filename"] == "minqlxtended.log"
     assert paths["min_python"] == (3, 12)
     assert "force_rate.so" in paths["excluded_system_hooks"]
-    assert paths["apply_qlhub_patches"] is True
+    # Since the fork migration the flavor builds alexeytihomirov/minqlxtended
+    # (chain landed as commits) and applies no patch scripts.
+    assert paths["apply_qlhub_patches"] is False
     assert paths["apply_local_patches"] is False
+    assert paths["git_repo"] == "https://github.com/alexeytihomirov/minqlxtended.git"
+    assert paths["git_version"] != "HEAD"
 
 
 def test_force_rate_is_excluded_only_on_minqlxtended():

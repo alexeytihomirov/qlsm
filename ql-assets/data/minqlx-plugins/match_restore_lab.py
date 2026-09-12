@@ -221,13 +221,10 @@ class match_restore_lab(minqlx.Plugin):
             if eid is None:
                 self._reply(player, channel, "^1bad entity^7 — runtime id only (see ^3!spawnsec scan^7)")
                 return minqlx.Return.STOP
-            if not hasattr(minqlx, "get_map_item_state"):
-                self._reply(player, channel, "^1get_map_item_state missing^7 — rebuild minqlx (item-respawn patch)")
-                return minqlx.Return.STOP
-            try:
-                row = minqlx.get_map_item_state(int(eid))
-            except (AttributeError, TypeError, ValueError) as exc:
-                self._reply(player, channel, "^1stat failed^7: {}".format(exc))
+            core = self._core()
+            row = core._get_item_state(int(eid)) if core is not None else None
+            if row is None:
+                self._reply(player, channel, "^1stat failed^7 (no state for e{})".format(eid))
                 return minqlx.Return.STOP
             inuse, etype, eflags, contents, nextthink, has_think, level_time, classname = row
             nodraw = bool(int(eflags) & 0x80)
@@ -256,7 +253,7 @@ class match_restore_lab(minqlx.Plugin):
             if len(msg) >= 4 and str(msg[3]).strip().isdigit():
                 cid = int(msg[3])
             if not hasattr(minqlx, "touch_map_item"):
-                self._reply(player, channel, "^1touch_map_item missing^7 — rebuild minqlx (item-respawn patch)")
+                self._reply(player, channel, "^1touch_map_item missing^7 — patched-runtime native (not on stock minqlxtended)")
                 return minqlx.Return.STOP
             try:
                 ok = minqlx.touch_map_item(int(eid), int(cid))
@@ -292,7 +289,7 @@ class match_restore_lab(minqlx.Plugin):
             if len(msg) >= 5 and str(msg[4]).strip().isdigit():
                 cid = int(msg[4])
             if not hasattr(minqlx, "touch_map_item"):
-                self._reply(player, channel, "^1touch_map_item missing^7 — rebuild minqlx (item-respawn patch)")
+                self._reply(player, channel, "^1touch_map_item missing^7 — patched-runtime native (not on stock minqlxtended)")
                 return minqlx.Return.STOP
             rescheduled = int(eid) in self._itemlab_pending_touches
             self._itemlab_pending_touches[int(eid)] = {
@@ -323,7 +320,7 @@ class match_restore_lab(minqlx.Plugin):
                 self._reply(player, channel, "^1bad delay^7")
                 return minqlx.Return.STOP
             if not hasattr(minqlx, "hide_map_item"):
-                self._reply(player, channel, "^1hide_map_item missing^7 — rebuild minqlx (item-respawn patch)")
+                self._reply(player, channel, "^1hide_map_item missing^7 — patched-runtime native (not on stock minqlxtended)")
                 return minqlx.Return.STOP
             rescheduled = int(eid) in self._itemlab_pending_respawns
             try:
@@ -464,7 +461,7 @@ class match_restore_lab(minqlx.Plugin):
     def _hide_item(self, core, player, channel, entity_id, alias, classname, delay_sec, spawn_meta):
         table_id = int(entity_id)
         if not hasattr(minqlx, "hide_map_item"):
-            self._reply(player, channel, "^1hide_map_item missing^7 — rebuild minqlx (item-respawn patch).")
+            self._reply(player, channel, "^1hide_map_item missing^7 — patched-runtime native (not on stock minqlxtended).")
             return
         runtime_eid = core._resolve_runtime_eid(
             alias, spawn_meta, classname, force_scan=True

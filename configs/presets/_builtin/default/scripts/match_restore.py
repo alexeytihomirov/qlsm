@@ -185,6 +185,32 @@ WEAPON_ALIAS = {
     "hands": "hands",
 }
 
+# --- stock minqlxtended compatibility -----------------------------------------
+# On the patched runtime the item natives (hide_map_item/show_map_item/
+# get_map_item_state/find_map_item_entity/set_item_respawn_delay/set_pickup_lock)
+# and the item_event dispatcher come from qlhub_item_events.c/qlhub_item_respawn.c.
+# On a stock minqlxtended (>= v1.1.0 + our fork) the same ground is covered by
+# writable entity fields, respawn_item() and the gated item_touch event; every
+# item helper below prefers the native and falls back to the stock path, and
+# __init__ pairs item_touch + item_pickup when there is no item_event.
+_EF_NODRAW = getattr(minqlx, "EF_NODRAW", 0x80)
+_SVF_NOCLIENT = getattr(minqlx, "SVF_NOCLIENT", 0x01)
+_CONTENTS_TRIGGER = 0x40000000  # q_shared.h; not exported by minqlxtended
+_ET_ITEM = getattr(minqlx, "ET_ITEM", 2)
+# Raised by stock natives/views when the vm is not ready or the slot is empty.
+_ENGINE_ERR = getattr(minqlx, "EngineStateError", RuntimeError)
+
+
+def _stock_item_entity(runtime_eid):
+    """Entity behind a runtime id, or None (bad id / vm not ready / freed slot)."""
+    try:
+        ent = minqlx.Entity(int(runtime_eid))
+        if not ent.inuse:
+            return None
+        return ent
+    except (TypeError, ValueError, _ENGINE_ERR):
+        return None
+
 
 class match_restore(minqlx.Plugin):
     def __init__(self):
@@ -233,7 +259,15 @@ class match_restore(minqlx.Plugin):
         self.add_hook("game_start", self._on_game_start)
         self.add_hook("game_end", self._on_game_end)
         self.add_hook("game_countdown", self._on_game_countdown)
-        self.add_hook("item_event", self.on_item_event, priority=minqlx.Priority.LOW)
+        self._last_item_touch = {}
+        if "item_event" in minqlx.EVENT_DISPATCHERS:
+            self.add_hook("item_event", self.on_item_event, priority=minqlx.Priority.LOW)
+        else:
+            # Stock minqlxtended: pair the gated item_touch with item_pickup and
+            # synthesize the same item_event payload. The touch hook also
+            # enforces the Python-side pickup lock that set_pickup_lock did in C.
+            self.add_hook("item_touch", self._on_item_touch_stock, priority=minqlx.Priority.LOW)
+            self.add_hook("item_pickup", self._on_item_pickup_stock, priority=minqlx.Priority.LOW)
         self.add_hook("client_command", self._on_client_command, priority=minqlx.Priority.HIGHEST)
         self.add_hook("chat", self._on_chat, priority=minqlx.Priority.HIGHEST)
         self.add_hook("frame", self._frame_apply_positions, priority=minqlx.Priority.LOWEST)
@@ -243,6 +277,7 @@ class match_restore(minqlx.Plugin):
         return self.get_cvar("qlx_matchRestoreLabEnabled", bool) is not False
 
     def _on_map(self, mapname, factory):
+        self._last_item_touch.clear()
         self._position_apply_queue.clear()
         self._velocity_apply_queue.clear()
         self._restore_pending_velocities.clear()
@@ -393,11 +428,8 @@ class match_restore(minqlx.Plugin):
         return 0
 
     def _validate_runtime_item_entity(self, runtime_eid, classname=None):
-        if not hasattr(minqlx, "get_map_item_state"):
-            return int(runtime_eid) > 0
-        try:
-            row = minqlx.get_map_item_state(int(runtime_eid))
-        except (AttributeError, TypeError, ValueError):
+        row = self._get_item_state(runtime_eid)
+        if row is None:
             return False
         if not int(row[0]):
             return False
@@ -490,12 +522,40 @@ class match_restore(minqlx.Plugin):
         )
         return recovered
 
-    def _engine_item_has_think(self, runtime_eid):
-        if not hasattr(minqlx, "get_map_item_state"):
-            return False
+    def _get_item_state(self, runtime_eid):
+        """(inuse, etype, eflags, contents, nextthink, has_think, level_time,
+        classname) — the get_map_item_state tuple, from the native when the
+        patched runtime provides it, else rebuilt from Entity fields. None on
+        any failure."""
+        if hasattr(minqlx, "get_map_item_state"):
+            try:
+                return minqlx.get_map_item_state(int(runtime_eid))
+            except (AttributeError, TypeError, ValueError):
+                return None
+        ent = _stock_item_entity(runtime_eid)
+        if ent is None:
+            return None
         try:
-            row = minqlx.get_map_item_state(int(runtime_eid))
-        except (AttributeError, TypeError, ValueError):
+            level_time = int(minqlx.level.time)
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            level_time = 0
+        try:
+            return (
+                1 if ent.inuse else 0,
+                int(ent.s.e_type),
+                int(ent.s.e_flags),
+                int(ent.r.contents),
+                int(ent.nextthink),
+                1 if ent.think is not None else 0,
+                level_time,
+                str(ent.classname or ""),
+            )
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            return None
+
+    def _engine_item_has_think(self, runtime_eid):
+        row = self._get_item_state(runtime_eid)
+        if row is None:
             return False
         return bool(int(row[0]) and int(row[5]))
 
@@ -519,6 +579,9 @@ class match_restore(minqlx.Plugin):
                     alias,
                 )
             return True
+
+        if not hasattr(minqlx, "set_item_respawn_delay") and hasattr(minqlx, "respawn_item"):
+            return self._prime_stock_respawn(eid, delay_ms, alias=alias, classname=classname)
 
         hide_for_pending = delay_ms > 0 and hasattr(minqlx, "hide_map_item")
 
@@ -571,6 +634,36 @@ class match_restore(minqlx.Plugin):
                 eid,
                 alias,
                 delay_ms,
+            )
+        return ok
+
+    def _prime_stock_respawn(self, eid, delay_ms, alias=None, classname=None):
+        """Stock minqlxtended: hide via writable fields, then respawn_item() arms
+        the engine's own RespawnItem think - no touch/priming dance needed."""
+        if delay_ms == 0:
+            # Not pickable (the pickable case returned "keep" above): show it
+            # through the engine's own respawn on the next think.
+            delay_ms = 1
+        elif self._engine_item_pickable(eid):
+            if not self._hide_engine_item(eid, alias, classname, None):
+                return False
+        try:
+            ok = minqlx.respawn_item(int(eid), int(delay_ms)) is not False
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR) as exc:
+            self.logger.warning(
+                "match_restore: respawn_item e%s alias=%s: %s",
+                eid,
+                alias,
+                exc,
+            )
+            return False
+        if alias is not None:
+            self.logger.info(
+                "match_restore: stock schedule e%s alias=%s delay_ms=%s ok=%s",
+                eid,
+                alias,
+                delay_ms,
+                ok,
             )
         return ok
 
@@ -1210,6 +1303,48 @@ class match_restore(minqlx.Plugin):
             return
         key = self._slot_key(table_id)
         self._slot_runtime_ids.setdefault(key, set()).add(rid)
+
+    def _on_item_touch_stock(self, player, entity):
+        """Stock runtime: enforce the pickup lock and stash the touched entity so
+        _on_item_pickup_stock can rebuild the item_event payload."""
+        if getattr(self, "_pickup_lock_py", False):
+            return minqlx.Return.STOP_EVENT
+        try:
+            origin = entity.r.current_origin
+            self._last_item_touch[int(player.id)] = (
+                int(entity.number),
+                str(entity.classname or ""),
+                int(entity.s.modelindex),
+                float(origin.x),
+                float(origin.y),
+                float(origin.z),
+            )
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            pass
+        return minqlx.Return.NONE
+
+    def _on_item_pickup_stock(self, player, item):
+        """Stock runtime: the pickup that follows a touch, same call stack C-side."""
+        info = self._last_item_touch.pop(int(player.id), None)
+        if not info:
+            return minqlx.Return.NONE
+        eid, classname, bg_index, x, y, z = info
+        gi_type = gi_tag = gi_quantity = 0
+        try:
+            bg_item = minqlx.Item(int(bg_index))
+            gi_type = int(bg_item.gi_type)
+            gi_tag = int(bg_item.gi_tag)
+            gi_quantity = int(bg_item.quantity)
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            pass
+        try:
+            game_time = int(minqlx.level.time)
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            game_time = 0
+        return self.on_item_event(
+            "pickup", eid, player, classname or str(item or ""),
+            gi_type, gi_tag, gi_quantity, x, y, z, game_time,
+        )
 
     def on_item_event(
         self,
@@ -2894,10 +3029,45 @@ class match_restore(minqlx.Plugin):
         )
         return 0
 
-    def _call_find_map_item_entity(self, x, y, z, radius, bg_index=None, exclude_entity_id=-1):
-        if not hasattr(minqlx, "find_map_item_entity"):
+    def _stock_find_item_entity(self, x, y, z, radius, want_item_id=0, exclude_entity_id=-1):
+        """Stock runtime: nearest live ET_ITEM entity within radius, optionally
+        matched on bg item index (s.modelindex), same contract as the native."""
+        best_eid = 0
+        best_d2 = float(radius) * float(radius)
+        try:
+            item_entities = minqlx.entities(etype=_ET_ITEM)
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
             return 0
+        for ent in item_entities:
+            try:
+                eid = int(ent.number)
+                if eid == int(exclude_entity_id):
+                    continue
+                if want_item_id and int(ent.s.modelindex) != int(want_item_id):
+                    continue
+                origin = ent.r.current_origin
+                dx = float(origin.x) - float(x)
+                dy = float(origin.y) - float(y)
+                dz = float(origin.z) - float(z)
+                d2 = dx * dx + dy * dy + dz * dz
+            except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+                continue
+            if d2 <= best_d2:
+                best_d2 = d2
+                best_eid = eid
+        return best_eid
+
+    def _call_find_map_item_entity(self, x, y, z, radius, bg_index=None, exclude_entity_id=-1):
         want_item_id = int(bg_index) if bg_index is not None else 0
+        if not hasattr(minqlx, "find_map_item_entity"):
+            try:
+                return int(self._stock_find_item_entity(
+                    float(x), float(y), float(z), float(radius),
+                    want_item_id=want_item_id,
+                    exclude_entity_id=int(exclude_entity_id),
+                ))
+            except (TypeError, ValueError):
+                return 0
         attempts = (
             (float(x), float(y), float(z), float(radius), want_item_id, int(exclude_entity_id)),
             (float(x), float(y), float(z), float(radius), want_item_id),
@@ -2954,11 +3124,8 @@ class match_restore(minqlx.Plugin):
         return rid
 
     def _engine_item_pickable(self, runtime_eid):
-        if not hasattr(minqlx, "get_map_item_state"):
-            return True
-        try:
-            row = minqlx.get_map_item_state(int(runtime_eid))
-        except (AttributeError, TypeError, ValueError):
+        row = self._get_item_state(runtime_eid)
+        if row is None:
             return False
         inuse, etype, eflags, contents = row[0], row[1], row[2], row[3]
         if not int(inuse):
@@ -2978,17 +3145,37 @@ class match_restore(minqlx.Plugin):
         except (TypeError, ValueError):
             return 0
 
+    def _stock_hide_item(self, runtime_eid, item_id=0):
+        """Stock runtime hide: writable fields + link, the way Touch_Item hides a
+        taken item. contents 0 blocks pickup; think is left alone (respawn_item
+        re-arms it)."""
+        ent = _stock_item_entity(runtime_eid)
+        if ent is None:
+            return False
+        try:
+            if int(item_id) > 0:
+                ent.s.modelindex = int(item_id)
+            ent.s.e_flags = int(ent.s.e_flags) | _EF_NODRAW
+            ent.r.sv_flags = int(ent.r.sv_flags) | _SVF_NOCLIENT
+            ent.r.contents = 0
+            minqlx.link_entity(int(runtime_eid))
+        except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+            return False
+        return True
+
     def _hide_engine_item(self, runtime_eid, alias, classname, spawn_meta):
         eid = int(runtime_eid)
         if eid <= 0:
             return False
         if not hasattr(minqlx, "hide_map_item"):
-            self.logger.warning(
-                "match_restore: hide_map_item missing alias=%s e%s",
-                alias,
-                eid,
-            )
-            return False
+            ok = self._stock_hide_item(eid, self._item_bg_index(classname))
+            if not ok:
+                self.logger.warning(
+                    "match_restore: stock hide failed alias=%s e%s",
+                    alias,
+                    eid,
+                )
+            return ok
         item_id = self._item_bg_index(classname)
         try:
             ok = (
@@ -3015,11 +3202,34 @@ class match_restore(minqlx.Plugin):
         return True
 
     def _show_engine_item(self, runtime_eid, alias=None, classname=None):
-        if not hasattr(minqlx, "show_map_item"):
-            return False
         eid = int(runtime_eid)
         if eid <= 0:
             return False
+        if not hasattr(minqlx, "show_map_item"):
+            # Stock runtime: hand the show to the engine's own RespawnItem via
+            # respawn_item(); it restores contents/EF_NODRAW/CS_ITEMS itself on
+            # the next think, so the item is visible a frame later, not
+            # synchronously like the patched native.
+            if not hasattr(minqlx, "respawn_item"):
+                return False
+            item_id = self._item_bg_index(classname) if classname else 0
+            ent = _stock_item_entity(eid)
+            if ent is None:
+                return False
+            try:
+                if item_id > 0:
+                    ent.s.modelindex = item_id
+                ok = minqlx.respawn_item(eid, 1) is not False
+            except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+                return False
+            if alias is not None:
+                self.logger.info(
+                    "match_restore: stock show via respawn_item e%s alias=%s ok=%s",
+                    eid,
+                    alias,
+                    ok,
+                )
+            return ok
         item_id = self._item_bg_index(classname) if classname else 0
         try:
             ok = (
@@ -3627,7 +3837,9 @@ class match_restore(minqlx.Plugin):
                 try:
                     if setter(int(target.id), pos):
                         return True
-                except (AttributeError, TypeError, ValueError):
+                except (AttributeError, TypeError, ValueError, _ENGINE_ERR):
+                    # Fork set_position raises EngineStateError for an empty
+                    # slot (the patched native returned False); same fallback.
                     pass
         try:
             # REAL zero-velocity write (was a silent no-op pre-v1.0.0) --
