@@ -1,8 +1,8 @@
 # ui/task_logic/plugin_update_check.py
 #
 # "Check for Updates" — replaces the old blind "Update Plugins" button.
-# ql-assets/data/minqlx-plugins/ is the source of truth (see
-# ui/plugin_manifest.py). Two independent diffs against it:
+# ql-assets/data/<runtime's pool>/ is the source of truth. Two independent
+# diffs against it:
 #
 #  - host common pool (/home/ql/assets/common/minqlx-plugins/ on the VPS) —
 #    the shared baseline every instance backfills from on restart.
@@ -29,14 +29,24 @@
 import os
 
 from ui.update_checks import hash_local_tree, parse_sha256sum_output, diff_trees, PLUGIN_EXTENSIONS
-from ui.plugin_manifest import MINQLX_PLUGINS_POOL_DIR
+from ui.runtime import host_runtime, runtime_paths
 from .ansible_runner import run_host_ansible_adhoc
 
-COMMON_POOL_REMOTE_DIR = "/home/ql/assets/common/minqlx-plugins"
+COMMON_ASSETS_REMOTE_DIR = "/home/ql/assets/common"
 
 
-def _pool_dir():
-    return os.path.abspath(MINQLX_PLUGINS_POOL_DIR)
+def _pool_dir(host):
+    """The ql-assets pool matching this host's runtime, e.g.
+    ql-assets/data/minqlx-plugins/. Resolved through runtime_paths()'s
+    asset_plugins_dir rather than a runtime == 'minqlx' check, so minqlx and
+    minqlxtended-patched (which share this pool) don't need special-casing,
+    and it keeps working once a third runtime shares it too."""
+    pool_name = runtime_paths(host_runtime(host))['asset_plugins_dir']
+    return os.path.abspath(os.path.join('ql-assets', 'data', pool_name))
+
+
+def _common_pool_remote_dir(host):
+    return f"{COMMON_ASSETS_REMOTE_DIR}/{runtime_paths(host_runtime(host))['asset_plugins_dir']}"
 
 
 def _instance_scripts_dir(host_name, instance_id):
@@ -44,18 +54,21 @@ def _instance_scripts_dir(host_name, instance_id):
 
 
 def check_common_pool(host):
-    """Diffs ql-assets pool vs the host's shared /home/ql/assets/common/minqlx-plugins/.
-    Returns (changes, error). error is set (changes is None) if the host was unreachable."""
-    source = hash_local_tree(_pool_dir(), extensions=PLUGIN_EXTENSIONS)
+    """Diffs ql-assets pool vs the host's shared common plugin pool
+    (/home/ql/assets/common/{minqlx,minqlxtended}-plugins/, per the host's
+    runtime). Returns (changes, error). error is set (changes is None) if
+    the host was unreachable."""
+    remote_dir = _common_pool_remote_dir(host)
+    source = hash_local_tree(_pool_dir(host), extensions=PLUGIN_EXTENSIONS)
     success, stdout, stderr = run_host_ansible_adhoc(
         host,
-        module_args=f"find {COMMON_POOL_REMOTE_DIR} -maxdepth 1 -type f "
+        module_args=f"find {remote_dir} -maxdepth 1 -type f "
                     f"\\( -name '*.py' -o -name '*.ql-plugin.json' \\) -exec sha256sum {{}} +",
     )
     if not success:
         return None, stderr or "Failed to read remote plugin pool state"
 
-    target = parse_sha256sum_output(stdout, strip_prefix=COMMON_POOL_REMOTE_DIR + "/")
+    target = parse_sha256sum_output(stdout, strip_prefix=remote_dir + "/")
     return diff_trees(source, target), None
 
 
@@ -67,7 +80,7 @@ def check_instance_selected_plugins(host, instance):
     same way (a plain file copy in ansible_plugin_update.py), so there's no
     manual docker cp needed to get a new default-preset plugin onto an
     instance created before that plugin existed."""
-    source = hash_local_tree(_pool_dir(), extensions=PLUGIN_EXTENSIONS)
+    source = hash_local_tree(_pool_dir(host), extensions=PLUGIN_EXTENSIONS)
     target = hash_local_tree(_instance_scripts_dir(host.name, instance.id), extensions=PLUGIN_EXTENSIONS)
     return diff_trees(source, target)
 
