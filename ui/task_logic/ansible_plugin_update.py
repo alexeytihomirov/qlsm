@@ -5,10 +5,9 @@
 # the two diffs the check produces:
 #
 #  - host common pool: re-runs the existing update_common_plugins.yml
-#    playbook (full rsync --checksum sync of ql-assets -> the host's shared
-#    pool dir) — cheap, idempotent, and safe to run even though it isn't
-#    scoped to exactly the files the operator ticked, because --checksum
-#    only ever transfers files that actually differ.
+#    playbook (full rsync --archive --delete sync of ql-assets -> the host's
+#    shared pool dir) — cheap and idempotent, and safe to run even though it
+#    isn't scoped to exactly the files the operator ticked.
 #  - instance-selected plugins: a plain local file copy from the ql-assets
 #    pool into configs/{host}/{instance}/scripts/ — no SSH involved, since
 #    that directory lives on the qlsm controller itself. The next restart
@@ -25,11 +24,21 @@ from flask import current_app
 
 from ui.models import HostStatus, InstanceStatus
 from ui.database import get_host, update_host, update_instance
-from ui.plugin_manifest import MINQLX_PLUGINS_POOL_DIR
+from ui.runtime import host_runtime, runtime_extravars, runtime_paths
 from .ansible_runner import _run_host_ansible_playbook
 
 
 log = logging.getLogger(__name__)
+
+
+def _pool_dir_for_host(host):
+    """The ql-assets pool matching this host's runtime, e.g.
+    ql-assets/data/minqlx-plugins/. Resolved through runtime_paths()'s
+    asset_plugins_dir rather than a runtime == 'minqlx' check, so minqlx and
+    minqlxtended-patched (which share this pool) don't need special-casing,
+    and it keeps working once a third runtime shares it too."""
+    pool_name = runtime_paths(host_runtime(host))['asset_plugins_dir']
+    return os.path.abspath(os.path.join('ql-assets', 'data', pool_name))
 
 
 def _copy_selected_plugin_files(host, instance, filenames):
@@ -37,7 +46,7 @@ def _copy_selected_plugin_files(host, instance, filenames):
     selected-scripts directory. Returns (applied, skipped) filename lists.
     filenames are basenames only (os.path.basename applied defensively —
     this list ultimately comes from a JSON request body)."""
-    pool_dir = os.path.abspath(MINQLX_PLUGINS_POOL_DIR)
+    pool_dir = _pool_dir_for_host(host)
     dest_dir = os.path.abspath(os.path.join('configs', host.name, str(instance.id), 'scripts'))
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -75,6 +84,7 @@ def apply_plugin_updates_logic(host_id, apply_common_pool, instance_selections, 
             success, stdout, stderr = _run_host_ansible_playbook(
                 host=host,
                 playbook_name="update_common_plugins.yml",
+                extravars=runtime_extravars(host),
             )
             if not success:
                 current_app.logger.error(f"Failed to update common plugin pool on {host.name}: {stderr}")
