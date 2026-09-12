@@ -31,7 +31,7 @@
 // What upstream does NOT do, and what is left here:
 //   - attribute a segment to a match_id / map;
 //   - name the shipped file after that match instead of the wall clock;
-//   - the two-stage UDT cut (countdown trim, then one shared server-time window
+//   - the two-stage cut (countdown trim, then one shared server-time window
 //     across every POV of the match) and the per-POV snapshot index;
 //   - the demo_recording_started / demo_match_finalized Python events.
 //
@@ -92,7 +92,7 @@
 #include "features/demo_match.h"
 #include "features/demos.h"
 #include "engine/quake_common.h"
-#include "udt/bridge.h"
+#include "democut/democut.h"
 
 #ifndef NOPY
 #include "python/pyminqlxtended.h"
@@ -113,7 +113,7 @@ extern serverStatic_t* svs; // defined in dllmain.c
 #define DEMO_MAX_POVS_PER_MATCH 128
 
 // Longer than the 520-byte capture/final paths because the stage directories
-// and UDT's own generated "<name>_CUT_<mm>_<ss>.dm_91" output name are built on
+// and the generated "<name>_CUT_<mm>_<ss>.dm_91" output name are built on
 // top of them.
 #define DEMO_LONG_PATH 768
 
@@ -260,7 +260,7 @@ static void demo_build_pov_name(char* out, size_t n, const char* match_id, const
 }
 
 // ---------------------------------------------------------------------------
-// Finalize thread: finished capture -> two-stage UDT cut -> shipped demo.
+// Finalize thread: finished capture -> two-stage cut -> shipped demo.
 //
 // WHY TWO STAGES:
 //
@@ -292,7 +292,7 @@ static void demo_build_pov_name(char* out, size_t n, const char* match_id, const
 // UNITS: demo_cut()'s start/end are ABSOLUTE server-time milliseconds read back
 // out of the demo itself, never wall clock and never "seconds into the file".
 // job->seed_at is wall time and is deliberately NOT used for any of this. See
-// udt/bridge.h for the evidence behind that.
+// democut/democut.h for the evidence behind that.
 // ---------------------------------------------------------------------------
 
 // Handed from the game thread to the finalize thread as a pointer through the
@@ -450,7 +450,7 @@ static void demo_purge_dir(const char* dir) {
     rmdir(dir);
 }
 
-// Finds the single .dm_91 UDT wrote into dir. bridge.h's contract is that the
+// Finds the single .dm_91 demo_cut() wrote into dir. democut.h's contract is that the
 // caller gives demo_cut() a directory it owns exclusively for that one call,
 // which is what makes this safe - there is deliberately no "newest file wins"
 // heuristic here. Returns 1 and fills out on success.
@@ -478,7 +478,7 @@ static int demo_only_output(const char* dir, char* out, size_t out_len) {
     return 1;
 }
 
-// demo_cut() into a scratch directory of our own, returning the path UDT chose.
+// demo_cut() into a scratch directory of our own, returning the path it chose.
 // dir must not exist yet (or must be empty). Returns 1 on success.
 static int demo_cut_into(const char* src, const char* dir, int start_ms, int end_ms, char* out, size_t out_len) {
     demo_mkdir_p(dir);
