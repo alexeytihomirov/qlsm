@@ -160,7 +160,7 @@ def test_returns_all_instances(client, app):
 def test_matches_list_no_auth(client, app):
     """Missing Authorization header returns 401 before touching task logic."""
     instance_id = _create_test_instance(app)
-    with patch(f'{DEMOS_MODULE}.list_instance_demos') as mock_list:
+    with patch(f'{DEMOS_MODULE}.list_instance_qlmatches') as mock_list:
         resp = client.get(f'/api/v1/instances/{instance_id}/matches')
     assert resp.status_code == 401
     mock_list.assert_not_called()
@@ -168,41 +168,28 @@ def test_matches_list_no_auth(client, app):
 
 def test_matches_list_missing_instance_returns_404(client, app):
     key = _generate_key(client, app)
-    with patch(f'{DEMOS_MODULE}.list_instance_demos') as mock_list:
+    with patch(f'{DEMOS_MODULE}.list_instance_qlmatches') as mock_list:
         resp = client.get('/api/v1/instances/999999/matches',
                           headers={'Authorization': f'Bearer {key}'})
     assert resp.status_code == 404
     mock_list.assert_not_called()
 
 
-def _fake_manifest_read(manifests):
-    """Build a read_qlmatch_manifest side_effect from {filename: (match_id, map)}."""
-    def _read(instance_id, filename):
-        if filename not in manifests:
-            return False, None, 'no manifest'
-        match_id, map_name = manifests[filename]
-        return True, {'match_id': match_id, 'map': map_name}, None
-    return _read
-
-
-@patch(f'{DEMOS_MODULE}.read_qlmatch_manifest', side_effect=_fake_manifest_read({
-    # Pack filename is templated (qlx_qlmatchNameTemplate) and does NOT
-    # share a base name with its sidecar - has_replay must come from the
-    # pack's manifest.json (match_id/map), not from editing this filename.
-    'duel_phrantic_Input-a3.qlmatch': ('20260827T170920Z', 'phrantic'),
-    'nopair.qlmatch': ('20260827T180000Z', 'phrantic'),
-}))
-@patch(f'{DEMOS_MODULE}.list_instance_demos', return_value=(
+@patch(f'{DEMOS_MODULE}.list_instance_qlmatches', return_value=(
     True,
     [
-        {'name': '20260827T170920Z_phrantic.replay.json.gz', 'size': 30, 'mtime': 3.0},
-        {'name': 'duel_phrantic_Input-a3.qlmatch', 'size': 20, 'mtime': 2.0},
-        {'name': 'nopair.qlmatch', 'size': 10, 'mtime': 1.0},
-        {'name': '20260827T170920Z_phrantic_p0_a3_1_1.dm_91', 'size': 5, 'mtime': 2.5},
+        {
+            'name': 'duel_phrantic_Input-a3.qlmatch', 'size': 20, 'mtime': 2.0,
+            'has_replay': True, 'replay_name': '20260827T170920Z_phrantic.replay.json.gz',
+        },
+        {
+            'name': 'nopair.qlmatch', 'size': 10, 'mtime': 1.0,
+            'has_replay': False, 'replay_name': None,
+        },
     ],
     None,
 ))
-def test_matches_list_filters_to_qlmatch_and_flags_replay(mock_list, mock_manifest, client, app):
+def test_matches_list_returns_qlmatches_with_replay_flag(mock_list, client, app):
     key = _generate_key(client, app)
     instance_id = _create_test_instance(app)
     resp = client.get(f'/api/v1/instances/{instance_id}/matches',
@@ -211,7 +198,6 @@ def test_matches_list_filters_to_qlmatch_and_flags_replay(mock_list, mock_manife
     data = resp.get_json()['data']
     assert data['instance_name'] == 'ext-test-inst'
     matches = {m['name']: m for m in data['matches']}
-    assert set(matches) == {'duel_phrantic_Input-a3.qlmatch', 'nopair.qlmatch'}
     assert matches['duel_phrantic_Input-a3.qlmatch']['has_replay'] is True
     assert matches['duel_phrantic_Input-a3.qlmatch']['replay_name'] == \
         '20260827T170920Z_phrantic.replay.json.gz'
@@ -220,7 +206,7 @@ def test_matches_list_filters_to_qlmatch_and_flags_replay(mock_list, mock_manife
     mock_list.assert_called_once_with(instance_id)
 
 
-@patch(f'{DEMOS_MODULE}.list_instance_demos', return_value=(False, [], 'boom'))
+@patch(f'{DEMOS_MODULE}.list_instance_qlmatches', return_value=(False, [], 'boom'))
 def test_matches_list_failure_returns_500(mock_list, client, app):
     key = _generate_key(client, app)
     instance_id = _create_test_instance(app)

@@ -250,8 +250,11 @@ def qlmatch_sidecar_name(match_id, map_name):
     return f"{match_id}_{map_name}{SIDECAR_EXT}"
 
 
-def read_qlmatch_manifest(instance_id, filename):
-    """Read {match_id, map} out of a .qlmatch pack's manifest.json.
+def _manifest_from_pack(sftp, demo_dir, filename):
+    """Read {match_id, map} out of a .qlmatch pack's manifest.json, using an
+    already-open SFTP session (caller owns connect/close - this must never
+    open its own, so a listing that checks many packs pays for one SSH
+    handshake total, not one per pack).
 
     Opens the remote pack through a seekable SFTP file handle and hands it
     straight to zipfile, so only the central directory and the small
@@ -260,6 +263,41 @@ def read_qlmatch_manifest(instance_id, filename):
     restore/qlmatch.py's _pack_summary() already does locally on the game
     server; needed here because a pack's own filename does not reliably
     encode match_id/map (qlx_qlmatchNameTemplate can template it to anything).
+
+    Returns a tuple: (manifest: dict or None, error_msg: str or None) where
+    manifest is {"match_id": str, "map": str}.
+    """
+    try:
+        with sftp.open(f"{demo_dir}/{filename}", 'rb') as fh:
+            with zipfile.ZipFile(fh) as zf:
+                raw = zf.read('manifest.json')
+    except FileNotFoundError:
+        return None, "Qlmatch file not found on the remote host."
+    except (KeyError, zipfile.BadZipFile) as exc:
+        return None, f"Could not read manifest.json from pack: {exc}"
+
+    try:
+        manifest = json.loads(raw.decode('utf-8'))
+    except (ValueError, UnicodeDecodeError) as exc:
+        return None, f"Malformed manifest.json: {exc}"
+
+    if not isinstance(manifest, dict):
+        return None, "Malformed manifest.json: not an object."
+
+    match_id = str(manifest.get('match_id') or '')
+    map_name = str(manifest.get('map') or '')
+    if not match_id or not map_name:
+        return None, "manifest.json missing match_id or map."
+
+    return {'match_id': match_id, 'map': map_name}, None
+
+
+def read_qlmatch_manifest(instance_id, filename):
+    """Read {match_id, map} out of a single named .qlmatch pack's manifest.json.
+
+    Opens its own one-off SFTP session - fine for a single lookup (e.g. the
+    download-by-name endpoints), but NOT what list_instance_qlmatches uses
+    for a whole directory: see _manifest_from_pack for why.
 
     Returns a tuple: (success: bool, manifest: dict or None, error_msg: str
     or None) where manifest is {"match_id": str, "map": str}.
@@ -278,29 +316,10 @@ def read_qlmatch_manifest(instance_id, filename):
         demo_dir = _demo_dir(instance)
         client, sftp = _open_sftp(host)
 
-        try:
-            with sftp.open(f"{demo_dir}/{filename}", 'rb') as fh:
-                with zipfile.ZipFile(fh) as zf:
-                    raw = zf.read('manifest.json')
-        except FileNotFoundError:
-            return False, None, "Qlmatch file not found on the remote host."
-        except (KeyError, zipfile.BadZipFile) as exc:
-            return False, None, f"Could not read manifest.json from pack: {exc}"
-
-        try:
-            manifest = json.loads(raw.decode('utf-8'))
-        except (ValueError, UnicodeDecodeError) as exc:
-            return False, None, f"Malformed manifest.json: {exc}"
-
-        if not isinstance(manifest, dict):
-            return False, None, "Malformed manifest.json: not an object."
-
-        match_id = str(manifest.get('match_id') or '')
-        map_name = str(manifest.get('map') or '')
-        if not match_id or not map_name:
-            return False, None, "manifest.json missing match_id or map."
-
-        return True, {'match_id': match_id, 'map': map_name}, None
+        manifest, error_msg = _manifest_from_pack(sftp, demo_dir, filename)
+        if error_msg:
+            return False, None, error_msg
+        return True, manifest, None
 
     except (paramiko.AuthenticationException, paramiko.SSHException, OSError) as exc:
         log.error(f"SSH failure reading qlmatch manifest for instance {instance_id}: {exc}")
@@ -308,6 +327,75 @@ def read_qlmatch_manifest(instance_id, filename):
     except Exception as e:
         log.exception(f"Exception reading qlmatch manifest for instance {instance_id}: {e}")
         return False, None, "Failed to read qlmatch manifest."
+    finally:
+        if client is not None:
+            client.close()
+
+
+def list_instance_qlmatches(instance_id):
+    """List .qlmatch packs for an instance, flagging replay-sidecar availability.
+
+    Lists the demos/ directory and reads every pack's manifest.json within
+    a SINGLE SFTP session - list_instance_demos() plus one
+    read_qlmatch_manifest() call per pack would each open their own SSH
+    connection, which turns an instance with a handful of packs into a
+    handful of sequential SSH handshakes (seconds) for what should be one
+    `listdir` and a few small in-session reads (well under a second).
+
+    Returns a tuple: (success: bool, matches: list[dict], error_msg: str or
+    None) where each dict is {"name", "size", "mtime", "has_replay",
+    "replay_name"}, newest first.
+    """
+    client = None
+    try:
+        instance, host, instance_error = _resolve_instance(instance_id)
+        if instance_error:
+            log.error(f"Cannot list qlmatches for instance {instance_id}: {instance_error}")
+            return False, [], instance_error
+
+        demo_dir = _demo_dir(instance)
+        log.info(f"Listing qlmatches for instance {instance_id} on host {host.name}...")
+
+        client, sftp = _open_sftp(host)
+        try:
+            entries = sftp.listdir_attr(demo_dir)
+        except FileNotFoundError:
+            entries = []
+
+        demos = [
+            {'name': entry.filename, 'size': entry.st_size, 'mtime': entry.st_mtime}
+            for entry in entries
+            if entry.st_mode is not None and stat_module.S_ISREG(entry.st_mode)
+            and DEMO_FILENAME_RE.fullmatch(entry.filename)
+        ]
+        names = {d['name'] for d in demos}
+
+        matches = []
+        for d in demos:
+            if not d['name'].endswith('.qlmatch'):
+                continue
+            manifest, _error_msg = _manifest_from_pack(sftp, demo_dir, d['name'])
+            replay_name = (
+                qlmatch_sidecar_name(manifest['match_id'], manifest['map'])
+                if manifest else None
+            )
+            matches.append({
+                'name': d['name'],
+                'size': d['size'],
+                'mtime': d['mtime'],
+                'has_replay': bool(replay_name) and replay_name in names,
+                'replay_name': replay_name if replay_name in names else None,
+            })
+
+        matches.sort(key=lambda m: m.get('mtime') or 0, reverse=True)
+        return True, matches, None
+
+    except (paramiko.AuthenticationException, paramiko.SSHException, OSError) as exc:
+        log.error(f"SSH failure listing qlmatches for instance {instance_id}: {exc}")
+        return False, [], "Failed to list qlmatches from remote host."
+    except Exception as e:
+        log.exception(f"Exception listing qlmatches for instance {instance_id}: {e}")
+        return False, [], "Failed to list qlmatches."
     finally:
         if client is not None:
             client.close()

@@ -54,11 +54,10 @@ def _require_instance(instance_id):
 def external_list_instance_matches(instance_id):
     """List recorded .qlmatch demos for an instance, flagging replay availability.
 
-    Secured via Bearer token (API key), not JWT cookies. Reuses the same
-    SFTP-backed listing ansible_instance_demos.py already exposes to the
-    JWT-authenticated /instances/<id>/demos endpoint in instance_routes.py,
-    filtered down to .qlmatch packs (the per-POV .dm_91 files and packer logs
-    aren't useful to an external consumer of this API).
+    Secured via Bearer token (API key), not JWT cookies. Delegates to
+    ansible_instance_demos.list_instance_qlmatches(), which lists the
+    instance's demos/ directory and reads each pack's manifest.json (for
+    replay-sidecar pairing) inside one SFTP session - not one per pack.
     """
     ok, err_response = require_api_key()
     if not ok:
@@ -68,35 +67,11 @@ def external_list_instance_matches(instance_id):
     if err_response:
         return err_response
 
-    from ui.task_logic.ansible_instance_demos import (
-        list_instance_demos, qlmatch_sidecar_name, read_qlmatch_manifest,
-    )
+    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
 
-    success, demos, error_msg = list_instance_demos(instance_id)
+    success, matches, error_msg = list_instance_qlmatches(instance_id)
     if not success:
         return jsonify({'error': {'message': error_msg}}), 500
-
-    names = {d['name'] for d in demos}
-    matches = []
-    for d in demos:
-        if not d['name'].endswith(_QLMATCH_SUFFIX):
-            continue
-        # A pack's own filename doesn't reliably encode match_id/map (the
-        # operator-configurable qlx_qlmatchNameTemplate can template it to
-        # anything), so the sidecar name has to come from the pack's own
-        # manifest.json, not from string-editing this filename.
-        manifest_ok, manifest, _manifest_err = read_qlmatch_manifest(instance_id, d['name'])
-        replay_name = (
-            qlmatch_sidecar_name(manifest['match_id'], manifest['map'])
-            if manifest_ok else None
-        )
-        matches.append({
-            'name': d['name'],
-            'size': d['size'],
-            'mtime': d['mtime'],
-            'has_replay': replay_name in names if replay_name else False,
-            'replay_name': replay_name if replay_name in names else None,
-        })
 
     return jsonify({'data': {'matches': matches, 'instance_name': instance.name}})
 

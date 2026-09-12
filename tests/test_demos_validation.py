@@ -552,3 +552,122 @@ def test_manifest_missing_match_id_or_map_returns_error():
     assert success is False
     assert manifest is None
     assert 'match_id or map' in error
+
+
+# --- list_instance_qlmatches ---
+#
+# Real incident: the first version of this listing opened one SSH
+# connection for the directory listing, then ANOTHER per .qlmatch pack to
+# read its manifest.json - an instance with a handful of packs turned into
+# a handful of sequential SSH handshakes (seconds), where a single `listdir`
+# plus a few small in-session reads should be well under a second. These
+# tests guard that the whole listing runs over exactly one SFTP session.
+
+_DEMO_DIR = '/home/ql/qlds-27960/demos'
+
+
+def _sftp_open_side_effect(contents):
+    """contents: {filename: BytesIO-or-similar}. Missing keys raise
+    FileNotFoundError, matching real SFTP behaviour."""
+    def _open(path, mode):
+        name = path[len(_DEMO_DIR) + 1:]
+        if name not in contents:
+            raise FileNotFoundError()
+        cm = MagicMock()
+        cm.__enter__.return_value = contents[name]
+        return cm
+    return _open
+
+
+def test_list_qlmatches_uses_a_single_ssh_connection_for_multiple_packs():
+    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+
+    sftp = MagicMock()
+    sftp.listdir_attr.return_value = [
+        _attr('a.qlmatch', 100, 3.0),
+        _attr('b.qlmatch', 100, 2.0),
+        _attr('c.qlmatch', 100, 1.0),
+    ]
+    sftp.open.side_effect = _sftp_open_side_effect({
+        'a.qlmatch': _fake_qlmatch_zip({'match_id': 'A', 'map': 'phrantic'}),
+        'b.qlmatch': _fake_qlmatch_zip({'match_id': 'B', 'map': 'phrantic'}),
+        'c.qlmatch': _fake_qlmatch_zip({'match_id': 'C', 'map': 'phrantic'}),
+    })
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient',
+               return_value=_mock_ssh_client(sftp)) as mock_cls:
+        success, matches, error = list_instance_qlmatches(1)
+
+    assert success is True
+    assert error is None
+    assert len(matches) == 3
+    # One SSHClient() call for the whole listing, not one per pack.
+    mock_cls.assert_called_once()
+
+
+def test_list_qlmatches_pairs_replay_via_manifest_not_filename():
+    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+
+    sftp = MagicMock()
+    sftp.listdir_attr.return_value = [
+        # Templated name (qlx_qlmatchNameTemplate) - does not share a base
+        # name with its sidecar below.
+        _attr('duel_phrantic_Input-a3.qlmatch', 100, 2.0),
+        _attr('20260902T210633Z_phrantic.replay.json.gz', 50, 2.5),
+        _attr('nopair.qlmatch', 100, 1.0),
+    ]
+    sftp.open.side_effect = _sftp_open_side_effect({
+        'duel_phrantic_Input-a3.qlmatch':
+            _fake_qlmatch_zip({'match_id': '20260902T210633Z', 'map': 'phrantic'}),
+        'nopair.qlmatch': _fake_qlmatch_zip({'match_id': '20260902T220000Z', 'map': 'phrantic'}),
+    })
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, matches, error = list_instance_qlmatches(1)
+
+    assert success is True
+    assert error is None
+    by_name = {m['name']: m for m in matches}
+    assert by_name['duel_phrantic_Input-a3.qlmatch']['has_replay'] is True
+    assert by_name['duel_phrantic_Input-a3.qlmatch']['replay_name'] == \
+        '20260902T210633Z_phrantic.replay.json.gz'
+    assert by_name['nopair.qlmatch']['has_replay'] is False
+    assert by_name['nopair.qlmatch']['replay_name'] is None
+
+
+def test_list_qlmatches_unreadable_manifest_reports_no_replay_not_error():
+    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+
+    sftp = MagicMock()
+    sftp.listdir_attr.return_value = [_attr('broken.qlmatch', 100, 1.0)]
+    sftp.open.side_effect = _sftp_open_side_effect({
+        'broken.qlmatch': io.BytesIO(b'not a zip file'),
+    })
+
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(MagicMock(port=27960), _fake_host(), None)), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient', return_value=_mock_ssh_client(sftp)):
+        success, matches, error = list_instance_qlmatches(1)
+
+    assert success is True
+    assert error is None
+    assert matches == [{
+        'name': 'broken.qlmatch', 'size': 100, 'mtime': 1.0,
+        'has_replay': False, 'replay_name': None,
+    }]
+
+
+def test_list_qlmatches_missing_instance_returns_error_before_ssh():
+    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+    with patch(f'{FETCH_MODULE}._resolve_instance',
+               return_value=(None, None, 'Instance 1 not found.')), \
+         patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
+        success, matches, error = list_instance_qlmatches(1)
+    assert success is False
+    assert matches == []
+    assert error == 'Instance 1 not found.'
+    mock_cls.assert_not_called()
