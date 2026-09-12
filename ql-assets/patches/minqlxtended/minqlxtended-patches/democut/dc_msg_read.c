@@ -51,7 +51,6 @@ int dc_msg_read_bits(dc_msg_t *msg, int bits) {
     int get;
     int sgn;
     int i, nbits;
-    const dc_huff_t *huff = dc_huff_static();
 
     if (msg->readcount > msg->cursize) {
         return 0;
@@ -72,14 +71,19 @@ int dc_msg_read_bits(dc_msg_t *msg, int bits) {
             msg->readOverrun = 1;
             return 0;
         }
+        // The coder's own single-bit read, inlined. This loop runs once per
+        // delta-field "changed?" flag, which makes it the hottest thing in the
+        // parser by call count; going through a function that parks the cursor
+        // in a thread-local on every bit cost more than the read itself.
         for (i = 0; i < nbits; i++) {
-            value |= (dc_huff_get_bit(msg->data, &msg->bit) << i);
+            value |= (((msg->data[msg->bit >> 3] >> (msg->bit & 7)) & 1) << i);
+            msg->bit++;
         }
         bits = bits - nbits;
     }
     if (bits) {
         for (i = 0; i < bits; i += 8) {
-            dc_huff_offset_receive(huff->tree, &get, msg->data, &msg->bit, msg->cursize << 3);
+            get = dc_huff_decode_byte(msg->data, &msg->bit, msg->cursize << 3);
             value = (int)((unsigned int)value | ((unsigned int)get << (i + nbits)));
 
             if (msg->bit > msg->cursize << 3) {

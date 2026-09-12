@@ -25,51 +25,23 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "dc_protocol.h"
 
-#define DC_HMAX          256
-#define DC_NYT           DC_HMAX
-#define DC_INTERNAL_NODE (DC_HMAX + 1)
-
-typedef struct dc_node_s {
-    struct dc_node_s *left, *right, *parent;
-    struct dc_node_s *next, *prev;
-    struct dc_node_s **head;
-    int weight;
-    int symbol;
-} dc_node_t;
-
-typedef struct {
-    int blocNode;
-    int blocPtrs;
-
-    dc_node_t *tree;
-    dc_node_t *lhead;
-    dc_node_t *ltail;
-    dc_node_t *loc[DC_HMAX + 1];
-    dc_node_t **freelist;
-
-    dc_node_t nodeList[768];
-    dc_node_t *nodePtrs[768];
-} dc_huff_t;
-
-// The one static tree every .dm_91 message is coded against, built once from
-// the id Tech 3 msg_hData frequency table (dc_msg_hData in dc_huffman.c).
-// Thread-safe and idempotent: call it from every entry point.
+// The static Huffman code every .dm_91 message is coded with. The tree itself
+// and the lookup tables derived from it are private to dc_huffman.c; callers
+// only ever need "give me the next byte" and "put this byte".
 //
-// The engine keeps TWO of these (huffman_t's compressor and decompressor),
-// because Huff_Compress/Huff_Decompress build a tree adaptively as they go and
-// each direction needs its own. The message tree is not adaptive - both sides
-// are built by replaying the same frequency table through the same addRef - so
-// the two are identical by construction and one serves both here. That halves
-// the ~95 ms one-off build and the memory it sits in.
+// Builds the tree on first use. Thread-safe and idempotent, so every entry
+// point can just call it.
 void dc_huff_init_static(void);
 
-// Never NULL after dc_huff_init_static(). Decoding walks ->tree; encoding looks
-// a symbol up in ->loc[].
-const dc_huff_t *dc_huff_static(void);
+// Decodes one symbol starting at bit *offset and advances *offset past it.
+// On running out of input it returns 0 and sets *offset to maxoffset + 1,
+// which is how the message layer detects a truncated block - same contract
+// id Tech 3's Huff_offsetReceive has.
+int dc_huff_decode_byte(const dc_byte *fin, int *offset, int maxoffset);
 
-void dc_huff_put_bit(int bit, dc_byte *fout, int *offset);
-int dc_huff_get_bit(const dc_byte *fin, int *offset);
-void dc_huff_offset_receive(const dc_node_t *node, int *ch, const dc_byte *fin, int *offset, int maxoffset);
-void dc_huff_offset_transmit(const dc_huff_t *huff, int ch, dc_byte *fout, int *offset, int maxoffset);
+// Encodes one symbol at bit *offset and advances *offset past it. Writing past
+// maxoffset leaves *offset at maxoffset + 1, which the message layer turns into
+// an overflow - same contract as Huff_offsetTransmit.
+void dc_huff_encode_byte(int ch, dc_byte *fout, int *offset, int maxoffset);
 
 #endif /* DC_HUFFMAN_H */

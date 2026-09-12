@@ -36,6 +36,67 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <string.h>
 
+// ---------------------------------------------------------------------------
+// The tree. Private to this file: callers only ever decode or encode a byte.
+// ---------------------------------------------------------------------------
+
+#define DC_HMAX          256
+#define DC_NYT           DC_HMAX
+#define DC_INTERNAL_NODE (DC_HMAX + 1)
+
+typedef struct dc_node_s {
+    struct dc_node_s *left, *right, *parent;
+    struct dc_node_s *next, *prev;
+    struct dc_node_s **head;
+    int weight;
+    int symbol;
+} dc_node_t;
+
+typedef struct {
+    int blocNode;
+    int blocPtrs;
+
+    dc_node_t *tree;
+    dc_node_t *lhead;
+    dc_node_t *ltail;
+    dc_node_t *loc[DC_HMAX + 1];
+    dc_node_t **freelist;
+
+    dc_node_t nodeList[768];
+    dc_node_t *nodePtrs[768];
+} dc_huff_t;
+
+// ---------------------------------------------------------------------------
+// The lookup tables derived from it, which are what the hot paths actually use.
+//
+// Walking the tree one bit at a time is a dependent pointer chase per bit, and
+// a .dm_91 is nothing but Huffman-coded bytes - it dominated the profile. Both
+// tables are built once, from the finished tree, so the tree stays the single
+// source of truth and a table can never disagree with it: every entry is
+// written by walking the very code the tree defines.
+//
+// DECODE: DC_DECODE_BITS bits of lookahead indexed directly. The bits come off
+// the wire LSB-first within each byte (dc_get_bit), so the index is simply the
+// next DC_DECODE_BITS bits in read order, and every code whose length is <=
+// DC_DECODE_BITS occupies the 2^(DC_DECODE_BITS - len) entries that share it as
+// a prefix. Entry 0 means "this prefix needs more than DC_DECODE_BITS bits" and
+// falls back to the tree walk, so rare deep symbols stay correct.
+//
+// ENCODE: the code and its length per symbol, so a byte is one shift and at
+// most five byte stores instead of a recursive climb to the root.
+// ---------------------------------------------------------------------------
+
+#define DC_DECODE_BITS 11
+#define DC_DECODE_SIZE (1 << DC_DECODE_BITS)
+// Codes can be longer than the lookahead; this only has to hold the longest one
+// this tree produces, which is checked at build time.
+#define DC_MAX_CODE_BITS 32
+
+typedef struct {
+    unsigned int code; // bit i of the code is the i-th bit written/read
+    int len;           // 0 = no code (symbol absent from the tree)
+} dc_code_t;
+
 // id Tech 3 qcommon/msg.c msg_hData[256]: the symbol frequencies the static
 // message tree is built from. Verbatim - the tree, and therefore every
 // bitstream, changes if a single number here does.
@@ -82,25 +143,10 @@ static const int dc_msg_hData[256] = {
 // library might).
 static _Thread_local int dc_bloc = 0;
 
-void dc_huff_put_bit(int bit, dc_byte *fout, int *offset) {
-    dc_bloc = *offset;
-    if ((dc_bloc & 7) == 0) {
-        fout[(dc_bloc >> 3)] = 0;
-    }
-    fout[(dc_bloc >> 3)] |= bit << (dc_bloc & 7);
-    dc_bloc++;
-    *offset = dc_bloc;
-}
-
-int dc_huff_get_bit(const dc_byte *fin, int *offset) {
-    int t;
-    dc_bloc = *offset;
-    t       = (fin[(dc_bloc >> 3)] >> (dc_bloc & 7)) & 0x1;
-    dc_bloc++;
-    *offset = dc_bloc;
-    return t;
-}
-
+// The sub-byte remainder a message carries uncompressed is read and written
+// inline by dc_msg_read.c / dc_msg_write.c - it is far too hot to route through
+// a call that saves and restores the coder's cursor per bit. What stays here is
+// only what the tree walk below needs.
 static void dc_add_bit(char bit, dc_byte *fout) {
     if ((dc_bloc & 7) == 0) {
         fout[(dc_bloc >> 3)] = 0;
@@ -302,7 +348,8 @@ static void dc_huff_add_ref(dc_huff_t *huff, dc_byte ch) {
     }
 }
 
-void dc_huff_offset_receive(const dc_node_t *node, int *ch, const dc_byte *fin, int *offset, int maxoffset) {
+static void dc_huff_offset_receive(const dc_node_t *node, int *ch, const dc_byte *fin, int *offset,
+                                   int maxoffset) {
     dc_bloc = *offset;
     while (node && node->symbol == DC_INTERNAL_NODE) {
         if (dc_bloc >= maxoffset) {
@@ -342,7 +389,8 @@ static void dc_send(const dc_node_t *node, const dc_node_t *child, dc_byte *fout
     }
 }
 
-void dc_huff_offset_transmit(const dc_huff_t *huff, int ch, dc_byte *fout, int *offset, int maxoffset) {
+static void dc_huff_offset_transmit(const dc_huff_t *huff, int ch, dc_byte *fout, int *offset,
+                                    int maxoffset) {
     if (ch < 0 || ch > DC_HMAX || huff->loc[ch] == NULL) {
         // Impossible against the fully-populated static tree (every one of the
         // 256 symbols has a non-zero frequency in dc_msg_hData), but a missing
@@ -355,7 +403,40 @@ void dc_huff_offset_transmit(const dc_huff_t *huff, int ch, dc_byte *fout, int *
 }
 
 static dc_huff_t dc_msgHuff;
+static unsigned short dc_decodeLut[DC_DECODE_SIZE]; // (symbol << 4) | length, 0 = miss
+static dc_code_t dc_encodeTable[DC_HMAX + 1];
 static int dc_msgHuffReady = 0;
+
+// Walks the finished tree and records, for every leaf, the bit path that
+// reaches it - in the SAME order the coder emits and consumes those bits
+// (dc_send writes root-to-leaf, dc_get_bit reads them in that order), so bit i
+// of `code` is the i-th bit on the wire. Fills both tables from that one walk.
+static void dc_build_tables(const dc_node_t *node, unsigned int code, int len) {
+    if (node == NULL) {
+        return;
+    }
+    if (node->symbol != DC_INTERNAL_NODE) {
+        if (node->symbol >= 0 && node->symbol <= DC_HMAX && len > 0 && len <= DC_MAX_CODE_BITS) {
+            dc_encodeTable[node->symbol].code = code;
+            dc_encodeTable[node->symbol].len  = len;
+
+            if (len <= DC_DECODE_BITS) {
+                // Every lookahead window that starts with this code decodes to
+                // this symbol; the remaining DC_DECODE_BITS - len bits belong to
+                // whatever follows and are simply not consumed.
+                const unsigned int step = 1u << len;
+                for (unsigned int i = code; i < DC_DECODE_SIZE; i += step) {
+                    dc_decodeLut[i] = (unsigned short)((node->symbol << 4) | len);
+                }
+            }
+        }
+        return;
+    }
+    if (len < DC_MAX_CODE_BITS) {
+        dc_build_tables(node->left, code, len + 1);
+        dc_build_tables(node->right, code | (1u << len), len + 1);
+    }
+}
 
 // Huff_Init's own seeding, for the single tree this file keeps: start with just
 // the NYT node, which every later addRef splits away from.
@@ -394,12 +475,77 @@ void dc_huff_init_static(void) {
                 dc_huff_add_ref(&dc_msgHuff, (dc_byte)i);
             }
         }
+        memset(dc_decodeLut, 0, sizeof(dc_decodeLut));
+        memset(dc_encodeTable, 0, sizeof(dc_encodeTable));
+        dc_build_tables(dc_msgHuff.tree, 0, 0);
         __atomic_store_n(&dc_msgHuffReady, 1, __ATOMIC_RELEASE);
     }
     __atomic_store_n(&building, 0, __ATOMIC_RELEASE);
 }
 
-const dc_huff_t *dc_huff_static(void) {
+// ---------------------------------------------------------------------------
+// The two entry points the message layer uses.
+// ---------------------------------------------------------------------------
+
+int dc_huff_decode_byte(const dc_byte *fin, int *offset, int maxoffset) {
     dc_huff_init_static();
-    return &dc_msgHuff;
+
+    const int bloc = *offset;
+    const int byteIndex = bloc >> 3;
+
+    // Fast path only when a whole 32-bit window is inside the buffer, which also
+    // guarantees at least 25 readable bits - more than any code the table
+    // answers for. Everything else (the last few bytes of a message, and any
+    // code longer than the lookahead) goes down the tree walk, which is the
+    // definition this table was built from.
+    if (byteIndex + 4 <= (maxoffset >> 3)) {
+        const unsigned int window = ((unsigned int)fin[byteIndex]) | ((unsigned int)fin[byteIndex + 1] << 8) |
+                                    ((unsigned int)fin[byteIndex + 2] << 16) |
+                                    ((unsigned int)fin[byteIndex + 3] << 24);
+        const unsigned short entry = dc_decodeLut[(window >> (bloc & 7)) & (DC_DECODE_SIZE - 1)];
+        if (entry != 0) {
+            *offset = bloc + (int)(entry & 15);
+            return (int)(entry >> 4);
+        }
+    }
+
+    int ch = 0;
+    dc_huff_offset_receive(dc_msgHuff.tree, &ch, fin, offset, maxoffset);
+    return ch;
+}
+
+void dc_huff_encode_byte(int ch, dc_byte *fout, int *offset, int maxoffset) {
+    dc_huff_init_static();
+
+    if (ch < 0 || ch > DC_HMAX) {
+        return;
+    }
+    const dc_code_t code = dc_encodeTable[ch];
+    const int bloc       = *offset;
+
+    // The slow path also owns the truncation behaviour (stop at maxoffset and
+    // leave the cursor one past it), so anything that would not fit whole is
+    // handed to it rather than half-written here.
+    if (code.len > 0 && bloc + code.len <= maxoffset) {
+        const int byteIndex = bloc >> 3;
+        const int shift     = bloc & 7;
+        const unsigned long long value = (unsigned long long)code.code << shift;
+        const int byteCount            = (shift + code.len + 7) >> 3;
+
+        // Mirrors dc_add_bit exactly: the first byte is only zeroed when this
+        // write starts it, every later byte is started by this write and so is
+        // assigned rather than OR-ed.
+        if (shift == 0) {
+            fout[byteIndex] = (dc_byte)(value & 0xff);
+        } else {
+            fout[byteIndex] |= (dc_byte)(value & 0xff);
+        }
+        for (int i = 1; i < byteCount; i++) {
+            fout[byteIndex + i] = (dc_byte)((value >> (8 * i)) & 0xff);
+        }
+        *offset = bloc + code.len;
+        return;
+    }
+
+    dc_huff_offset_transmit(&dc_msgHuff, ch, fout, offset, maxoffset);
 }

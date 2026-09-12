@@ -26,6 +26,17 @@ int qlhub_pickup_lock_active(void) {
     return qlhub_pickup_lock ? 1 : 0;
 }
 
+/* Everything from here to qlhub_dispatch_item_event() exists only to feed the
+ * Python side, so it is all compiled out of a NOPY build. That has to include
+ * the declaration and the static helpers, not just the call site: the only
+ * caller (QLHub_ReportItemPickup, below) is already inside #ifndef NOPY, but an
+ * unoptimised build still emits an unreferenced static function, so at -O0
+ * qlhub_dispatch_item_event survived and dragged ItemEventDispatcher - a
+ * python_dispatchers.c symbol that does not exist in a NOPY link - in with it.
+ * `make nopy` happened to work because -O2 discards the dead static first;
+ * `make nopy_debug` (-O0 -DNOPY) did not link at all. */
+#ifndef NOPY
+
 /* itemType_t from quake_common.h (IT_BAD=0). Only the two variants that share
  * giTag=0 and need quantity to disambiguate; qlhub_item_classname() falls
  * back to ent->item->classname (or ent->classname) for everything else. */
@@ -136,6 +147,8 @@ static void qlhub_dispatch_item_event(int action, const gentity_t* ent, const ge
         ent->r.currentOrigin[2],
         level ? level->time : 0);
 }
+
+#endif /* NOPY */
 
 /*
  * Called from inside upstream's own My_Touch_Item, from within the
