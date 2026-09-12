@@ -69,6 +69,13 @@ with both cutters over five windows derived from its own server-time range and
 compares the outputs with `cmp`. Both print a one-line tally and append details
 to `diffout/failures.txt` / `diffout/cut_failures.txt`.
 
+**Run one at a time.** Each script takes its own `mktemp -d`, so two concurrent
+runs no longer collide - but an older revision used fixed `./c1` and `./c2`, and
+a stray background copy racing the foreground one produced a wall of DIFF lines
+where each compared one demo's cut against an unrelated demo's. If a DIFF line
+ever names two outputs that do not both derive from the source named on the same
+line, that is the harness, not the cutter.
+
 ## Files
 
 | file | what it is |

@@ -31,7 +31,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <string.h>
 
 void dc_msg_write_bits(dc_msg_t *msg, int value, int bits) {
-    const dc_huff_t *huff = dc_huff_static();
     int i;
 
     if (msg->overflowed) {
@@ -53,15 +52,22 @@ void dc_msg_write_bits(dc_msg_t *msg, int value, int bits) {
             msg->overflowed = 1;
             return;
         }
+        // The coder's own single-bit write, inlined - mirror of the read side
+        // in dc_msg_read.c, including "zero the byte this write starts".
         for (i = 0; i < nbits; i++) {
-            dc_huff_put_bit((value & 1), msg->data, &msg->bit);
+            const int byteIndex = msg->bit >> 3;
+            if ((msg->bit & 7) == 0) {
+                msg->data[byteIndex] = 0;
+            }
+            msg->data[byteIndex] |= (dc_byte)((value & 1) << (msg->bit & 7));
+            msg->bit++;
             value = (int)((unsigned int)value >> 1);
         }
         bits = bits - nbits;
     }
     if (bits) {
         for (i = 0; i < bits; i += 8) {
-            dc_huff_offset_transmit(huff, (value & 0xff), msg->data, &msg->bit, msg->maxsize << 3);
+            dc_huff_encode_byte((value & 0xff), msg->data, &msg->bit, msg->maxsize << 3);
             value = (int)((unsigned int)value >> 8);
 
             if (msg->bit >= msg->maxsize << 3) {
