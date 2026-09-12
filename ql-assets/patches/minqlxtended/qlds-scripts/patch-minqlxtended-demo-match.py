@@ -74,24 +74,15 @@ MK_SOURCES_NEW = (
     "                 src/features/demo_match.c"
 )
 
-# demo_match.c does #include "udt/bridge.h", and udt/ is materialised at the
-# build-tree ROOT by patch-minqlxtended-demo-cutter.py - not under src/, which is
-# the only -I the stock Makefile has. GCC does not put the working directory on
-# the quoted-include path by itself, so without this the include does not resolve.
+# demo_match.c's own include of the cutter - #include "democut/democut.h" -
+# needs no extra include path: patch-minqlxtended-demo-cutter.py places those
+# sources under src/, and the stock Makefile already has -Isrc. (The vendored
+# UDT tree this replaced lived at the build-tree ROOT, outside that -I, which is
+# why this block used to add a -I. of its own.)
 #
-# patch-minqlxtended-item-respawn.py needs the same -I. for its own build-tree-root
-# header and runs BEFORE this script in the orchestrator's list, so in the real
-# order the line is usually already there. Guard on the line itself rather than on
-# who wrote it (same check item-respawn.py uses): a duplicate -I. is harmless to
-# the compiler but makes the composed Makefile look like a patch ran twice.
-MK_CFLAGS_ANCHOR = "CFLAGS += $(EXTRA_CFLAGS)"
-MK_CFLAGS_MARKER = "CFLAGS += -I."
-MK_CFLAGS_NEW = (
-    "CFLAGS += $(EXTRA_CFLAGS)\n"
-    "# src/features/demo_match.c includes \"udt/bridge.h\", which the demo-cutter\n"
-    "# patch places at the build-tree root rather than under src/.\n"
-    "CFLAGS += -I."
-)
+# patch-minqlxtended-item-respawn.py still adds -I. for ITS build-tree-root
+# header and runs BEFORE this script, so a fully patched tree usually has the
+# line anyway. Nothing here depends on it.
 
 # ---------------------------------------------------------------------------
 # src/server/hooks.c
@@ -188,18 +179,16 @@ def _replace(text: str, anchor: str, replacement: str, *, label: str, path: Path
 
 def patch_makefile(text: str, path: Path) -> str:
     # demo_match.c calls demo_cut()/demo_scan()/demo_index() unconditionally, so
-    # without the vendored UDT tree this fails at LINK time with an unhelpful
-    # wall of undefined references. Check for the demo-cutter patch's own marker
-    # first, so the failure is loud and points at the fix.
-    if "UDT_CXX_OBJS" not in text:
+    # without democut this fails at LINK time with an unhelpful wall of
+    # undefined references. Check for the demo-cutter patch's own marker first,
+    # so the failure is loud and points at the fix.
+    if "src/democut/democut.c" not in text:
         raise SystemExit(
-            f"{path}: no UDT_CXX_OBJS - run patch-minqlxtended-demo-cutter.py "
-            "against this build tree first (it wires in the vendored UDT cutter "
+            f"{path}: no src/democut/ sources - run patch-minqlxtended-demo-cutter.py "
+            "against this build tree first (it wires in the demo cutter "
             "demo_match.c depends on unconditionally)"
         )
     text = _replace(text, MK_SOURCES_ANCHOR, MK_SOURCES_NEW, label="COMMON_SOURCES", path=path)
-    if MK_CFLAGS_MARKER not in text:
-        text = _replace(text, MK_CFLAGS_ANCHOR, MK_CFLAGS_NEW, label="CFLAGS += $(EXTRA_CFLAGS)", path=path)
     return text
 
 
@@ -217,7 +206,7 @@ def copy_new_files(root: Path) -> int:
     """Place demo_match.c/.h into the build tree before the Makefile names them.
 
     Content-compared rather than copied unconditionally so a re-run does not bump
-    mtime and force a needless rebuild - same reasoning as the vendored udt/ copy
+    mtime and force a needless rebuild - same reasoning as the democut copy
     in patch-minqlxtended-demo-cutter.py.
 
     Only ever called on a tree this script has NOT already patched. On an

@@ -96,10 +96,10 @@ def main() -> None:
         (SCRIPT_DIR / "patch-minqlxtended-redis-pool.py", []),
         # Native multi-POV demo capture. Order is a hard dependency chain, not
         # a preference:
-        #   demo-cutter copies the vendored udt/ tree in and adds UDT_CXX_OBJS
-        #     + the g++ link/compile rules to the Makefile;
+        #   demo-cutter copies src/democut/ (this repo's own plain-C .dm_91
+        #     reader/cutter) in and appends it to COMMON_SOURCES;
         #   demo-match copies src/features/demo_match.{c,h} in, hooks them into
-        #     src/server/hooks.c, and refuses outright if UDT_CXX_OBJS is not
+        #     src/server/hooks.c, and refuses outright if src/democut/ is not
         #     already in the Makefile - demo_match.c calls demo_cut()/
         #     demo_scan()/demo_index() unconditionally;
         #   demo-bindings replaces the two `// TASK5-HOOK:` comment markers

@@ -30,7 +30,8 @@ MK_ITEM_RESPAWN_SUFFIX = " \\\n                 qlhub_item_respawn.c"
 # #include only searches the including file's own directory by default, so
 # without -I. on the compile line that no longer resolves once python_embed.c
 # is not itself at the build root. patch-minqlxtended-demo-match.py (Task 2)
-# happens to add the same -I. for udt/bridge.h's sake, so in the real
+# used to add the same -I. for the vendored UDT bridge's sake (it no longer
+# needs one, so this is now the only source of -I.), so in the real
 # orchestrator order this is already present by the time this runs - but this
 # script must not silently depend on another task's patch having run, so it
 # adds -I. itself too (idempotent either way: checked by substring, not by
