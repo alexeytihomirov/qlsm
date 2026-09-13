@@ -58,7 +58,7 @@
 
 # The alexeytihomirov/minqlxtended fork: upstream plus the former qlhub patch
 # chain landed as real commits (democut, per-match demo capture + bindings,
-# set_position, blocking redis pool). No patch scripts run against it -- the
+# set_position). No patch scripts run against it -- the
 # item natives of the old chain are covered by upstream v1.1.0's item_touch /
 # respawn_item / writable fields, with the stock fallbacks living in the
 # plugins themselves. The vendored chain under ql-assets/patches/minqlxtended/
@@ -69,7 +69,7 @@
 - name: Set per-runtime build facts (minqlxtended-patched)
   set_fact:
     _engine_repo: "https://github.com/alexeytihomirov/minqlxtended.git"
-    _engine_git_version: "{{ qlds_engine_git_version | default('6ba0cc6b9398f928bc19c371e5db307bfbb09748') }}"
+    _engine_git_version: "{{ qlds_engine_git_version | default('d4316b802060a6a0aa31aa2dc6f1b2a84a405b74') }}"
     _engine_apply_local_patches: false
     _engine_apply_minqlxtended_qlhub_patches: false
     _engine_so_name: "minqlxtended.x64.so"

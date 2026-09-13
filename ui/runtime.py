@@ -76,7 +76,7 @@ _RUNTIME_PATHS = {
     # QLSM's own build: the alexeytihomirov/minqlxtended fork, which is
     # upstream tjone270/minqlxtended plus the former qlhub patch chain landed
     # as real commits (democut + per-match demo capture + demo_arm/demo_disarm
-    # bindings, set_position, a blocking redis pool). The item natives/events
+    # bindings, set_position). The item natives/events
     # of the old chain are NOT in the fork: upstream v1.1.0's item_touch +
     # respawn_item + writable entity fields cover them, and the plugins
     # (match_restore, stream_telemetry_unified) carry the stock fallbacks.
@@ -103,7 +103,7 @@ _RUNTIME_PATHS = {
         'launch_script': 'run_server_x64_minqlxtended.sh',
         'log_filename': 'minqlxtended.log',
         'git_repo': 'https://github.com/alexeytihomirov/minqlxtended.git',
-        'git_version': '6ba0cc6b9398f928bc19c371e5db307bfbb09748',
+        'git_version': 'd4316b802060a6a0aa31aa2dc6f1b2a84a405b74',
         'os_name': 'Ubuntu 24.04 LTS x64',
         'os_family': 'ubuntu',
         'os_type': 'ubuntu',
