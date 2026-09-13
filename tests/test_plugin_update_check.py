@@ -59,13 +59,13 @@ def test_check_common_pool_propagates_error(mock_adhoc, app, temp_config_dir):
     assert error == "unreachable"
 
 
-def test_check_instance_selected_plugins_flags_modified_and_new_pool_files(app, temp_config_dir):
+def test_check_instance_selected_plugins_reports_only_modified_files(app, temp_config_dir):
     pool_dir = os.path.abspath(MINQLX_PLUGINS_POOL_DIR)
     os.makedirs(pool_dir, exist_ok=True)
     with open(os.path.join(pool_dir, 'present.py'), 'w') as f:
         f.write('new version')
     with open(os.path.join(pool_dir, 'never_had.py'), 'w') as f:
-        f.write('added to the pool after this instance was created')
+        f.write('pool-only plugin, delivered by the restart backfill')
 
     with app.app_context():
         from ui.database import db
@@ -80,16 +80,15 @@ def test_check_instance_selected_plugins_flags_modified_and_new_pool_files(app, 
         os.makedirs(scripts_dir, exist_ok=True)
         with open(os.path.join(scripts_dir, 'present.py'), 'w') as f:
             f.write('stale local copy')
+        with open(os.path.join(scripts_dir, 'highfps.py'), 'w') as f:
+            f.write('preset-only plugin, not in the pool')
 
         changes = check_instance_selected_plugins(host, inst)
 
-    names = {c["name"]: c["change"] for c in changes}
-    # present.py: instance has it, pool content differs -> modified
-    assert names.get("present.py") == "modified"
-    # never_had.py: instance's scripts/ predates this pool file -> surfaced as
-    # "added" so it can be picked up via "Check for Updates" instead of a
-    # manual docker cp (the match_restore.py incident this check exists for)
-    assert names.get("never_had.py") == "added"
+    # present.py: instance has it, pool content differs -> modified.
+    # never_had.py (pool only) and highfps.py (instance only) aren't stale
+    # copies, so neither is reported.
+    assert changes == [{"name": "present.py", "change": "modified"}]
 
 
 @patch('ui.task_logic.plugin_update_check.run_host_ansible_adhoc')

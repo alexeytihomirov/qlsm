@@ -22,10 +22,7 @@ The modal has two kinds of sections.
 
 **Common plugin pool.** This is the host's shared copy of QLSM's built-in plugins. Every instance on the host gets these files unless its own plugin set already includes a file with the same name.
 
-**One box per instance.** These are the plugin files that belong to that instance, the same ones you see on its **Plugins** tab. Each file is labelled:
-
-- **updated**: the instance has this file, but QLSM ships a newer version.
-- **new**: QLSM ships this file and the instance doesn't have it yet.
+**One box per instance.** These are the plugin files that belong to that instance, the same ones you see on its **Plugins** tab. A file is listed as **updated** when the instance has its own copy and QLSM ships a different version. Plugins the instance doesn't have its own copy of aren't listed, because the instance already gets them from the common plugin pool.
 
 If everything already matches, the modal says **no updates available**.
 
@@ -33,7 +30,6 @@ If everything already matches, the modal says **no updates available**.
 
 - **Common plugin pool** is ticked when it has changes.
 - **Updated** files are ticked. Updating them replaces the instance's copy, **including any edits you made to that file in the plugin editor**. Untick a file you've customized and want to keep.
-- **New** files start unticked. Tick the ones you want. A new file is only copied to the instance. It doesn't run until you also enable it on the instance's **Plugins** tab.
 - **Restart to apply** is ticked for running instances. An instance only picks up plugin changes when it restarts, and only instances with at least one ticked file are restarted.
 
 Click **Update Selected** to apply your choices.

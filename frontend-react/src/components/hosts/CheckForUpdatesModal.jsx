@@ -13,9 +13,8 @@ function CheckForUpdatesModal({ isOpen, onClose, onSubmit, host, isChecking, che
     const [restartInstances, setRestartInstances] = useState({}); // { [instanceId]: bool }
 
     // Default the common pool to selected (when it has changes) and each
-    // instance's already-stale files to pre-ticked once a check comes back
-    // — newly-added files start unticked, since the operator should opt in
-    // to those explicitly (see the preTicked filter below).
+    // instance's stale files to pre-ticked once a check comes back. The
+    // per-instance diff only reports "modified" files.
     useEffect(() => {
         if (!checkResult) return;
         setUpdateCommonPool((checkResult.common_pool_changes || []).length > 0 && !checkResult.common_pool_error);
@@ -23,13 +22,8 @@ function CheckForUpdatesModal({ isOpen, onClose, onSubmit, host, isChecking, che
         const restarts = {};
         (checkResult.instances || []).forEach(inst => {
             const changed = (inst.selected_plugin_changes || []).filter(c => c.change !== 'removed');
-            // Pre-tick only files this instance already has a stale copy of.
-            // Pre-ticking every "added" file too means one click on an
-            // 8-instance host copies every new pool plugin to all 8 and
-            // restarts them — the operator opts into those explicitly.
-            const preTicked = changed.filter(c => c.change === 'modified');
             if (changed.length > 0) {
-                files[inst.id] = new Set(preTicked.map(c => c.name));
+                files[inst.id] = new Set(changed.map(c => c.name));
                 restarts[inst.id] = !isStopped(inst);
             }
         });

@@ -104,7 +104,9 @@ Read-only diff of `ql-assets/data/<pool>/` (the pool is chosen from
 - **Common pool:** the host's `/home/ql/assets/common/<pool>/`, hashed with
   one ad-hoc `sha256sum` over SSH (15s connect timeout, 30s overall).
 - **Each instance:** `configs/<host_name>/<instance_id>/scripts/`, hashed locally.
-  This is a full-pool diff, so a pool file the instance lacks is reported as `added`.
+  Only files the instance already has are compared, so every entry is
+  `modified`. A pool file missing from `scripts/` isn't reported, because the
+  restart backfill delivers it from the host pool.
 
 Runs synchronously in the request. Requires the host to be `ACTIVE`.
 
@@ -123,8 +125,7 @@ Runs synchronously in the request. Requires the host to be `ACTIVE`.
         "port": 27960,
         "status": "running",
         "selected_plugin_changes": [
-          {"name": "essentials.py", "change": "modified"},
-          {"name": "protect.py", "change": "added"}
+          {"name": "essentials.py", "change": "modified"}
         ]
       }
     ]
@@ -132,9 +133,9 @@ Runs synchronously in the request. Requires the host to be `ACTIVE`.
 }
 ```
 
-`change` is `added` (in the pool, missing from the target), `modified` (hash
-differs) or `removed` (in the target, gone from the pool; reported for
-visibility only, apply never deletes it). If the host can't be read,
+In `common_pool_changes`, `change` is `added` (in the pool, missing from the
+host), `modified` (hash differs) or `removed` (on the host, gone from the pool;
+the refresh deletes it). If the host can't be read,
 `common_pool_changes` is `[]` and `common_pool_error` carries the reason. The
 per-instance diffs are still returned.
 

@@ -13,14 +13,12 @@
 #    that caused the match_restore.py incident: an instance's copy with a
 #    real upstream fix, and no path for that fix to ever reach it.
 #
-#    This diff is intentionally full-pool, not limited to filenames the
-#    instance already has: an instance's scripts/ dir is normally a
-#    creation-time snapshot of a whole preset (see _seed_draft in
-#    draft_routes.py), so a pool file the instance is missing almost always
-#    means the pool grew that file *after* the instance was created — the
-#    exact match_restore.py scenario — not a plugin the operator opted out
-#    of (opt-out is qlx_plugins, a cvar list; it never removes the file).
-#    Reported as "added" and applied the same way as any other change.
+#    Only filenames the instance already has are compared, so this diff
+#    reports "modified" and nothing else. A pool file missing from scripts/
+#    is not stale: the restart backfill already delivers it from the host
+#    pool. Presets also leave pool plugins out on purpose (serverchecker.py
+#    is always delivered that way), so reporting them as "added" flagged
+#    every instance with updates it didn't need.
 #
 # system-hooks (ql-assets/data/system-hooks/) is NOT checked here: that sync
 # task in sync_instance_configs_and_restart.yml runs unconditionally on every
@@ -75,14 +73,12 @@ def check_common_pool(host):
 def check_instance_selected_plugins(host, instance):
     """Diffs ql-assets pool vs this instance's own scripts snapshot
     (configs/{host}/{instance}/scripts/) — purely local, no SSH needed.
-    Full-pool diff, including files the instance doesn't have at all yet
-    (see module docstring) — those come back as "added" and are applied the
-    same way (a plain file copy in ansible_plugin_update.py), so there's no
-    manual docker cp needed to get a new default-preset plugin onto an
-    instance created before that plugin existed."""
+    Only files present in both are compared, so every change is "modified"
+    (see module docstring for why missing pool files aren't reported)."""
     source = hash_local_tree(_pool_dir(host), extensions=PLUGIN_EXTENSIONS)
     target = hash_local_tree(_instance_scripts_dir(host.name, instance.id), extensions=PLUGIN_EXTENSIONS)
-    return diff_trees(source, target)
+    shared = source.keys() & target.keys()
+    return diff_trees({n: source[n] for n in shared}, {n: target[n] for n in shared})
 
 
 def check_host_updates(host):
