@@ -256,7 +256,7 @@ QLSM builds and runs one of two minqlx forks per host: **minqlx** (`MinoMino/min
 | Engine `.so` | `minqlx.x64.so` | `minqlxtended.x64.so` |
 | Launch script | `run_server_x64_minqlx.sh` | `run_server_x64_minqlxtended.sh` |
 | Log filename | `minqlx.log` | `minqlxtended.log` |
-| Git repo / pinned commit | `MinoMino/minqlx` @ `fbdd915185337791d8e209dc4b686a1ee60d3721` | `tjone270/minqlxtended` @ `97fbe6715a4802545aa7eca741d11e2486a306a4` |
+| Git repo / pinned commit | `MinoMino/minqlx` @ `fbdd915185337791d8e209dc4b686a1ee60d3721` | `tjone270/minqlxtended` @ `411591a2f6f8ad26949ee4c83758149d5b95f7ab` |
 | Terraform OS image | Debian 12 x64 (bookworm) | Ubuntu 24.04 LTS x64 |
 | Python floor | none (existing hosts run whatever they already run) | 3.12 (the build links `-lpython3.12`) |
 

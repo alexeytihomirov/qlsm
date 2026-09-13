@@ -9,7 +9,7 @@
     minqlx_shared_dir: "/home/ql/minqlx-shared"
     minqlx_git_version: "fbdd915185337791d8e209dc4b686a1ee60d3721"
     runtime: "minqlx"
-    minqlxtended_git_version: "97fbe6715a4802545aa7eca741d11e2486a306a4"
+    minqlxtended_git_version: "411591a2f6f8ad26949ee4c83758149d5b95f7ab"
     minqlxtended_shared_dir: "/home/ql/minqlxtended-shared"
 
   tasks:

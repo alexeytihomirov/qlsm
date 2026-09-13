@@ -1,6 +1,6 @@
 """A fake `minqlxtended` module, enough to import and exercise a ported plugin.
 
-Mirrors the pinned engine at 97fbe671 (v1.0.2): StrEnum team/state/gametype, a Plugin base
+Mirrors the pinned engine at 411591a2 (v1.1.0): StrEnum team/state/gametype, a Plugin base
 with add_hook/get_cvar/players/db/logger, and a pass-through @thread decorator.
 Event arities are taken from _events.py so a handler with a stale signature
 raises here exactly as the engine would raise at plugin load.
@@ -134,6 +134,7 @@ EVENT_ARITIES = {
     "damage":               5,   # :875  (target, attacker, damage, dflags, mod)  <- minqlxtended only
     "death":                3,   # :812  (victim, killer, mod)  <- differs from minqlx
     "demo_finished":        5,   # :970  (client_id, path, size, discarded, failed)  <- minqlxtended only
+    "demo_stream":          3,   # :980  (connected, endpoint, error)  <- minqlxtended only
     "frame":                0,   # :509  ()
     "game_countdown":       0,   # :690  ()
     "game_end":             1,   # :711  (aborted)  <- differs from minqlx

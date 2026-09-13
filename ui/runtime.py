@@ -53,7 +53,7 @@ _RUNTIME_PATHS = {
         'launch_script': 'run_server_x64_minqlxtended.sh',
         'log_filename': 'minqlxtended.log',
         'git_repo': 'https://github.com/tjone270/minqlxtended.git',
-        'git_version': '97fbe6715a4802545aa7eca741d11e2486a306a4',
+        'git_version': '411591a2f6f8ad26949ee4c83758149d5b95f7ab',
         'os_name': 'Ubuntu 24.04 LTS x64',
         'os_family': 'ubuntu',
         'os_type': 'ubuntu',

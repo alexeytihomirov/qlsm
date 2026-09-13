@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.32.1` | 2026-09-13 | [#210](https://github.com/dngrtech/qlsm/pull/210) | Update minqlxtended to v1.1.0 for new and rebuilt minqlxtended hosts. |
 | `v1.32.0` | 2026-09-12 | [#209](https://github.com/dngrtech/qlsm/pull/209) | Make Redis the only source of truth for minqlx admin levels, and remove **Adopt** from the **Owner & Admins** tab. |
 | `v1.31.1` | 2026-09-11 | [#208](https://github.com/dngrtech/qlsm/pull/208) | Move **Owner & Admins** out of the Configuration Files tab into its own tab next to **Hooks**, in both Edit Config and Add Instance. |
 | `v1.31.0` | 2026-09-11 | [#204](https://github.com/dngrtech/qlsm/pull/204) | Add an **Operators** directory and an **Owner & Admins** panel for assigning server owners and admins from a list instead of typing SteamIDs. Admin levels are applied in-game when the config is saved. |
