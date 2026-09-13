@@ -35,6 +35,8 @@ All endpoints except `/api/auth/login` require authentication via JWT cookie.
 | `/hosts/<id>/logs` | GET | Get host task logs |
 | `/hosts/<id>/available-ports` | GET | Get available ports on the host |
 | `/hosts/<id>/update-workshop` | POST | Force workshop items update on host |
+| `/hosts/<id>/plugin-updates` | GET | Diff shipped plugins against the host's common pool and each instance's plugin files |
+| `/hosts/<id>/plugin-updates/apply` | POST | Apply selected plugin updates, optionally restarting instances |
 | `/hosts/<id>/auto-restart` | POST | Configure host auto-restart schedule |
 | `/hosts/<id>/watchdog` | POST | Enable/disable and tune the ql-watchdog add-on |
 
@@ -88,6 +90,99 @@ enabling it installs `gdb` on the host.
 ```json
 {"data": {"task_id": "..."}, "message": "Watchdog configuration queued."}
 ```
+
+### Check Plugin Updates
+
+```
+GET /api/hosts/<id>/plugin-updates
+```
+
+Read-only diff of `ql-assets/data/<pool>/` (the pool is chosen from
+`runtime_paths(host.runtime)['asset_plugins_dir']`) against two targets. Only
+`.py` and `.ql-plugin.json` files at the top level of the pool are compared.
+
+- **Common pool:** the host's `/home/ql/assets/common/<pool>/`, hashed with
+  one ad-hoc `sha256sum` over SSH (15s connect timeout, 30s overall).
+- **Each instance:** `configs/<host_name>/<instance_id>/scripts/`, hashed locally.
+  This is a full-pool diff, so a pool file the instance lacks is reported as `added`.
+
+Runs synchronously in the request. Requires the host to be `ACTIVE`.
+
+**Response (200)**
+
+```json
+{
+  "data": {
+    "host_id": 1,
+    "common_pool_changes": [{"name": "balance.py", "change": "modified"}],
+    "common_pool_error": null,
+    "instances": [
+      {
+        "id": 1,
+        "name": "Thunderdome-CA",
+        "port": 27960,
+        "status": "running",
+        "selected_plugin_changes": [
+          {"name": "essentials.py", "change": "modified"},
+          {"name": "protect.py", "change": "added"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+`change` is `added` (in the pool, missing from the target), `modified` (hash
+differs) or `removed` (in the target, gone from the pool; reported for
+visibility only, apply never deletes it). If the host can't be read,
+`common_pool_changes` is `[]` and `common_pool_error` carries the reason. The
+per-instance diffs are still returned.
+
+Errors: `404` host not found, `400` host not `ACTIVE`, `500` unexpected failure.
+
+### Apply Plugin Updates
+
+```
+POST /api/hosts/<id>/plugin-updates/apply
+```
+
+Applies the operator's selection from the check as a background task. Requires
+the host to be `ACTIVE` and takes the host lock.
+
+**Request body**
+
+```json
+{
+  "update_common_pool": true,
+  "instances": {"1": ["essentials.py", "protect.py"]},
+  "restart_instances": [1]
+}
+```
+
+- `update_common_pool`: runs `update_common_plugins.yml`, a full
+  `delete: yes` mirror of the pool onto the host. It doesn't restart anything,
+  so running instances pick the refreshed pool up on their next restart.
+- `instances`: object keyed by instance id, each a list of pool filenames.
+  Each file is copied from the pool into that instance's `scripts/`, replacing
+  any existing copy. Names are reduced to their basename and must exist in the
+  pool. Unknown names, and ids that aren't instances of this host, are skipped.
+- `restart_instances`: instance ids to restart afterwards. Stopped instances are
+  never restarted.
+
+At least one of `update_common_pool` or a non-empty `instances` is required.
+
+**Response (202)**
+
+```json
+{"message": "Plugin update process initiated."}
+```
+
+Errors: `404` host not found; `400` host not `ACTIVE`, malformed `instances` or
+`restart_instances`, or nothing selected; `409` another operation holds the
+host lock; `500` enqueue failure.
+
+If the common pool refresh fails, the task sets the host to `ERROR` and stops
+before copying any instance files.
 
 ### Resize Host
 

@@ -12,6 +12,7 @@ Open from host row **Actions** in the Servers page.
 - **[Configure Auto-Restart](auto-restart.md)**: opens restart schedule modal.
 - **[Configure Watchdog](watchdog.md)**: turns on automatic restart of any instance on this host whose game loop has frozen. Off by default.
 - **[Update Workshop Item](update-workshop-item.md)**: triggers workshop update on this host.
+- **[Check for Updates](check-for-updates.md)**: compares this host's plugins with the versions QLSM ships and lets you pick which files to update.
 - **[Install/Uninstall QLFilter](../features/qlfilter.md)**: depends on current QLFilter state.
 - **Re-run Host Setup**: re-applies the host configuration playbook on an existing host.
 - **Delete / Remove**: removes host from management (or destroys cloud host).
@@ -67,6 +68,7 @@ After the playbook completes, the host returns to **Active** status.
 
 - [Instance Actions Menu](instance-actions-menu.md)
 - [Update Workshop Item](update-workshop-item.md)
+- [Check For Plugin Updates](check-for-updates.md)
 - [Configure Watchdog](watchdog.md)
 - [Host Logs](host-logs.md)
 - [Use Logs And Chat Logs](logs-and-chat.md)

@@ -88,6 +88,8 @@ graph TD
         * `ui/task_logic/ansible_instance_mgmt.py`: Instance deploy/restart/delete/config-sync logic.
         * `ui/task_logic/ansible_qlfilter_mgmt.py`: QLFilter install/uninstall/check.
         * `ui/task_logic/ansible_workshop_update.py`: Force workshop item update on host.
+        * `ui/task_logic/plugin_update_check.py`: "Check for Updates" diff of the `ql-assets` plugin pool against the host's common pool (ad-hoc SSH hash listing) and each instance's `scripts/` (local). Hashing and diffing live in `ui/update_checks.py`.
+        * `ui/task_logic/ansible_plugin_update.py`: Applies selected plugin updates (common pool refresh via `update_common_plugins.yml`, per-instance file copies, optional restarts).
         * `ui/task_logic/standalone_host_setup.py` / `standalone_host_remove.py`: Lifecycle for user-provided (non-Terraform) hosts.
     * **Supporting Modules:**
         * `ui/task_logic/zmq_utils.py`: ZMQ connection utilities for RCON service.
@@ -109,7 +111,7 @@ graph TD
 *   **CLI Commands (Backend):** Database initialization and other administrative tasks for the backend are exposed as Flask CLI commands.
 *   **Asynchronous Task Execution (Backend):** Long-running operations are handled asynchronously by the backend using RQ and Redis.
 *   **Automation Tool Integration:** Uses direct `subprocess` calls for executing Ansible and Terraform playbooks/commands.
-*   **Split Ansible Playbooks:** Playbooks are split by responsibility: `setup_host.yml` (one-time host setup after Terraform), `add_qlds_instance.yml` (per-instance deploy), and dedicated playbooks for rename, restart, LAN rate, workshop update, auto-restart, log fetching, and QLFilter management.
+*   **Split Ansible Playbooks:** Playbooks are split by responsibility: `setup_host.yml` (one-time host setup after Terraform), `add_qlds_instance.yml` (per-instance deploy), and dedicated playbooks for rename, restart, LAN rate, workshop update, common plugin pool refresh (`update_common_plugins.yml`, sharing `tasks/sync_common_plugins.yml` with `setup_host.yml`), auto-restart, log fetching, and QLFilter management.
 *   **Self-Host Provider:** A `self` provider creates a host record with `provider='self'` and `is_standalone=True`. The web container owns a dedicated `/host-ssh` mount (backed by `~/.qlsm-ssh/` on the host, intentionally separate from `~/.ssh/` so the container never sees the operator's personal private keys). It generates the SSH keypair and appends the generated public key to `~/.qlsm-ssh/authorized_keys`; `sshd` is configured to include that file in `AuthorizedKeysFile`. For self hosts, the stored `Host.ip_address` remains the client-facing server address shown in the UI and used in connect links. Automation resolves a hidden Docker-reachable management target for SSH, Ansible, and status polling. Self-host game instances reuse the QLSM Docker Redis on `127.0.0.1:6379`, with QLSM reserving `DB 0` and minqlx instances using per-instance DBs 1-8 resolved by `ui.constants.resolve_redis_db()` (the stored `QLInstance.redis_db` when chosen at creation, otherwise derived from `port - 27959`); host-level `redis-server` is not part of the self-host runtime contract. Self-host creation also snapshots local OS detection into `Host.os_type` when available so later instance flows can apply Debian-vs-Ubuntu policy without guessing.
 *   **Standalone Auth Modes:** Standalone hosts support either operator-supplied SSH keys or a password bootstrap path. Password mode is temporary: QLSM verifies login, requires passwordless sudo for non-root users, generates a managed SSH keypair, installs the public key on the target host, and then discards the password. All later Ansible, SSH polling, and instance-management flows continue to use the stored managed private key. Standalone onboarding auto-detects the remote OS from `/etc/os-release`; operators no longer choose an OS family manually. Ubuntu detections are accepted, but the connection test warns that `99k LAN rate` is not compatible with Ubuntu.
 *   **99k LAN Rate Compatibility:** New `99k LAN rate` enables are allowed only on hosts whose detected `os_type` is Debian. Ubuntu hosts and hosts with missing or unrecognized `os_type` reject new enables. Legacy instances that already have `lan_rate_enabled = true` can still disable it on unsupported hosts.
@@ -145,6 +147,8 @@ qlsm/
 │       ├── ansible_instance_mgmt.py # Instance deploy/restart/delete/config-sync
 │       ├── ansible_qlfilter_mgmt.py # QLFilter install/uninstall
 │       ├── ansible_workshop_update.py # Force workshop update
+│       ├── plugin_update_check.py   # Check for Updates diff (host pool + instance scripts)
+│       ├── ansible_plugin_update.py # Apply selected plugin updates
 │       ├── standalone_host_setup.py # Setup user-provided hosts
 │       ├── standalone_host_remove.py # Remove user-provided hosts
 │       ├── standalone_inventory.py # Standalone/self Ansible inventory names

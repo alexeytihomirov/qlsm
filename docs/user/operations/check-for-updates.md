@@ -1,0 +1,63 @@
+# Check For Plugin Updates
+
+QLSM ships a built-in set of minqlx plugins. When a new QLSM version fixes or adds a plugin, a host and its instances keep their existing copies until you update them. **Check for Updates** shows exactly which plugin files differ from the version QLSM ships, and lets you choose which ones to update.
+
+The check itself changes nothing. Files are only replaced after you click **Update Selected**.
+
+## Open The Check
+
+1. Go to the **Servers** page.
+2. Open the host row **Actions** menu.
+3. Click **Check for Updates**.
+
+<img src="../../images/host-actions-check-for-updates.png" />
+
+The host must be **Active**. The check connects to the host, so it can take a few seconds.
+
+## Read The Results
+
+<img src="../../images/check-for-updates-modal.png" width="512" />
+
+The modal has two kinds of sections.
+
+**Common plugin pool.** This is the host's shared copy of QLSM's built-in plugins. Every instance on the host gets these files unless its own plugin set already includes a file with the same name.
+
+**One box per instance.** These are the plugin files that belong to that instance, the same ones you see on its **Plugins** tab. Each file is labelled:
+
+- **updated**: the instance has this file, but QLSM ships a newer version.
+- **new**: QLSM ships this file and the instance doesn't have it yet.
+
+If everything already matches, the modal says **no updates available**.
+
+## Choose What To Update
+
+- **Common plugin pool** is ticked when it has changes.
+- **Updated** files are ticked. Updating them replaces the instance's copy, **including any edits you made to that file in the plugin editor**. Untick a file you've customized and want to keep.
+- **New** files start unticked. Tick the ones you want. A new file is only copied to the instance. It doesn't run until you also enable it on the instance's **Plugins** tab.
+- **Restart to apply** is ticked for running instances. An instance only picks up plugin changes when it restarts, and only instances with at least one ticked file are restarted.
+
+Click **Update Selected** to apply your choices.
+
+## When Changes Take Effect
+
+- **Instance files** take effect when the instance restarts. If you leave **restart to apply** unticked, they apply on the next manual or [scheduled restart](auto-restart.md).
+- **The common plugin pool** refreshes on the host right away, but running instances don't restart for it. Each instance picks up the refreshed pool on its next restart.
+- Stopped instances are never restarted. They use the updated files the next time you start them.
+
+## Verification
+
+1. Open [Host Logs](host-logs.md). A successful run logs **Common plugin pool refreshed.** and a **staged** line for each instance that received files.
+2. If you restarted instances, wait for them to return to **Running**.
+3. Run **Check for Updates** again. The files you updated should no longer be listed.
+
+## If Something Goes Wrong
+
+- **"Common pool check failed"** in the modal means QLSM couldn't read the host's plugin pool, usually because the host is unreachable. The per-instance results are still accurate, because QLSM reads those locally.
+- If refreshing the common plugin pool fails, the host goes to **Error** and no instance files are changed. Check [Host Logs](host-logs.md) for the reason.
+
+## Related Pages
+
+- [Host Actions Menu](host-actions-menu.md)
+- [Edit Configs, Plugins, Factories, And Hooks](edit-configs.md)
+- [Configure Auto-Restart](auto-restart.md)
+- [Host Logs](host-logs.md)
