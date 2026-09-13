@@ -4,6 +4,9 @@ import { PackageCheck, X, Loader2, AlertTriangle } from 'lucide-react';
 
 const CHANGE_LABEL = { added: 'new', modified: 'updated', removed: 'removed upstream' };
 
+// The API sends InstanceStatus values lowercase ("stopped").
+const isStopped = (inst) => inst.status?.toLowerCase() === 'stopped';
+
 function CheckForUpdatesModal({ isOpen, onClose, onSubmit, host, isChecking, checkResult, checkError }) {
     const [updateCommonPool, setUpdateCommonPool] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState({}); // { [instanceId]: Set<filename> }
@@ -27,7 +30,7 @@ function CheckForUpdatesModal({ isOpen, onClose, onSubmit, host, isChecking, che
             const preTicked = changed.filter(c => c.change === 'modified');
             if (changed.length > 0) {
                 files[inst.id] = new Set(preTicked.map(c => c.name));
-                restarts[inst.id] = inst.status !== 'STOPPED';
+                restarts[inst.id] = !isStopped(inst);
             }
         });
         setSelectedFiles(files);
@@ -151,7 +154,7 @@ function CheckForUpdatesModal({ isOpen, onClose, onSubmit, host, isChecking, che
                                                             <input
                                                                 type="checkbox"
                                                                 checked={!!restartInstances[inst.id]}
-                                                                disabled={inst.status === 'STOPPED'}
+                                                                disabled={isStopped(inst)}
                                                                 onChange={() => toggleRestart(inst.id)}
                                                             />
                                                             restart to apply
