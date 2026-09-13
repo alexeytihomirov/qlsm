@@ -241,10 +241,19 @@ class serverchecker(minqlx.Plugin):
                     self.logger.warning(f"serverchecker: player error: {pe}")
                     continue
 
-            def _safe_score(attr):
+            def _safe_score(attr, team_index):
+                if not game:
+                    return 0
                 try:
-                    return getattr(game, attr) if game else 0
-                except (ValueError, TypeError):
+                    return getattr(game, attr)
+                except (AttributeError, ValueError, TypeError):
+                    pass
+                # minqlxtended >= v1.1.0 dropped Game.red_score/blue_score; the
+                # live scores sit in Game.team_scores, indexed by team
+                # (TEAM_RED=1, TEAM_BLUE=2).
+                try:
+                    return int(game.team_scores[team_index])
+                except (AttributeError, ValueError, TypeError, IndexError):
                     return 0
 
             game = self.game
@@ -258,8 +267,8 @@ class serverchecker(minqlx.Plugin):
                 "state":      game.state      if game else "warmup",
                 "players":    players,
                 "maxplayers": int(self.get_cvar("sv_maxclients") or 16),
-                "red_score":  _safe_score("red_score"),
-                "blue_score": _safe_score("blue_score"),
+                "red_score":  _safe_score("red_score", 1),
+                "blue_score": _safe_score("blue_score", 2),
                 "match_start_time": int(self._match_start_time) if self._match_start_time and (game and game.state == "in_progress") else None,
                 "workshop_item_id": self._current_workshop_item,
                 "updated":    int(time.time()),
