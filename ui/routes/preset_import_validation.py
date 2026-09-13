@@ -5,6 +5,7 @@ import os
 import stat
 import zipfile
 
+from ui.admin_permissions import validate_admin_entries
 from ui.font_files import FONT_EXTENSIONS, MAX_FONT_FILE_SIZE, validate_font_content
 from ui.routes.draft_routes import MAX_BINARY_FILE_SIZE
 from ui.routes.instance_hooks_routes import _validate_filename as _validate_hook_filename
@@ -212,6 +213,15 @@ def _validate_checked_lists(bundle):
         raise PresetImportError("enabled_hooks.json must contain a list of .so filenames.")
 
 
+def _validate_admins(bundle):
+    if bundle['admins'] is None:
+        return
+    entries, error = validate_admin_entries(bundle['admins'])
+    if error:
+        raise PresetImportError(f"admins.json is invalid: {error}")
+    bundle['admins'] = entries
+
+
 def _validate_lan_rate_enabled(bundle):
     lan_rate_enabled = bundle['lan_rate_enabled']
     if lan_rate_enabled is not None and not isinstance(lan_rate_enabled, bool):
@@ -265,7 +275,7 @@ def parse_import_archive(raw_bytes):
     bundle = {
         'configs': {}, 'factories': {}, 'scripts': {}, 'user_hooks': {},
         'checked_plugins': None, 'checked_factories': None, 'enabled_hooks': None,
-        'lan_rate_enabled': None,
+        'lan_rate_enabled': None, 'admins': None,
         'manifest': None, 'binary_metadata': None,
     }
 
@@ -298,6 +308,8 @@ def parse_import_archive(raw_bytes):
                 bundle['enabled_hooks'] = _read_json(archive, info, 'Enabled hooks')
             elif name == 'lan_rate_enabled.json':
                 bundle['lan_rate_enabled'] = _read_json(archive, info, 'LAN rate enabled')
+            elif name == 'admins.json':
+                bundle['admins'] = _read_json(archive, info, 'Admins')
             elif name.startswith('factories/'):
                 filename = name[len('factories/'):]
                 try:
@@ -326,6 +338,7 @@ def parse_import_archive(raw_bytes):
     _validate_manifest(bundle['manifest'])
     _validate_checked_lists(bundle)
     _validate_lan_rate_enabled(bundle)
+    _validate_admins(bundle)
     bundle['binary_metadata'] = _normalize_binary_metadata(
         bundle['binary_metadata'], bundle['user_hooks']
     )

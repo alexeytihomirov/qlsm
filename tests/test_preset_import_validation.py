@@ -355,3 +355,21 @@ def test_keeps_scripts_whose_name_merely_contains_bak():
     bundle = parse_import_archive(raw)
     assert 'bakery.py' in bundle['scripts']
     assert 'notes/bakery.txt' in bundle['configs']
+
+
+def test_parses_and_normalizes_admins():
+    raw = build_zip(extra={'admins.json': json.dumps([
+        {'steam_id64': '76561198012345678', 'level': '4'},
+    ])})
+    bundle = parse_import_archive(raw)
+    assert bundle['admins'] == [{'steam_id64': '76561198012345678', 'level': 4}]
+
+
+def test_rejects_invalid_admins():
+    raw = build_zip(extra={'admins.json': json.dumps([{'steam_id64': '123', 'level': 4}])})
+    with pytest.raises(PresetImportError, match='admins.json is invalid'):
+        parse_import_archive(raw)
+
+
+def test_admins_none_when_absent():
+    assert parse_import_archive(build_zip())['admins'] is None

@@ -214,7 +214,7 @@ def _extract_pip_warning(stdout_content):
     return None
 
 
-def deploy_instance_logic(instance_id):
+def deploy_instance_logic(instance_id, admin_levels=None):
     """
     Logic for deploying a QL instance via Ansible.
     """
@@ -300,10 +300,10 @@ def deploy_instance_logic(instance_id):
                 if instance.host and instance.host.lan_rate_uses_hook and instance.lan_rate_enabled:
                     from ui.task_logic.ansible_instance_hooks import apply_instance_hooks_logic
                     apply_instance_hooks_logic(instance.id, restart_service=True)
-                # Admins set in the Add Instance form need their in-game level
-                # now, not on the first config save.
-                from .access_permission_sync import sync_and_report_access_permissions
-                sync_and_report_access_permissions(instance)
+                # The one time QLSM writes a whole admin list: the one from the
+                # Add Instance form (or its preset), into the fresh Redis DB.
+                from .access_permission_sync import write_and_report_admin_levels
+                write_and_report_admin_levels(instance, admin_levels)
                 return f"Instance {instance_id} deployment successful. Status: RUNNING"
 
         # Handle failures (rc != 0 OR (rc == 0 AND no_hosts_matched))
@@ -560,7 +560,7 @@ def start_instance_logic(instance_id):
         return f"Error during instance {instance_id} start: {e}"
 
 
-def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_network=False, previous_status=None):
+def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_network=False, previous_status=None, admin_levels=None):
     """
     Logic for applying configuration to a QL instance via Ansible.
     This involves syncing config files and optionally restarting the service.
@@ -686,8 +686,8 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
             instance.status = final_status
             db.session.commit()
 
-            from .access_permission_sync import sync_and_report_access_permissions
-            sync_and_report_access_permissions(instance)
+            from .access_permission_sync import write_and_report_admin_levels
+            write_and_report_admin_levels(instance, admin_levels)
 
             log.info(f"Finished task apply_instance_config for instance_id: {instance_id}. Status: {final_status.value}")
             return f"Instance {instance_id} config application successful. Status: {final_status.value}"

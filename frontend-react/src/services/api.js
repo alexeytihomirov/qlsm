@@ -345,6 +345,7 @@ export const updateInstanceConfig = async (instanceId, configData, restart = tru
       checked_plugins,
       lan_rate_enabled,
       enabled_hooks,
+      admin_changes,
       name,
       hostname,
       ...configs
@@ -379,6 +380,10 @@ export const updateInstanceConfig = async (instanceId, configData, restart = tru
     }
     if (enabled_hooks !== undefined) {
       payload.enabled_hooks = enabled_hooks;
+    }
+    // Only the admins changed in the tab; absent means no admin changes.
+    if (admin_changes !== undefined) {
+      payload.admin_changes = admin_changes;
     }
     const response = await apiClient.put(`/instances/${instanceId}/config`, payload);
     return response.data; // Assuming API returns { "message": "..." }
@@ -778,6 +783,16 @@ export const deleteUser = async (userId) => {
   } catch (error) {
     console.error(`Failed to delete user ${userId}:`, error.response ? error.response.data : error.message);
     throw error.response ? error.response.data : new Error(`Failed to delete user ${userId}`);
+  }
+};
+
+export const getInstanceAdmins = async (instanceId) => {
+  try {
+    const response = await apiClient.get(`/instances/${instanceId}/admins`);
+    return response.data.data;
+  } catch (error) {
+    console.error('Failed to fetch instance admins:', error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error('Failed to fetch instance admins');
   }
 };
 

@@ -9,8 +9,6 @@ Every host runs one of two Quake Live server runtimes, chosen from the **Server 
 - **minqlx** — the original runtime, and every plugin QLSM ships today. Provisions/expects **Debian 12**.
 - **minqlxtended** — a hard fork with no plugin compatibility with minqlx. Provisions/expects **Ubuntu 24.04**, and requires **Python 3.12 or newer** on the target machine.
 
-**Neither option is pre-selected.** QLSM will not make this choice for you: it is permanent, so the form refuses to submit until you pick one and shows *Server runtime is required.* if you try. Each option has an ⓘ tooltip with a one-line description, what it means for the provider you have selected, and a link to that runtime's GitHub repository.
-
 For Vultr cloud hosts, QLSM provisions the matching OS image automatically — there's no separate OS choice.
 
 For **standalone** hosts, the target machine's OS is auto-detected during connection testing, and creating a minqlxtended host additionally requires the detected Python to already be 3.12 or newer — the Add Host form rejects the submission with an explanation if it isn't.

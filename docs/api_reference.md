@@ -1134,7 +1134,7 @@ The directory behind the Owner & Admins panel (see [Operators](user/administrati
 | `/operators/` | GET | List all operators, ordered by name |
 | `/operators/` | POST | Add an operator (`201`) |
 | `/operators/<id>` | PATCH | Update any of `name`, `steam_id64`, `default_level` |
-| `/operators/<id>` | DELETE | Remove an operator from the directory. Existing `qlx_owner` / `access.txt` entries are left in place |
+| `/operators/<id>` | DELETE | Remove an operator from the directory. Existing `qlx_owner` line or stored Admin rows are left in place |
 
 ### Create Operator Request
 
@@ -1148,7 +1148,7 @@ The directory behind the Owner & Admins panel (see [Operators](user/administrati
 
 - `name`: required, trimmed, at most 128 characters.
 - `steam_id64`: required, must match `^7656119\d{10}$`. `409` if another operator already has it.
-- `default_level`: optional integer 0-5, defaults to `5`. Only the `access.txt` editor's autocomplete uses it.
+- `default_level`: optional integer 0-5, defaults to `5`. Only the Owner & Admins tab's Admin picker uses it, as the level pre-filled when that operator is added.
 
 ### Operator Response
 
@@ -1165,9 +1165,37 @@ The directory behind the Owner & Admins panel (see [Operators](user/administrati
 }
 ```
 
-### In-Game Permission Sync
+## Instance Admins
 
-This isn't an endpoint. After a successful `deploy_instance` or `apply_instance_config` task, `sync_and_report_access_permissions()` in `ui/task_logic/access_permission_sync.py` parses the instance's `access.txt` and, over one SSH round trip, sets `minqlx:players:<steamid>:permission` in the instance's Redis DB for every valid `steamid|0-5` line. IDs this instance pushed last time but that are now gone are set to `0`. They are tracked in the per-instance set `minqlx:qlsm:managed_admins:<instance_id>`, so levels granted in-game with `!setperm` are never touched, and instances sharing a Redis DB never reset each other's admins. The first sync on an instance adopts, then deletes, the older DB-wide set `minqlx:qlsm:managed_admins`, so admins pushed before the change can still be revoked. Lines with a missing, non-integer or out-of-range level (including QL-native `admin`/`mod`/`ban`) are skipped. Any failure, including an exception before the round trip, appends a warning to the instance log. The deploy or apply itself still succeeds.
+Redis — minqlx's own permission database on the running server — is the only source of truth for who is an admin and at what level. QLSM keeps no admin list of its own: it reads the list from Redis, and writes back only what the operator changed. A level set in-game with `!setperm` is never overwritten by a save, restart or deploy. See `ui/admin_permissions.py` for validation and `ui/task_logic/access_permission_sync.py` / `ui/task_logic/permission_read.py` for the write/read paths.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/instances/<int:instance_id>/admins` | GET | The instance's admins, read live from its Redis database |
+
+### Get Instance Admins Response
+
+```json
+{
+  "data": {
+    "admins": [{"steam_id64": "76561198012345678", "level": 5}],
+    "error": null
+  }
+}
+```
+
+- `admins`: every SteamID with a level from 1 to 5 in the instance's Redis database, sorted by SteamID, read over one bounded SSH round trip. `null` when the server could not be read.
+- `error`: why `admins` is `null` (unreachable host, no Redis, etc.), or `null` on a successful read.
+
+### Admin Fields On Other Endpoints
+
+All entries are lists of `{"steam_id64": "76561198...", "level": 0-5}`, de-duplicated by SteamID (last wins); validation rejects, never clamps, an out-of-range or non-numeric level.
+
+- `PUT /instances/<id>/config` accepts `admin_changes`: only the admins changed in the Owner & Admins tab. Each entry's level is written to Redis after the config-apply task succeeds; level `0` removes an admin. Admins not listed are left alone. Omitting the field writes nothing.
+- `POST /instances` (create) accepts `admins`: the full list from the Add Instance form or its preset. The deploy task writes it into the new instance's Redis once, after a successful deploy.
+- Preset create/update accept `admins` and write it to `admins.json` in the preset folder. `GET`/list-preset responses return `admins`; it is `null` when the preset has no `admins.json` (distinct from `[]`). Sending `admins: null` is the same as omitting it.
+
+A failed write (SSH or Redis unreachable) appends a warning to the instance log; the deploy or apply itself still succeeds. The write also deletes any `minqlx:qlsm:managed_admins*` keys left behind by older QLSM versions.
 
 ## Settings
 

@@ -1,7 +1,6 @@
-"""apply_instance_config_logic must surface a failed access.txt permission
-sync to the operator instead of silently reporting the config apply as fully
-successful -- see access_permission_sync.sync_access_permissions, which
-returns False (not None) when the SSH/Redis round-trip actually failed."""
+"""apply_instance_config_logic and deploy_instance_logic write admin level
+changes to Redis after success, and surface a failed write in the instance log
+instead of reporting the task as fully successful."""
 from types import SimpleNamespace
 
 import pytest
@@ -42,61 +41,53 @@ def _stub_ansible(monkeypatch):
     monkeypatch.setattr(mod, "get_current_job", lambda: SimpleNamespace(id="test-job"))
 
 
-def test_apply_config_warns_operator_when_permission_sync_fails(app, instance_in_db, monkeypatch):
-    from ui.task_logic import access_permission_sync
-
-    monkeypatch.setattr(access_permission_sync, "sync_instance_access_permissions", lambda inst: False)
-
-    with app.app_context():
-        mod.apply_instance_config_logic(instance_in_db.id)
-        refreshed = db.session.get(QLInstance, instance_in_db.id)
-        assert "could not be synced" in refreshed.logs
+ADMIN = "76561198012345678"
 
 
-def test_apply_config_stays_quiet_when_nothing_to_sync(app, instance_in_db, monkeypatch):
-    from ui.task_logic import access_permission_sync
-
-    # No access.txt on disk at all -- a legitimate no-op, not a failure.
-    monkeypatch.setattr(access_permission_sync, "sync_instance_access_permissions", lambda inst: None)
-
-    with app.app_context():
-        mod.apply_instance_config_logic(instance_in_db.id)
-        refreshed = db.session.get(QLInstance, instance_in_db.id)
-        assert "could not be synced" not in refreshed.logs
-
-
-def test_apply_config_warns_when_permission_sync_raises(app, instance_in_db, monkeypatch):
-    """An error before the SSH round trip (unreadable access.txt, self-host
-    target detection) used to reach only the server log."""
-    from ui.task_logic import access_permission_sync
-
-    def boom(inst):
-        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
-
-    monkeypatch.setattr(access_permission_sync, "sync_instance_access_permissions", boom)
-
-    with app.app_context():
-        result = mod.apply_instance_config_logic(instance_in_db.id)
-        refreshed = db.session.get(QLInstance, instance_in_db.id)
-        assert "successful" in result
-        assert "could not be synced" in refreshed.logs
-
-
-def test_deploy_syncs_permissions_after_success(app, instance_in_db, monkeypatch):
-    """Admins set in the Add Instance form get their in-game level on deploy,
-    not only on the first config save."""
+def _capture_writes(monkeypatch, result):
     from ui.task_logic import access_permission_sync
 
     calls = []
     monkeypatch.setattr(
-        access_permission_sync, "sync_instance_access_permissions",
-        lambda inst: calls.append(inst.id) or False,
+        access_permission_sync, "write_admin_levels",
+        lambda inst, changes: calls.append((inst.id, changes)) or (result if changes else None),
     )
+    return calls
 
+
+def test_apply_config_writes_only_the_passed_changes(app, instance_in_db, monkeypatch):
+    calls = _capture_writes(monkeypatch, {"written": [ADMIN]})
     with app.app_context():
-        result = mod.deploy_instance_logic(instance_in_db.id)
+        mod.apply_instance_config_logic(instance_in_db.id, admin_levels={ADMIN: 0})
+        refreshed = db.session.get(QLInstance, instance_in_db.id)
+        assert calls == [(instance_in_db.id, {ADMIN: 0})]
+        assert "could not be written" not in refreshed.logs
+
+
+def test_apply_config_without_admin_changes_leaves_redis_alone(app, instance_in_db, monkeypatch):
+    """No forcing: a save or restart that did not touch admins writes nothing."""
+    calls = _capture_writes(monkeypatch, False)
+    with app.app_context():
+        mod.apply_instance_config_logic(instance_in_db.id)
+        refreshed = db.session.get(QLInstance, instance_in_db.id)
+        assert calls == [(instance_in_db.id, None)]
+        assert "could not be written" not in refreshed.logs
+
+
+def test_apply_config_warns_operator_when_the_write_fails(app, instance_in_db, monkeypatch):
+    _capture_writes(monkeypatch, False)
+    with app.app_context():
+        result = mod.apply_instance_config_logic(instance_in_db.id, admin_levels={ADMIN: 4})
         refreshed = db.session.get(QLInstance, instance_in_db.id)
         assert "successful" in result
-        assert calls == [instance_in_db.id]
+        assert "could not be written" in refreshed.logs
+
+
+def test_deploy_writes_the_create_form_admins(app, instance_in_db, monkeypatch):
+    calls = _capture_writes(monkeypatch, {"written": [ADMIN]})
+    with app.app_context():
+        result = mod.deploy_instance_logic(instance_in_db.id, admin_levels={ADMIN: 4})
+        refreshed = db.session.get(QLInstance, instance_in_db.id)
+        assert "successful" in result
+        assert calls == [(instance_in_db.id, {ADMIN: 4})]
         assert refreshed.status == InstanceStatus.RUNNING
-        assert "could not be synced" in refreshed.logs

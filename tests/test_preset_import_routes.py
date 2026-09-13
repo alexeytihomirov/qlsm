@@ -404,3 +404,13 @@ def test_import_strips_non_enableable_checked_plugins(client, app, presets_base)
     assert response.status_code == 201
     data = response.get_json()['data']
     assert data['checked_plugins'] == ['balance.py']
+
+
+def test_import_creates_preset_with_admins(client, app, presets_base):
+    admins = [{'steam_id64': '76561198012345678', 'level': 4}]
+    response = post_import(client, app, build_zip(extra={'admins.json': json.dumps(admins)}))
+
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()['data']['admins'] == admins
+    with open(presets_base / 'imported' / 'admins.json') as f:
+        assert json.load(f) == admins

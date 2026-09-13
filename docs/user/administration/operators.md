@@ -17,7 +17,7 @@ Operators are managed in **Settings → Operators** and assigned from the
 3. Enter a display name and the operator's SteamID64 (17 digits, starting
    with `7656119`).
 4. Choose a **Default admin level** (0-5). This is the level filled in when
-   you insert the operator from the `access.txt` editor's autocomplete.
+   you pick the operator to add as an Admin in the Owner & Admins tab.
 5. Click **Add Operator**.
 
 ![Add Operator dialog](../images/operators-add-modal.png)
@@ -30,10 +30,9 @@ Each SteamID64 can only be in the directory once.
 2. Click the delete icon on the operator's row and confirm.
 
 Deleting an operator only removes them from the directory. It does **not**
-remove them from any server: an existing `qlx_owner` or `access.txt` entry
-with their SteamID64 stays in place, and so does their in-game permission.
-To take someone's access away, remove them in the Owner & Admins tab (or
-from `access.txt`) and save.
+remove them from any server: an existing `qlx_owner` line with their
+SteamID64 stays in place, and so does their in-game permission. To take someone's access away, remove them in the Owner &
+Admins tab and save.
 
 ## Assign Owner Or Admin
 
@@ -44,71 +43,76 @@ the preset add and edit pages they appear as a panel above the config fields.
 ![Owner & Admins panel](../images/owner-admins-panel.png)
 
 - **Owner** — pick an operator. This writes their SteamID64 to the
-  `qlx_owner` line of `server.cfg`. The owner always has level 5. The change takes effect when the server restarts, so leave
-  **Restart after saving** on.
-- **Admins** — pick an operator, choose a level (the picker starts at 5), and
-  click **Add**. This adds a `steamid|level` line to `access.txt`. Click
-  **×** on an entry to remove it.
+  `qlx_owner` line of `server.cfg`. The owner always has level 5. The change
+  takes effect when the server restarts, so leave **Restart after saving** on.
+- **Admins** — pick an operator, choose a level from **1 to 5**, and click
+  **Add**. Admins are picked from the operator directory above, so granting a
+  raw SteamID means adding that person there first.
 
 Higher levels unlock more minqlx admin commands. Level **5** is the highest
 and includes `!setperm`, which lets that admin grant permissions to other
 players, so only give 5 to people you trust with that.
 
+The admin list lives only on the game server, in minqlx's own Redis
+permission database. The tab shows exactly what the server has right now,
+including anyone promoted in-game with `!setperm`. QLSM keeps no copy of
+its own.
+
 The **Manage operators** link opens **Settings → Operators** in a new tab.
 
-## What Happens In-Game
+QLSM reads the admin list from the server as soon as **Edit Configuration**
+opens, so the tab is already filled when you switch to it. **Save Preset**
+includes the admin list even if you never opened the tab.
 
-When a new instance finishes deploying, and whenever you click **Save
-Configuration** on an instance, QLSM also pushes the admin levels from
-`access.txt` into the running server's minqlx permissions. They can take up to
-about 30 seconds to apply.
+An admin whose SteamID is not in the operator directory shows as a bare
+SteamID with an **Add to operators** button. It opens the same Add Operator
+dialog as the Operators page, on top of the configuration window, with the
+SteamID and current level already filled in. Enter a name and click **Add
+Operator**; the row then shows that name. Your unsaved configuration edits
+are not affected.
+
+## What Happens When You Save
+
+**Save Configuration** writes only what you changed in the tab. Admins you
+didn't touch, including anyone promoted in-game while the window was open,
+are left alone. Nothing is re-applied on later saves, restarts or deploys, so
+a change made in-game with `!setperm` stays and shows up the next time you
+open the tab.
 
 - **Adding** an admin gives them that level in-game.
-- **Removing** an admin sets their in-game level back to 0.
-- **Players promoted in-game** with `!setperm`, and never added through
-  QLSM, are left alone.
+- **Removing** an admin sets their in-game level to 0.
+- Changes apply without a server restart, though minqlx's permission cache
+  can take up to about 30 seconds to pick them up.
 
-Instances that share a Redis database also share in-game permissions: an admin
-on one is an admin on the other. Each instance only resets the admins it added
-itself, so removing someone from one instance's list doesn't remove an admin
-the other instance still lists.
+There is no inline level editor: to change someone's level, remove them and
+add them back at the new level.
 
-Presets only store the files. Nothing is applied in-game until an instance
-using them is saved.
+Instances that share a Redis database also share in-game admins: an admin
+added on one instance is an admin on the other.
 
-### If The Push Fails
+### Presets
 
-If QLSM can't reach the server (for example, SSH or Redis is down), the
-config is still saved, but the instance log shows:
+A preset stores the admin list in an `admins.json` file. **Save Preset**
+takes the list the server currently has (plus your unsaved edits), even if you
+never opened the tab. A new instance created from the preset gets those admins
+once, when it's deployed. Loading a preset into an existing instance replaces
+the tab's list; save to apply the difference.
 
-> Warning: access.txt admin permissions could not be synced to the running
-> instance (SSH/Redis unreachable).
+### If The Server Can't Be Read
 
-In-game permissions stay as they were until the next successful save.
-Removing an admin while the push fails means **they keep their old level
-in-game**. Check the instance log after removing someone, and save again once
-the server is reachable.
+If QLSM can't reach the server (for example, SSH or Redis is down), the tab
+shows a banner and the admin list can't be edited. **Save Preset** still
+saves, but without admins, and tells you so. If a save can't write your admin
+changes, the config is still saved and the instance log shows a warning.
 
-### Lines That Are Ignored
+## access.txt
 
-Only lines with a SteamID64 and a level from 0 to 5 are pushed in-game. These
-lines are skipped:
-
-- A level out of range or not a number, like `|99` or `|e`.
-- A line with no level.
-- Quake Live's own roles: `|admin`, `|mod` and `|ban`. These still work for
-  Quake Live itself, but they don't grant minqlx permissions.
-
-The `access.txt` editor underlines levels like `|99` and `|e`. It doesn't
-flag the Quake Live roles, because Quake Live accepts them, or a missing
-level. A skipped line doesn't stop the save, and any level the player had
-from an earlier QLSM save is reset to 0.
-
-## Add From The access.txt Editor
-
-While typing a SteamID in `access.txt`, the editor suggests operators from the
-directory. You can search by SteamID or by name. Picking one inserts
-`steamid|level` using the operator's default admin level.
+`access.txt` is Quake Live's own file — it only holds Quake Live's native
+`admin`, `mod` and `ban` role lines. It no longer holds QLSM admin levels:
+those live in minqlx's Redis permissions on the server, not on disk.
+Any numeric `steamid|level` line left over from an older QLSM version is
+stripped out automatically the next time the file is saved, whether from an
+instance or a preset.
 
 ## Related Pages
 

@@ -1159,3 +1159,116 @@ def test_create_instance_rejects_invalid_file_maps_before_side_effects(
     with client.application.app_context():
         assert QLInstance.query.count() == 0
     assert not (tmp_path / 'configs' / sample_host.name).exists()
+
+
+def test_config_save_rejects_a_bad_admin_level(
+    client, auth_token, sample_instance, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    instance, _host = sample_instance
+    with patch('ui.routes.instance_routes.acquire_lock', return_value=True), \
+         patch('ui.routes.instance_routes.release_lock'), \
+         patch('ui.routes.instance_routes.enqueue_task', return_value=MagicMock(id='job-1')):
+        response = client.put(
+            f'/api/instances/{instance.id}/config',
+            json={'configs': _full_configs(),
+                  'admin_changes': [{'steam_id64': '76561198012345678', 'level': 99}],
+                  'restart': False},
+            headers=_auth_header(auth_token),
+        )
+    assert response.status_code == 400, response.get_json()
+    assert 'between 0 and 5' in response.get_json()['error']['message']
+
+
+def test_config_save_passes_only_admin_changes_to_the_task(
+    client, auth_token, sample_instance, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    instance, _host = sample_instance
+    with patch('ui.routes.instance_routes.acquire_lock', return_value=True), \
+         patch('ui.routes.instance_routes.enqueue_task', return_value=MagicMock(id='job-1')) as enqueue:
+        response = client.put(
+            f'/api/instances/{instance.id}/config',
+            json={'configs': _full_configs(),
+                  'admin_changes': [{'steam_id64': '76561198012345678', 'level': 2},
+                                    {'steam_id64': '76561198087654321', 'level': 0}],
+                  'restart': False},
+            headers=_auth_header(auth_token),
+        )
+    assert response.status_code == 202, response.get_json()
+    assert enqueue.call_args.kwargs['admin_levels'] == {
+        '76561198012345678': 2, '76561198087654321': 0,
+    }
+
+
+def test_config_save_without_admin_changes_writes_no_admins(
+    client, auth_token, sample_instance, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    instance, _host = sample_instance
+    with patch('ui.routes.instance_routes.acquire_lock', return_value=True), \
+         patch('ui.routes.instance_routes.enqueue_task', return_value=MagicMock(id='job-1')) as enqueue:
+        response = client.put(
+            f'/api/instances/{instance.id}/config',
+            json={'configs': _full_configs(), 'restart': False},
+            headers=_auth_header(auth_token),
+        )
+    assert response.status_code == 202, response.get_json()
+    assert enqueue.call_args.kwargs['admin_levels'] == {}
+
+
+def test_create_instance_passes_its_admins_to_the_deploy_task(
+    client, auth_token, sample_host, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    with patch('ui.routes.instance_routes.acquire_lock', return_value=True), \
+         patch('ui.routes.instance_routes.enqueue_task', return_value=MagicMock(id='job-1')) as enqueue:
+        response = client.post(
+            '/api/instances/',
+            json={'name': 'admins-on-create-instance', 'host_id': sample_host.id,
+                  'port': 27961, 'hostname': 'admins-on-create',
+                  'admins': [{'steam_id64': '76561198012345678', 'level': 4}]},
+            headers=_auth_header(auth_token),
+        )
+    assert response.status_code in (201, 202), response.get_json()
+    assert enqueue.call_args.kwargs['admin_levels'] == {'76561198012345678': 4}
+
+
+def test_create_instance_rejects_a_bad_admin_level_before_creating_anything(
+    client, app, auth_token, sample_host, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    with app.app_context():
+        before = QLInstance.query.count()
+    response = client.post(
+        '/api/instances/',
+        json={'name': 'bad-admins-instance', 'host_id': sample_host.id,
+              'port': 27962, 'hostname': 'bad-admins',
+              'admins': [{'steam_id64': '123', 'level': 4}]},
+        headers=_auth_header(auth_token),
+    )
+    assert response.status_code == 400, response.get_json()
+    with app.app_context():
+        assert QLInstance.query.count() == before
+
+
+def test_saving_configs_strips_numeric_admin_lines(
+    client, auth_token, sample_instance, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    instance, host = sample_instance
+    access_txt = "# keep me\n76561198012345678|3\n76561198087654321|admin\n"
+
+    with patch('ui.routes.instance_routes.acquire_lock', return_value=True), \
+         patch('ui.routes.instance_routes.enqueue_task', return_value=MagicMock(id='job-1')):
+        response = client.put(
+            f'/api/instances/{instance.id}/config',
+            json={'configs': _full_configs(**{'access.txt': access_txt}), 'restart': False},
+            headers=_auth_header(auth_token),
+        )
+
+    assert response.status_code == 202, response.get_json()
+    written = (tmp_path / 'configs' / host.name / str(instance.id) / 'access.txt').read_text()
+    assert '76561198012345678|3' not in written
+    assert '76561198087654321|admin' in written
+    assert '# keep me' in written

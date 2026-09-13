@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   downloadPreset: vi.fn(),
   flushEdits: vi.fn(),
   fetchInstanceHooks: vi.fn(),
+  getInstanceAdmins: vi.fn(),
   getBinaryMeta: vi.fn(),
   getFactoryContent: vi.fn(),
   getFactoryTree: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock('../../../services/api', () => ({
   getFactoryContent: mocks.getFactoryContent,
   getFactoryTree: mocks.getFactoryTree,
   fetchInstanceHooks: mocks.fetchInstanceHooks,
+  getInstanceAdmins: mocks.getInstanceAdmins,
   getInstanceById: mocks.getInstanceById,
   getInstanceConfig: mocks.getInstanceConfig,
   getPresetById: mocks.getPresetById,
@@ -84,7 +86,31 @@ vi.mock('../../ConfirmationModal', () => ({
 }));
 
 vi.mock('../../operators/OwnerAdminEditor', () => ({
-  default: () => null,
+  // Renders what it is given (so preset seeding is observable) and exposes a
+  // button (so the save payload can be asserted) -- a plain `() => null` mock
+  // would hide the render-loop bug this component had in an earlier task.
+  default: ({ adminEntries, onAdminEntriesChange, onAdminEntriesLoaded }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => onAdminEntriesLoaded([
+          { steam_id64: '76561198012345678', level: 3 },
+          { steam_id64: '76561198087654321', level: 5 },
+        ])}
+      >
+        load-server-admins
+      </button>
+      {(adminEntries || []).map((entry) => (
+        <span key={entry.steam_id64}>{`seeded:${entry.steam_id64}:${entry.level}`}</span>
+      ))}
+      <button
+        type="button"
+        onClick={() => onAdminEntriesChange([{ steam_id64: '76561198012345678', level: 2 }])}
+      >
+        set-admins
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('../../presetManager/PresetManagerModal', () => ({
@@ -315,6 +341,7 @@ describe('EditInstanceConfigModal preset saving', () => {
     mocks.createPreset.mockResolvedValue({ message: 'saved', data: { id: 42, name: 'saved-from-edit' } });
     mocks.downloadPreset.mockResolvedValue(new Blob(['zip-bytes'], { type: 'application/zip' }));
     mocks.flushEdits.mockResolvedValue(undefined);
+    mocks.getInstanceAdmins.mockResolvedValue({ admins: [], error: null });
     mocks.fetchInstanceHooks.mockResolvedValue({
       available: [
         { filename: 'a.so', size: 1, modified: 1, enabled: true, order: 1, description: '' },
@@ -387,6 +414,31 @@ describe('EditInstanceConfigModal preset saving', () => {
         checked_factories: [],
       })
     );
+  });
+
+  it('shows the modal while the admin read is still running and the preset waits for it', async () => {
+    let finishAdmins;
+    mocks.getInstanceAdmins.mockReturnValue(new Promise((resolve) => { finishAdmins = resolve; }));
+    mocks.getInstanceById.mockResolvedValue({
+      host_name: 'test-host', host_os_type: 'debian', status: 'running', name: 'inst', qlx_plugins: '',
+    });
+
+    render(
+      <EditInstanceConfigModal isOpen={true} onClose={vi.fn()} instanceId={1} instanceName="Test123" onConfigSaved={vi.fn()} />
+    );
+
+    // Started on open, and the spinner does not wait for it.
+    expect(mocks.getInstanceAdmins).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(screen.getByRole('button', { name: /save preset/i })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+    expect(mocks.createPreset).not.toHaveBeenCalled();
+
+    finishAdmins({ admins: [{ steam_id64: '76561198012345678', level: 4 }], error: null });
+    await waitFor(() => expect(mocks.createPreset).toHaveBeenCalledTimes(1));
+    expect(mocks.createPreset.mock.calls[0][0].admins).toEqual([{ steam_id64: '76561198012345678', level: 4 }]);
+    expect(mocks.getInstanceAdmins).toHaveBeenCalledTimes(1);
   });
 
   it('includes lan_rate_enabled when saving a preset from edit mode', async () => {
@@ -1515,6 +1567,103 @@ describe('EditInstanceConfigModal preset saving', () => {
       // Preset A is still the active preset, and it must still show its
       // accepted replacement -- not silently reseeded to an empty list.
       expect(mocks.draftAdapterAcceptedReplacementsByPreset.presetA).toEqual(['essentials.py']);
+    });
+  });
+
+  describe('admin list wiring', () => {
+    const renderModal = (props = {}) => render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={mocks.onClose}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+        initialTab="admins"
+        {...props}
+      />
+    );
+
+    beforeEach(() => {
+      mocks.onClose = vi.fn();
+    });
+
+    it('sends only the admin changes against the server list with the config save', async () => {
+      renderModal();
+      fireEvent.click(await screen.findByRole('button', { name: 'load-server-admins' }));
+      // Server had A=3, B=5; the edit leaves only A=2.
+      fireEvent.click(screen.getByRole('button', { name: 'set-admins' }));
+      fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+      await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalled());
+      const payload = mocks.updateInstanceConfig.mock.calls[0][1];
+      expect(payload.admin_changes).toEqual([
+        { steam_id64: '76561198012345678', level: 2 },
+        { steam_id64: '76561198087654321', level: 0 },
+      ]);
+      expect(payload).not.toHaveProperty('admins');
+    });
+
+    it('sends no admin changes from a save that never touched the tab', async () => {
+      renderModal();
+      fireEvent.click(await screen.findByRole('button', { name: 'load-server-admins' }));
+      fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+      await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalled());
+      expect(mocks.updateInstanceConfig.mock.calls[0][1]).not.toHaveProperty('admin_changes');
+    });
+
+    it('saves a preset without admins and warns when the server could not be read', async () => {
+      mocks.getInstanceAdmins.mockResolvedValue({ admins: null, error: 'unreachable' });
+      renderModal();
+      await waitFor(() => expect(screen.getByRole('button', { name: /save preset/i })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+      await waitFor(() => expect(mocks.createPreset).toHaveBeenCalled());
+      expect(mocks.createPreset.mock.calls[0][0].admins).toBeNull();
+      await waitFor(() => expect(mocks.showError).toHaveBeenCalledWith(expect.stringMatching(/without admins/i)));
+    });
+
+    it('opening the modal does not make it dirty', async () => {
+      renderModal();
+      await waitFor(() => expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+      // Not dirty -> handleAttemptClose calls onClose directly rather than
+      // opening the discard-changes confirmation.
+      expect(mocks.onClose).toHaveBeenCalled();
+    });
+
+    it('seeds the admin list from an applied preset and sends it back on save-as-preset', async () => {
+      mocks.getPresetById.mockResolvedValue({
+        name: 'admins-preset',
+        configs: {},
+        factories: {},
+        admins: [{ steam_id64: '76561198087654321', level: 4 }],
+      });
+      renderModal();
+      await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await waitFor(() => expect(screen.getByText('seeded:76561198087654321:4')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /save preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm save preset/i }));
+      await waitFor(() => expect(mocks.createPreset).toHaveBeenCalled());
+      expect(mocks.createPreset.mock.calls[0][0].admins)
+        .toEqual([{ steam_id64: '76561198087654321', level: 4 }]);
+    });
+
+    it('a preset with no admin list leaves the current one alone', async () => {
+      mocks.getPresetById.mockResolvedValue({ name: 'legacy-preset', configs: {}, factories: {}, admins: null });
+      renderModal();
+      await screen.findByRole('button', { name: 'set-admins' });
+      fireEvent.click(screen.getByRole('button', { name: 'set-admins' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+      await waitFor(() => expect(mocks.showSuccess).toHaveBeenCalledWith('Preset "legacy-preset" loaded successfully.'));
+
+      fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+      await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalled());
+      expect(mocks.updateInstanceConfig.mock.calls[0][1].admin_changes)
+        .toEqual([{ steam_id64: '76561198012345678', level: 2 }]);
     });
   });
 });

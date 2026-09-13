@@ -88,6 +88,17 @@ describe('updateInstanceConfig', () => {
     });
   });
 
+  it('sends admin_changes when present and omits it otherwise', async () => {
+    mocks.put.mockResolvedValue({ data: { message: 'ok' } });
+    const changes = [{ steam_id64: '76561198087654321', level: 0 }];
+
+    await updateInstanceConfig(7, { configs: {}, admin_changes: changes }, false);
+    expect(mocks.put.mock.calls[0][1].admin_changes).toEqual(changes);
+
+    await updateInstanceConfig(7, { configs: {} }, false);
+    expect(mocks.put.mock.calls[1][1]).not.toHaveProperty('admin_changes');
+  });
+
   it('passes explicit config maps and metadata through unchanged', async () => {
     mocks.put.mockResolvedValue({ data: { message: 'ok' } });
 

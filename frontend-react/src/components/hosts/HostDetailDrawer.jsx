@@ -11,6 +11,7 @@ import { getPlan } from '../../utils/providerData';
 import InfoTooltip from '../common/InfoTooltip';
 import { HostStatus, QLFILTER_STATUS } from '../../utils/statusEnums';
 import { copyToClipboard } from '../../utils/clipboard';
+import { runtimeLabel } from '../../constants/runtimes';
 import { validateHostName, HOST_NAME_MAX_LENGTH } from '../../utils/resourceValidation';
 
 const CHIP_BASE = 'shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase';
@@ -23,6 +24,16 @@ const QL_CHIP_STYLE = { color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3
 function PerfChip({ label }) {
   if (!label) return null;
   return <span className={CHIP_BASE} style={PERF_CHIP_STYLES[label] ?? PERF_CHIP_STYLES['Hi-Perf']}>{label}</span>;
+}
+
+const RUNTIME_CHIP_STYLES = {
+  minqlx:       { color: '#10b981', border: '1px solid rgba(16,185,129,0.35)', background: 'rgba(16,185,129,0.08)' },
+  minqlxtended: { color: '#a855f7', border: '1px solid rgba(168,85,247,0.35)', background: 'rgba(168,85,247,0.08)' },
+};
+
+function RuntimeChip({ runtime }) {
+  const label = runtimeLabel(runtime);
+  return <span className={`${CHIP_BASE} normal-case`} style={RUNTIME_CHIP_STYLES[label]}>{label}</span>;
 }
 
 function QLChip({ count, plural = 'servers' }) {
@@ -258,6 +269,9 @@ export default function HostDetailDrawer({
                               <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>User-provided</span>
                             </span>
                           ) : internalHost.provider}
+                        </Field>
+                        <Field label="Runtime">
+                          <RuntimeChip runtime={internalHost.runtime} />
                         </Field>
                         {internalHost.is_standalone ? (
                           <>

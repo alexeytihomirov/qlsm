@@ -25,6 +25,7 @@ from ui.tasks import deploy_instance, apply_instance_config, restart_instance, s
 from ui.task_logic.job_failure_handlers import instance_job_failure_handler
 from ui.task_logic.zmq_utils import validate_zmq_password
 from ui.task_lock import acquire_lock, release_lock
+from ui.admin_permissions import levels_from_entries, validate_admin_entries, strip_numeric_admin_lines
 from ui.config_path_utils import (
     RESERVED_CONFIG_FOLDER_NAMES,
     MAX_CONFIG_FOLDER_DEPTH,
@@ -146,8 +147,11 @@ def _write_configs_to_disk(instance_dir, configs_data):
     for rel_path, content in configs_data.items():
         full_path = os.path.join(instance_dir, rel_path)
         os.makedirs(os.path.dirname(full_path) or instance_dir, exist_ok=True)
+        content = content if content is not None else ''
+        if os.path.basename(rel_path) == 'access.txt':
+            content = strip_numeric_admin_lines(content)
         with open(full_path, 'w') as f:
-            f.write(content if content is not None else '')
+            f.write(content)
 
 
 def _list_managed_files_recursive(instance_dir):
@@ -309,6 +313,13 @@ def add_instance_api():
         err, code = _validate_enabled_hooks_payload(enabled_hooks_data)
         if err:
             return jsonify({"error": {"message": err}}), code
+
+    admins_data = data.get('admins')
+    admin_entries = None
+    if admins_data is not None:
+        admin_entries, admin_error = validate_admin_entries(admins_data)
+        if admin_error:
+            return jsonify({"error": {"message": admin_error}}), 400
 
     redis_db, redis_db_err = _validate_redis_db(data.get('redis_db'))
     if redis_db_err:
@@ -481,10 +492,15 @@ def add_instance_api():
         if not acquire_lock('instance', instance.id, lock_token, ttl=1260):
             return jsonify({"error": {"message": f'Another operation is running on this instance. Please wait for it to complete.'}}), 409
 
-        # Update status to DEPLOYING and enqueue task
+        # Update status to DEPLOYING and enqueue task. The admin list rides along
+        # to the deploy task, which writes it to Redis once; QLSM keeps no copy.
         try:
             update_instance(instance.id, status=InstanceStatus.DEPLOYING)
-            job = enqueue_task(deploy_instance, instance.id, lock_token=lock_token, on_failure=instance_job_failure_handler)
+            job = enqueue_task(
+                deploy_instance, instance.id,
+                admin_levels=levels_from_entries(admin_entries),
+                lock_token=lock_token, on_failure=instance_job_failure_handler,
+            )
         except Exception as enqueue_err:
             release_lock('instance', instance.id, lock_token)
             update_instance(instance.id, status=InstanceStatus.IDLE)
@@ -1218,6 +1234,15 @@ def manage_instance_config_api(instance_id): # Renamed and combined GET/POST fro
                 if err:
                     return jsonify({"error": {"message": err}}), code
 
+            # Only what the operator changed in the Owner & Admins tab: level 0
+            # removes an admin. Everything else in Redis is left alone.
+            admin_changes = None
+            admin_changes_data = data.get('admin_changes')
+            if admin_changes_data is not None:
+                admin_changes, admin_error = validate_admin_entries(admin_changes_data)
+                if admin_error:
+                    return jsonify({"error": {"message": admin_error}}), 400
+
             if configs_present:
                 _sync_configs_to_disk(
                     instance_config_dir,
@@ -1303,6 +1328,7 @@ def manage_instance_config_api(instance_id): # Renamed and combined GET/POST fro
                 restart=restart,
                 reconcile_lan_rate_network=reconcile_lan_rate_network,
                 previous_status=original_status.value,
+                admin_levels=levels_from_entries(admin_changes),
                 lock_token=lock_token,
                 on_failure=instance_job_failure_handler,
             )

@@ -124,4 +124,5 @@ def replace_database(data):
             default_level=row.get('default_level', 5),
             created_at=_parse_dt(row.get('created_at')), updated_at=_parse_dt(row.get('updated_at')),
         ))
+
     db.session.flush()

@@ -14,6 +14,7 @@ from ui.models import BinaryMetadata, ConfigPreset
 from ui.preset_support import PRESETS_DIR, validate_user_preset_name
 from ui.runtime import normalize_runtime
 from ui.routes.preset_api_routes import (
+    _read_preset_admins,
     _read_preset_checked_factories,
     _read_preset_checked_plugins,
     _read_preset_configs,
@@ -22,6 +23,7 @@ from ui.routes.preset_api_routes import (
     _read_preset_lan_rate_enabled,
     _read_preset_scripts,
     _resolve_export_root,
+    _write_preset_admins,
     _write_preset_checked_factories,
     _write_preset_checked_plugins,
     _write_preset_configs,
@@ -110,6 +112,8 @@ def _write_import_bundle(preset_path, bundle):
         _write_preset_enabled_hooks(preset_path, bundle['enabled_hooks'])
     if bundle['lan_rate_enabled'] is not None:
         _write_preset_lan_rate_enabled(preset_path, bundle['lan_rate_enabled'])
+    if bundle['admins'] is not None:
+        _write_preset_admins(preset_path, bundle['admins'])
 
 
 def _replace_binary_metadata(preset_name, entries):
@@ -134,6 +138,7 @@ def _preset_response(preset):
     data['checked_factories'] = _read_preset_checked_factories(preset.path)
     data['enabled_hooks'] = _read_preset_enabled_hooks(preset.path)
     data['lan_rate_enabled'] = _read_preset_lan_rate_enabled(preset.path)
+    data['admins'] = _read_preset_admins(preset.path)
     return data
 
 

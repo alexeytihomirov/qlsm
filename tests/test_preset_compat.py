@@ -449,8 +449,8 @@ def test_a_preset_that_recorded_no_selection_still_records_none():
 
 # --- "Untouched" means untouched by EITHER allow-list ------------------------
 #
-# The source runtime ships more plugins than its default preset offers, and for
-# a few files the two disagree on content. Checking only the default preset got
+# The source runtime ships more plugins than its default preset offers, and the
+# two used to disagree on content for a few files. Checking only the default preset got
 # both halves wrong on the same real preset: stock plugins the default preset
 # does not carry were reported as the operator's own work, and a preset holding
 # upstream's untouched motd.py was reported as having modified it -- when the
@@ -468,16 +468,16 @@ def _manifest_stock(name, runtime=MINQLX):
 
 
 def test_the_two_source_allow_lists_actually_differ():
-    """Guards the premise. If the manifest and the default preset ever held the
-    same files with the same content, every test below would pass vacuously."""
+    """Guards the premise of the stock-plugin test below. If the manifest ever
+    held only files the default preset ships, it would pass vacuously.
+
+    The two no longer disagree on the content of shared files (b547508, guarded
+    by test_builtin_preset_plugin_drift.py), so that case is simulated in
+    test_a_preset_holding_upstreams_file_is_not_accused_of_modifying_it."""
     from ui.preset_compat import baseline_hashes, shipped_scripts
     manifest = baseline_hashes(MINQLX)
     catalog = shipped_scripts(MINQLX)
     assert set(manifest) - set(catalog), 'manifest must carry files the default preset does not'
-    from ui.plugin_compat import baseline_digest
-    disagree = {name for name, digest in manifest.items()
-                if name in catalog and baseline_digest(catalog[name]) != digest}
-    assert disagree, 'the two lists must disagree on some file\'s content'
 
 
 def test_a_stock_plugin_absent_from_the_default_preset_is_not_called_the_operators():
@@ -492,17 +492,25 @@ def test_a_stock_plugin_absent_from_the_default_preset_is_not_called_the_operato
     assert result['checked_plugins'] == ['reset_acc.py']
 
 
-def test_a_preset_holding_upstreams_file_is_not_accused_of_modifying_it():
-    """QLSM's minqlx default preset ships a customised motd.py; the manifest
-    records upstream's. A preset carrying upstream's untouched copy differs from
-    the default preset and used to be reported as 'this preset modified it' --
-    exactly backwards, since the modification is QLSM's."""
-    content = _manifest_stock('motd.py')
+def test_a_preset_holding_upstreams_file_is_not_accused_of_modifying_it(monkeypatch):
+    """When QLSM's default preset ships a customised copy of a stock plugin, a
+    preset carrying the manifest's untouched copy differs from the default
+    preset. It used to be reported as 'this preset modified it' -- exactly
+    backwards, since the modification is QLSM's.
+
+    The real default preset and manifest now agree on motd.py, so the
+    customised default-preset copy is simulated."""
+    import ui.preset_compat as preset_compat
     from ui.plugin_compat import baseline_digest
-    from ui.preset_compat import shipped_scripts
-    assert baseline_digest(shipped_scripts(MINQLX)['motd.py']) != baseline_digest(content), (
-        'this test is only meaningful while the default preset and the manifest '
-        'disagree about motd.py')
+    content = _manifest_stock('motd.py')
+    real_catalog_digests = preset_compat.source_catalog_digests
+
+    def customised_catalog_digests(runtime):
+        digests = dict(real_catalog_digests(runtime))
+        digests['motd.py'] = baseline_digest(content + '\n# QLSM customisation\n')
+        return digests
+
+    monkeypatch.setattr(preset_compat, 'source_catalog_digests', customised_catalog_digests)
     response = {'scripts': {'motd.py': content}, 'checked_plugins': []}
     result = apply_compatibility(response, MINQLX, MINQLXTENDED)
     assert result['compatibility']['stripped'] == []

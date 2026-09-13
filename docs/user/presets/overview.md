@@ -1,6 +1,6 @@
 # Presets And Default Config
 
-A preset is a reusable bundle of config files, plugin selections, and factory file selections. Use presets to spin up new instances with a consistent starting point, or to save a working setup so you can replicate it later.
+A preset is a reusable bundle of config files, plugin selections, factory file selections, and admins. Use presets to spin up new instances with a consistent starting point, or to save a working setup so you can replicate it later.
 
 ## What A Preset Contains
 
@@ -15,6 +15,7 @@ A preset is a reusable bundle of config files, plugin selections, and factory fi
 - A set of selected minqlx plugins
 - A set of selected factory files
 - The [99k LAN Rate](../features/99k-lan-rate.md) toggle state
+- The admin list (`admins.json`): SteamIDs and their admin levels. Saving a preset from **Edit Config** takes the admins the server has right now; see [Operators](../administration/operators.md#presets)
 
 ## Server Runtime Compatibility
 
@@ -85,7 +86,7 @@ Use **Load Preset** in the deploy form or in **Edit Config** to open the Preset 
 
 <img src="../../images/preset-manager-load.png" />
 
-Loading a preset overwrites the current draft with the saved config files, plugin file tree, plugin selections, factory files, and factory selections.
+Loading a preset overwrites the current draft with the saved config files, plugin file tree, plugin selections, factory files, factory selections, and admin list. A preset saved before admins were included leaves the current admin list alone.
 
 - Built-in presets (e.g., `default`) are always available and cannot be deleted or downloaded.
 - User-created presets can be downloaded, renamed, or deleted from the row menu on this tab.
@@ -102,7 +103,7 @@ Another way to download a preset is to click **Download** button right after sav
 
 Built-in presets cannot be downloaded.
 
-The archive contains the full preset directory: config files (`server.cfg`, `mappool.txt`, `access.txt`, `workshop.txt`, and any custom `.cfg`/`.txt` files), plugin files and factory files, LD_PRELOAD user hooks, checked plugin/factory selections, enabled-hooks selection, the 99k LAN Rate toggle state, and export metadata. Use this to back up a preset or move it to another QLSM instance.
+The archive contains the full preset directory: config files (`server.cfg`, `mappool.txt`, `access.txt`, `workshop.txt`, and any custom `.cfg`/`.txt` files), plugin files and factory files, LD_PRELOAD user hooks, checked plugin/factory selections, enabled-hooks selection, the 99k LAN Rate toggle state, the admin list, and export metadata. Use this to back up a preset or move it to another QLSM instance.
 
 ## Import A Preset
 

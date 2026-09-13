@@ -130,7 +130,7 @@
     },
     "motd.py": {
       "origin": "upstream",
-      "sha256": "5ddd6a60a432da805d2e23074777eb60d82a189cc4b9117fddc15518695e4593"
+      "sha256": "bbb592caedebc165bcbf6cf7e0ce79dcc22f311fb3eed364c94f0e9d6217a74a"
     },
     "myFun.py": {
       "origin": "qlsm",
@@ -142,7 +142,7 @@
     },
     "mydiscordbot.py": {
       "origin": "upstream",
-      "sha256": "3623cf00f5cb8044109232278d2b75e378c861363a56d373dd9ef55d9dc3ba5c"
+      "sha256": "e9a9df39fe394ab3d7f748ac3fd7586cca4d5ff1dfab526f4de8bb74e11e99db"
     },
     "names.py": {
       "origin": "upstream",

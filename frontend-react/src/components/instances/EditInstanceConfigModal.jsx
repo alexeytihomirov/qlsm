@@ -3,7 +3,7 @@ import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { X, LoaderCircle, Zap, AlertTriangle, Settings, Code2, LayoutGrid, Save, FolderOpen, RotateCw, Webhook, Crown } from 'lucide-react';
 import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
-import { getInstanceConfig, updateInstanceConfig, getInstanceById, getPresets, getPresetById, createPreset, updatePreset, getFactoryTree, getFactoryContent, fetchInstanceHooks } from '../../services/api';
+import { getInstanceConfig, updateInstanceConfig, getInstanceById, getPresets, getPresetById, createPreset, updatePreset, getFactoryTree, getFactoryContent, fetchInstanceHooks, getInstanceAdmins } from '../../services/api';
 import { getBinaryMeta, saveBinaryMeta } from '../../services/draftApi';
 import ExpandedEditorModal from '../ExpandedEditorModal';
 import ConfirmationModal from '../ConfirmationModal';
@@ -22,6 +22,7 @@ import { qlworkshopLanguage } from '../../codemirror-lang-qlworkshop';
 import { qlentLanguage, qlentLinter } from '../../codemirror-lang-qlent';
 import HooksTab from './HooksTab';
 import OwnerAdminEditor from '../operators/OwnerAdminEditor';
+import { diffAdminLists } from '../../utils/adminChanges';
 import {
   canEnableLanRate,
   getLanRateUnsupportedMessage,
@@ -210,7 +211,6 @@ function EditInstanceConfigModal({
   } = pluginsAdapter;
   const { files: serializedConfigFiles } = serializeConfigs();
   const serverCfgContent = serializedConfigFiles['server.cfg'] || '';
-  const accessTxtContent = serializedConfigFiles['access.txt'] || '';
 
   const handleServerCfgOwnerChange = useCallback((nextConfig) => {
     writeConfigContent('server.cfg', nextConfig).catch((err) => {
@@ -219,12 +219,44 @@ function EditInstanceConfigModal({
     setIsDirty(true);
   }, [writeConfigContent]);
 
-  const handleAccessTxtChange = useCallback((nextAccessTxt) => {
-    writeConfigContent('access.txt', nextAccessTxt).catch((err) => {
-      setSaveError(err?.message || 'Failed to update access.txt.');
-    });
+  // null means "the user has not edited the admin list". Only a real mutation
+  // sets it, so an untouched list is never sent -- and the modal is not dirty on
+  // open.
+  const [adminEntries, setAdminEntries] = useState(null);
+  // What the server currently has, for "Save as preset" on an untouched list.
+  // Never passed back into OwnerAdminEditor.
+  const [loadedAdminEntries, setLoadedAdminEntries] = useState(null);
+  // The admin read (an SSH round trip) starts the moment the modal opens and
+  // runs alongside the config load without holding up the spinner. The
+  // Owner & Admins tab and Save Preset both await this same request.
+  const [adminsPreload, setAdminsPreload] = useState(null);
+
+  const handleAdminEntriesChange = useCallback((next) => {
+    setAdminEntries(next);
     setIsDirty(true);
-  }, [writeConfigContent]);
+  }, []);
+
+  // Admin list for a preset: the edited list, else the server's list -- from
+  // the tab if it has loaded, else from the read started on open (awaited if
+  // still running). null when the server could not be read; the preset is
+  // then saved without admins and the user is told.
+  const resolvePresetAdmins = useCallback(async () => {
+    if (adminEntries !== null) return adminEntries;
+    if (loadedAdminEntries !== null) return loadedAdminEntries;
+    if (!instanceId) return null;
+    try {
+      const data = await (adminsPreload || getInstanceAdmins(instanceId));
+      return Array.isArray(data?.admins) ? data.admins : null;
+    } catch {
+      return null;
+    }
+  }, [adminEntries, adminsPreload, instanceId, loadedAdminEntries]);
+
+  const warnIfPresetHasNoAdmins = useCallback((admins) => {
+    if (admins === null && instanceId) {
+      showError('Preset saved without admins: the admin list could not be read from the server.');
+    }
+  }, [instanceId, showError]);
 
   // Resolve raw qlx_plugins names to full tree paths once on initial load.
   // Only root-level files can match — a name that resolves solely to a
@@ -315,6 +347,9 @@ function EditInstanceConfigModal({
   useEffect(() => {
     if (isOpen && instanceId) {
       let cancelled = false;
+      const preload = getInstanceAdmins(instanceId);
+      preload.catch(() => {}); // awaited later; never an unhandled rejection
+      setAdminsPreload(preload);
       setCurrentInstanceName(initialInstanceName || `Instance ${instanceId}`);
       const fetchInitialData = async () => {
         setLoading(true);
@@ -336,6 +371,8 @@ function EditInstanceConfigModal({
         setHookDiskChanged(false);
         setHooksLoaded(false);
         setInstanceStatus(null);
+        setAdminEntries(null);
+        setLoadedAdminEntries(null);
         pluginsSyncedRef.current = false;
         setDroppedPluginCount(0);
         setPluginNoticeDismissed(false);
@@ -517,9 +554,11 @@ function EditInstanceConfigModal({
       pluginsHaveChanges ||
       checkedPluginsChanged ||
       hooksDirty ||
-      metadataChanged
+      metadataChanged ||
+      adminEntries !== null
     ));
   }, [
+    adminEntries,
     checkedPluginsChanged,
     configsHaveChanges,
     factoriesHaveChanges,
@@ -561,6 +600,11 @@ function EditInstanceConfigModal({
       if (presetData.enabled_hooks !== undefined && presetData.enabled_hooks !== null) {
         setHookEnabledOrder(presetData.enabled_hooks);
         setHooksLoaded(true);
+      }
+      // A null/absent admins means the preset never recorded a list (every
+      // preset written before this feature) -- leave the current list alone.
+      if (Array.isArray(presetData.admins)) {
+        setAdminEntries(presetData.admins);
       }
       // lan_rate_enabled: null/undefined = the preset pre-dates this feature —
       // leave the instance's current LAN rate toggle untouched. Clamp to false
@@ -674,6 +718,7 @@ function EditInstanceConfigModal({
       if (hooksLoaded) {
         presetData.enabled_hooks = hookEnabledOrder;
       }
+      presetData.admins = await resolvePresetAdmins();
 
       presetData.lan_rate_enabled = lanRateEnabled;
 
@@ -694,13 +739,14 @@ function EditInstanceConfigModal({
         name: savedPreset.name || name.trim(),
       });
       showSuccess(response.message || `Preset "${name}" saved successfully.`);
+      warnIfPresetHasNoAdmins(presetData.admins);
     } catch (err) {
       setPresetError(err.error?.message || err.message || 'Failed to save preset.');
       showError('Failed to save preset.');
     } finally {
       setIsSavingPreset(false);
     }
-  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, lanRateEnabled, pluginDraftId, serializeConfigs, serializeFactories, showSuccess, showError]);
+  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, lanRateEnabled, pluginDraftId, resolvePresetAdmins, serializeConfigs, serializeFactories, showSuccess, showError, warnIfPresetHasNoAdmins]);
 
   const handleOverwritePreset = useCallback(async (presetId, { description, runtime }) => {
     setIsSavingPreset(true);
@@ -726,6 +772,7 @@ function EditInstanceConfigModal({
       if (hooksLoaded) {
         presetData.enabled_hooks = hookEnabledOrder;
       }
+      presetData.admins = await resolvePresetAdmins();
       presetData.lan_rate_enabled = lanRateEnabled;
       presetData.binary_meta_source = { context_type: 'instance', context_key: String(instanceId) };
       const response = await updatePreset(presetId, presetData);
@@ -734,13 +781,14 @@ function EditInstanceConfigModal({
       const saved = response.data || {};
       setSavedPresetForDownload({ id: saved.id ?? presetId, name: saved.name });
       showSuccess(response.message || 'Preset overwritten successfully.');
+      warnIfPresetHasNoAdmins(presetData.admins);
     } catch (err) {
       setPresetError(err.error?.message || err.message || 'Failed to overwrite preset.');
       showError('Failed to overwrite preset.');
     } finally {
       setIsSavingPreset(false);
     }
-  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, lanRateEnabled, pluginDraftId, serializeConfigs, serializeFactories, showSuccess, showError]);
+  }, [checkedPlugins, hookEnabledOrder, hooksLoaded, instanceId, lanRateEnabled, pluginDraftId, resolvePresetAdmins, serializeConfigs, serializeFactories, showSuccess, showError, warnIfPresetHasNoAdmins]);
 
   const handlePresetDeleted = useCallback((deletedPresetId) => {
     setPresets(prevPresets => prevPresets.filter(p => p.id !== deletedPresetId));
@@ -795,6 +843,12 @@ function EditInstanceConfigModal({
       };
       if (hooksLoaded) {
         configPayload.enabled_hooks = hookEnabledOrder;
+      }
+      // Only what the user changed against the list read from the server; every
+      // other admin in Redis (e.g. set in-game with !setperm) is left alone.
+      if (adminEntries !== null) {
+        const adminChanges = diffAdminLists(loadedAdminEntries, adminEntries);
+        if (adminChanges.length > 0) configPayload.admin_changes = adminChanges;
       }
 
       // Pass restart parameter to updateInstanceConfig
@@ -1191,9 +1245,12 @@ function EditInstanceConfigModal({
                           <div className={activeMainTab === 'admins' ? 'flex-1 min-h-0 overflow-y-auto' : 'hidden'}>
                             <OwnerAdminEditor
                               serverCfgContent={serverCfgContent}
-                              accessTxtContent={accessTxtContent}
                               onServerCfgChange={handleServerCfgOwnerChange}
-                              onAccessTxtChange={handleAccessTxtChange}
+                              instanceId={instanceId}
+                              adminEntries={adminEntries}
+                              onAdminEntriesChange={handleAdminEntriesChange}
+                              onAdminEntriesLoaded={setLoadedAdminEntries}
+                              adminsPreload={adminsPreload}
                             />
                           </div>
                         </div>

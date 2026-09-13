@@ -147,10 +147,10 @@ def resize_host_task(host_id, new_plan, lock_token=None):
 
 @rq.job(timeout=1200)
 @with_app_context
-def deploy_instance(instance_id, lock_token=None):
+def deploy_instance(instance_id, admin_levels=None, lock_token=None):
     """RQ task entry point for deploying a QL instance."""
     try:
-        return deploy_instance_logic(instance_id)
+        return deploy_instance_logic(instance_id, admin_levels=admin_levels)
     finally:
         if lock_token:
             from ui.task_lock import release_lock
@@ -191,7 +191,7 @@ def start_instance(instance_id, lock_token=None):
 
 @rq.job(timeout=300)
 @with_app_context
-def apply_instance_config(instance_id, restart=True, reconcile_lan_rate_network=False, previous_status=None, lock_token=None):
+def apply_instance_config(instance_id, restart=True, reconcile_lan_rate_network=False, previous_status=None, admin_levels=None, lock_token=None):
     """RQ task entry point for applying configuration to a QL instance."""
     try:
         return apply_instance_config_logic(
@@ -199,6 +199,7 @@ def apply_instance_config(instance_id, restart=True, reconcile_lan_rate_network=
             restart=restart,
             reconcile_lan_rate_network=reconcile_lan_rate_network,
             previous_status=previous_status,
+            admin_levels=admin_levels,
         )
     finally:
         if lock_token:

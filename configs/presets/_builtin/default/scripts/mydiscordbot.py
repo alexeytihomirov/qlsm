@@ -90,7 +90,7 @@ class mydiscordbot(Plugin):
         super().__init__()
 
         # maybe initialize plugin cvars
-        Plugin.set_cvar_once("qlx_discordBotToken", "YOUR_DISCORD_BOT_TOKEN")
+        Plugin.set_cvar_once("qlx_discordBotToken", "")
         Plugin.set_cvar_once("qlx_discordApplicationId", "YOUR_DISCORD_APP_ID")
         Plugin.set_cvar_once("qlx_discordRelayChannelIds", "1185809861217370165")
         Plugin.set_cvar_once("qlx_discordRelayTeamchatChannelIds", "1185809861217370165")
