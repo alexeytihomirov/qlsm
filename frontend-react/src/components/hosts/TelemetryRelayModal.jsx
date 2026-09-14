@@ -7,6 +7,17 @@ import {
     getHostStatsHubOverride,
 } from '../../services/api';
 
+// Where this modal reads its data from. Defaults to the built-in endpoints;
+// the telemetry-relay addon passes its own so the *same* component can be
+// mounted from an addon without the operator losing a single field. Keeping
+// one component instead of a look-alike is the only way parity stays true as
+// either side changes.
+const CORE_API = {
+    getRelay: getTelemetryRelay,
+    getStatus: getTelemetryRelayStatus,
+    getOverride: getHostStatsHubOverride,
+};
+
 function StatusBadge({ status, statusLoading }) {
     if (statusLoading) {
         return (
@@ -32,7 +43,7 @@ function StatusBadge({ status, statusLoading }) {
     );
 }
 
-function TelemetryRelayModal({ isOpen, onClose, onSubmit, host }) {
+function TelemetryRelayModal({ isOpen, onClose, onSubmit, host, api = CORE_API }) {
     const [enabled, setEnabled] = useState(false);
     const [urlOverride, setUrlOverride] = useState('');
     const [tokenOverride, setTokenOverride] = useState('');
@@ -44,14 +55,14 @@ function TelemetryRelayModal({ isOpen, onClose, onSubmit, host }) {
     const refreshStatus = useCallback(async (hostId) => {
         setStatusLoading(true);
         try {
-            const data = await getTelemetryRelayStatus(hostId);
+            const data = await api.getStatus(hostId);
             setStatus(data);
         } catch {
             setStatus(null);
         } finally {
             setStatusLoading(false);
         }
-    }, []);
+    }, [api]);
 
     useEffect(() => {
         if (!isOpen || !host) return;
@@ -60,8 +71,8 @@ function TelemetryRelayModal({ isOpen, onClose, onSubmit, host }) {
         (async () => {
             try {
                 const [relay, override] = await Promise.all([
-                    getTelemetryRelay(host.id),
-                    getHostStatsHubOverride(host.id),
+                    api.getRelay(host.id),
+                    api.getOverride(host.id),
                 ]);
                 if (cancelled) return;
                 setEnabled(!!relay.enabled);

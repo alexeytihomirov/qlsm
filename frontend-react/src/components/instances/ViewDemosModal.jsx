@@ -3,6 +3,15 @@ import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { X, RefreshCw, Film, AlertCircle, FolderOpen, Download, Search } from 'lucide-react';
 import { listInstanceDemos, downloadInstanceDemo, downloadInstanceDemosBatch } from '../../services/api';
 
+// Same idea as TelemetryRelayModal: the demo-management addon mounts this
+// exact component with its own endpoints, so the addon path cannot drift
+// from the built-in one by so much as a column.
+const CORE_API = {
+    list: listInstanceDemos,
+    downloadOne: downloadInstanceDemo,
+    downloadBatch: downloadInstanceDemosBatch,
+};
+
 /**
  * Modal for viewing server-side demo files (.dm_91, plus .qlmatch - the
  * native-demo addon's zipped multi-POV match package - and its
@@ -42,7 +51,7 @@ function triggerBlobDownload(blob, filename) {
     window.URL.revokeObjectURL(url);
 }
 
-function ViewDemosModal({ isOpen, onClose, instance }) {
+function ViewDemosModal({ isOpen, onClose, instance, api = CORE_API }) {
     const [demos, setDemos] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState(null);
@@ -59,7 +68,7 @@ function ViewDemosModal({ isOpen, onClose, instance }) {
         setError(null);
 
         try {
-            const data = await listInstanceDemos(instance.id);
+            const data = await api.list(instance.id);
             setDemos(data.demos || []);
         } catch (err) {
             console.error('Error listing demos:', err);
@@ -129,7 +138,7 @@ function ViewDemosModal({ isOpen, onClose, instance }) {
         setDownloadError(null);
         setDownloadingNames((prev) => new Set(prev).add(name));
         try {
-            const blob = await downloadInstanceDemo(instance.id, name);
+            const blob = await api.downloadOne(instance.id, name);
             triggerBlobDownload(blob, name);
         } catch (err) {
             console.error('Error downloading demo:', err);
@@ -149,7 +158,7 @@ function ViewDemosModal({ isOpen, onClose, instance }) {
         setIsBatchDownloading(true);
         try {
             const names = [...selected];
-            const blob = await downloadInstanceDemosBatch(instance.id, names);
+            const blob = await api.downloadBatch(instance.id, names);
             const safeName = (instance?.name || 'instance').replace(/[^A-Za-z0-9._-]+/g, '-');
             triggerBlobDownload(blob, `${safeName}-demos.zip`);
         } catch (err) {

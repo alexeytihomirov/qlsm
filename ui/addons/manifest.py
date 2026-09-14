@@ -22,6 +22,16 @@ FIELD_TYPES = ('bool', 'number', 'string', 'secret')
 PANEL_KINDS = ('form', 'table', 'logs')
 MOUNT_POINTS = ('host_menu', 'instance_menu', 'instance_tabs', 'settings_section', 'page')
 
+# `panel` = core renders its shell and the addon fills the body.
+# `modal`  = the addon's component *is* the whole dialog. Needed so a
+# migration addon can mount a purpose-built screen unchanged rather than a
+# generic panel that loses half its controls.
+RENDER_MODES = ('panel', 'modal')
+
+# A component core already builds, referenced by name instead of shipped as a
+# file. Only meaningful for addons bundled in the image.
+BUNDLED_COMPONENT_PREFIX = 'bundled:'
+
 # Bumped when the contract a mounted component sees (ctx shape, ui kit) changes
 # in a way an already-built addon bundle cannot survive. An addon declaring a
 # higher value is listed but not mounted -- see ui/addons/registry.py.
@@ -137,11 +147,26 @@ def _validate_ui(ui, errors):
             if has_panel and item['panel'] not in panels:
                 _err(errors, f'ui.{mount}: panel "{item["panel"]}" is not declared in ui.panels')
             if has_component:
+                comp = item['component']
+                if comp.startswith(BUNDLED_COMPONENT_PREFIX):
+                    # A component core already builds, named rather than
+                    # shipped. Only resolvable for addons that live in the
+                    # image -- the frontend refuses it for an installed one,
+                    # since a .zip cannot reach into core's build. This is how
+                    # a migration addon mounts the exact screen the built-in
+                    # menu mounts instead of a look-alike.
+                    name = comp[len(BUNDLED_COMPONENT_PREFIX):]
+                    if not name or '/' in name:
+                        _err(errors, f'ui.{mount}: bundled component name "{name}" is not valid')
                 # Tier-2 components are served from the addon's own ui/ dir;
                 # anything escaping it is a path-traversal attempt.
-                comp = item['component']
-                if comp.startswith('/') or '..' in comp.split('/'):
+                elif comp.startswith('/') or '..' in comp.split('/'):
                     _err(errors, f'ui.{mount}: component path "{comp}" must stay inside the addon')
+            renders = item.get('renders')
+            if renders is not None and renders not in RENDER_MODES:
+                _err(errors, f'ui.{mount}: "renders" must be one of {", ".join(RENDER_MODES)}')
+            if renders == 'modal' and not has_component:
+                _err(errors, f'ui.{mount}: "renders": "modal" needs a component, not a panel')
     return ui
 
 

@@ -1,8 +1,8 @@
 {
   "id": "telemetry-relay",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Telemetry Relay (addon)",
-  "description": "Forwards live match/player/pickup telemetry from each game instance to ql-stats-hub through a per-host relay sidecar. Runs alongside the built-in Telemetry Relay panel during migration; the built-in one goes away once this is verified live.",
+  "description": "Forwards live match/player/pickup telemetry from each game instance to ql-stats-hub through a per-host relay sidecar. Runs alongside the built-in Telemetry Relay panel during migration and mounts the same screen, so nothing is lost by switching.",
   "scopes": ["global", "host", "instance"],
   "ui_api": 1,
 
@@ -10,7 +10,13 @@
     "icon": "radio",
 
     "host_menu": [
-      { "id": "relay", "label": "Telemetry Relay (addon)", "icon": "radio", "panel": "host_relay" }
+      {
+        "id": "relay",
+        "label": "Telemetry Relay (addon)",
+        "icon": "radio",
+        "component": "bundled:relay-modal",
+        "renders": "modal"
+      }
     ],
     "instance_tabs": [
       { "id": "telemetry", "label": "Telemetry", "icon": "radio", "panel": "instance_telemetry" }
@@ -20,19 +26,6 @@
     },
 
     "panels": {
-      "host_relay": {
-        "kind": "form",
-        "description": "Enable the relay sidecar on this host and, optionally, point it at a different stats-hub than the cluster default.",
-        "load": "GET hosts/{host_id}",
-        "submit": "PUT hosts/{host_id}",
-        "status": { "load": "GET hosts/{host_id}/status" },
-        "fields": [
-          { "key": "enabled", "type": "bool", "label": "Relay sidecar enabled", "description": "Installs and starts ql-telemetry-relay on this host. Instances still need telemetry enabled individually." },
-          { "key": "url_override", "type": "string", "label": "Stats-hub URL override", "placeholder": "inherit the global setting", "description": "Leave empty to use the cluster default." },
-          { "key": "ingest_token_override", "type": "secret", "label": "Ingest token override", "description": "Leave empty to use the cluster default." }
-        ]
-      },
-
       "instance_telemetry": {
         "kind": "form",
         "description": "Reserves this instance's cluster-wide stats-hub server ID and points its qlx_statsHub* cvars at the host relay. Requires the relay enabled on the host. Applies config and restarts the instance.",

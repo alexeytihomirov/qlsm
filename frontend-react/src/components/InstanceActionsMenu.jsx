@@ -30,7 +30,7 @@ const InstanceStatus = {
 };
 
 function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop, handleStart, handleToggleLanRate, onOpenEditConfigModal, onViewInstanceDetails, onViewLogs, onViewChatLogs, onViewMinqlxLogs, onViewDemos, onOpenRconConsole }) {
-  const addonMenu = useAddonMenu('instance_menu', instance.id, instance.name);
+  const addonMenu = useAddonMenu('instance_menu', instance, instance.name);
   const { x, y, refs, strategy } = useFloating({
     placement: 'bottom-end',
     middleware: [
