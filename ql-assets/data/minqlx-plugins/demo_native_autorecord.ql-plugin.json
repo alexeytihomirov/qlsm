@@ -6,5 +6,6 @@
     { "cvar": "qlx_qlmatchNameTemplate", "label": ".qlmatch name template", "description": "Filename template for the finished .qlmatch (no extension). Placeholders: {match_id} {date} {time} {map} {gametype} {players} {pov_players} {total_players} {red_count} {blue_count} {red_players} {blue_players} {teams}. Empty = {match_id}_{map}. Values are sanitized for filenames; if the rendered name has no match stamp and already exists, _{match_id} is appended instead of overwriting.", "type": "string", "default": "" },
     { "cvar": "qlx_qlmatchRcloneTargets", "label": ".qlmatch rclone targets", "description": "Comma-separated rclone destinations the finished .qlmatch is copied to (e.g. gdrive:ql-demos/frontier,/home/ql/qlmatch-archive). Each entry is passed to `rclone copy` on the game host — rclone must be installed and its remotes configured there (rclone config). Empty = keep the file local only.", "type": "string", "default": "" },
     { "cvar": "qlx_qlmatchPackerPath", "label": "Packer script path", "description": "Path to the external qlmatch-packer entrypoint on the game host. When missing (or node is not installed), the plugin falls back to a plain in-process zip build without templating/delivery.", "type": "string", "default": "/home/ql/qlmatch-packer/pack.mjs" }
-  ]
+  ],
+  "depends_on": ["demo_native_manifest.py"]
 }

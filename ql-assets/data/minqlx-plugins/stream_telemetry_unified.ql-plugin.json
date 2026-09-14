@@ -13,5 +13,6 @@
     { "cvar": "qlx_statsHubMatchId", "label": "Match ID Override", "description": "Fixed match ID to tag telemetry with, instead of an auto-generated one.", "type": "string", "default": "" },
     { "cvar": "qlx_statsHubServerId", "label": "Server ID", "description": "Server ID this instance reports telemetry as, reserved via the host's Telemetry Relay panel. Must be a unique positive integer coordinated with whoever operates stats-hub - 0 (default) silently disables the whole position-telemetry feed, no error logged. Must match a telemetry-relay routes/ key on this host.", "type": "number", "default": 0, "min": 0 },
     { "cvar": "qlx_statsHubTournamentId", "label": "Tournament ID", "description": "Tournament ID this instance's telemetry is tagged with.", "type": "number", "default": 0, "min": 0 }
-  ]
+  ],
+  "depends_on": ["telemetry_unified_sched.py", "stats_hub_pause.py"]
 }
