@@ -20,6 +20,19 @@ scanner — the reference addon inside it does not load in production. To try
 it, copy `addons/_examples/hello-addon/` into your addon-packages volume and
 restart.
 
+## What ships here today
+
+| Addon | State |
+|-------|-------|
+| `telemetry-relay` | **Migration.** Runs alongside the built-in Telemetry Relay panel; entries suffixed "(addon)". Delegates to `ui/telemetry_relay_settings.py` + `ui/task_logic/ansible_telemetry_relay.py` rather than copying them, so the two paths cannot drift while both exist. |
+| `demo-management` | **Migration.** Runs alongside the built-in Demos modal. Delegates to `ui/task_logic/ansible_instance_demos.py`, which owns the filename validation that keeps a remote path safe. |
+| `_examples/hello-addon` | Reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
+
+Both migration addons are verified against a real host **before** the
+built-in code they duplicate is deleted, and that deletion is a separate
+change. Until then, seeing two "Telemetry Relay" entries in a host menu is
+expected, not a bug.
+
 ## Layout
 
 ```
@@ -66,6 +79,17 @@ The manifest's `ui` block declares mount points; QLSM renders them with its
 own components. Panel kinds: `form`, `table`. A `form` panel with no `load`
 route is **managed** — values are stored by QLSM and an addon needs no
 backend code at all for its settings.
+
+A `table` panel declares its columns (`text` / `bytes` / `datetime`
+formatting), an optional `selectable` flag with `bulk_actions`, and
+`row_actions`. A route may contain both scope placeholders (`{instance_id}`)
+and row placeholders (`{name}`); row values are URL-encoded, so a filename
+with a space cannot break the query string. An action with `"download": true`
+is fetched as a blob and saved under the filename from the response's
+`Content-Disposition`, which keeps auth headers and works for POST endpoints
+(the batch download posts a selection and gets a zip back). Bulk actions post
+the selection under `selection_key` (default `selected`), so an addon can
+keep the field name its API already uses.
 
 Mount points: `host_menu`, `instance_menu`, `instance_tabs`,
 `settings_section`, `page`. Routes in a panel are always relative to the
