@@ -147,10 +147,50 @@ def _build_qlds_args_string(instance):
     ]
 
     user_plugins = [p.strip() for p in instance.qlx_plugins.split(',') if p.strip()] if instance.qlx_plugins else []
-    all_plugins = SYSTEM_PLUGINS + [p for p in user_plugins if p not in SYSTEM_PLUGINS]
+    addon_plugins = [p for p in _addon_contributions('instance.plugins', instance) if p]
+    all_plugins = SYSTEM_PLUGINS + [
+        p for p in user_plugins + addon_plugins if p not in SYSTEM_PLUGINS
+    ]
     parts.append(f'+set qlx_plugins "{", ".join(all_plugins)}"')
 
+    # Addon-contributed cvars go last: the engine takes the last +set for a
+    # cvar, so an addon can add its own but cannot shadow one core depends on
+    # earlier in the list without that being the explicit, visible outcome.
+    parts += [str(arg) for arg in _addon_contributions('instance.launch_args', instance) if arg]
+
     return ' '.join(parts)
+
+
+def _addon_contributions(hook, instance):
+    """Ask enabled addons to contribute to this instance's deploy.
+
+    Returns [] when no addon is installed, enabled, or registered for the
+    hook, so a QLSM with no addons builds byte-identical launch arguments to
+    one without the addon system at all. A handler that raises is logged and
+    skipped inside dispatch() -- an addon must not be able to break a deploy
+    it merely decorates.
+    """
+    try:
+        from ui.addons import dispatch
+
+        return dispatch(hook, instance.id, instance.id) or []
+    except Exception as e:  # registry unavailable, e.g. outside an app context
+        log.warning('Addon hook %s skipped for instance %s: %s', hook, instance.id, e)
+        return []
+
+
+def _addon_cleanup_scope(scope, scope_id):
+    """Run addon cleanup for a host/instance that is being deleted.
+
+    Never raises: a failing addon must not be able to block a delete the
+    operator asked for and leave a half-removed resource behind.
+    """
+    try:
+        from ui.addons import cleanup_scope
+
+        cleanup_scope(scope, scope_id)
+    except Exception as e:
+        log.warning('Addon cleanup for %s %s skipped: %s', scope, scope_id, e)
 
 
 def _build_ld_preload_paths(instance):
@@ -185,6 +225,7 @@ def _build_ld_preload_paths(instance):
                 )
                 continue
             paths.append(f"/home/ql/qlds-{instance.port}/{res['host_subdir']}/{fn}")
+    paths += [str(p) for p in _addon_contributions('instance.ld_preload', instance) if p]
     return ":".join(paths)
 
 
@@ -811,6 +852,10 @@ def delete_instance_logic(instance_id):
         # Delete instance from DB
         try:
             instance_name_for_log = instance.name # Store name before deleting
+            # Let addons clean up before the row goes: their own handler may
+            # need to read it, and core drops their AddonState rows here too
+            # (no FK cascade -- scope_id points at two different tables).
+            _addon_cleanup_scope('instance', instance.id)
             db.session.delete(instance)
             db.session.commit()
             log.info(f"Finished task delete_instance for instance_id: {instance_id}. Instance record '{instance_name_for_log}' deleted.")

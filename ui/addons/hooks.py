@@ -12,21 +12,34 @@ no per-addon `if enabled:` check to forget.
 """
 
 # hook name -> the scope whose enable state gates it, or None for "always"
+#
+# **Every name here must have a real dispatch call site in core.** They did
+# not at first: the whole set was declared in phase 1 and nothing called it
+# until phase 6, so addons could subscribe to hooks that never fired -- the
+# reference addon subscribed to instance.launch_args and would have been
+# silently ignored. tests/test_addon_hooks_are_wired.py now fails if a hook
+# is declared without a call site, so the contract cannot rot back.
 HOOK_SCOPES = {
     # host lifecycle
-    'host.setup': 'host',
+    'host.setup': 'host',      # ansible_host_setup.py, contributes extra-vars
     'host.delete': None,       # cleanup must run even for a disabled addon
-    # instance deploy contributions
+    # instance deploy contributions, all in ansible_instance_mgmt.py
     'instance.launch_args': 'instance',
     'instance.plugins': 'instance',
     'instance.ld_preload': 'instance',
-    'instance.config_sync': 'instance',
-    'instance.status': 'instance',
     'instance.delete': None,   # cleanup must run even for a disabled addon
-    # backup
+    # backup: one hook, not two -- backup_files.backup_file_trees() feeds both
+    # the export and the restore, so a tree contributed once is handled in
+    # both directions.
     'backup.export': None,
-    'backup.import': None,
 }
+
+# Deliberately NOT declared until something needs them, because a hook nobody
+# calls is worse than no hook at all:
+#   instance.config_sync -- the natural call site (_sync_configs_to_disk) takes
+#     a directory, not an instance, so there is nothing sensible to pass yet.
+#   instance.status -- the poller runs per host over SSH with a hard deadline;
+#     letting addon code run inside that budget needs its own design.
 
 # Hooks whose results core concatenates into one list (contribution hooks).
 # Everything else is fire-and-forget; its return value is ignored.
