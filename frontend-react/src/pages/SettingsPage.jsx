@@ -5,6 +5,7 @@ import { useNotification } from '../components/NotificationProvider';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatDateTime } from '../utils/uiUtils';
 import { copyToClipboard } from '../utils/clipboard';
+import AddonSettingsSections from '../components/addons/AddonSettingsSections';
 
 function SettingsPage() {
   const [apiKey, setApiKey] = useState(null);
@@ -301,6 +302,9 @@ function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Global settings contributed by addons. Nothing renders when none do. */}
+      <AddonSettingsSections />
 
       <ConfirmationModal
         isOpen={showRevokeModal}

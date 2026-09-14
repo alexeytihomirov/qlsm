@@ -4,6 +4,7 @@ import { useFloating, shift, offset, autoUpdate, flip } from '@floating-ui/react
 import { Trash2, RefreshCw, ShieldCheck, ShieldOff, Loader2, Eye, PowerIcon, ArrowUpCircle, RotateCcw, FileText, ActivitySquare, PackageCheck, Radio } from 'lucide-react';
 import { HostStatus, QLFILTER_STATUS } from '../utils/statusEnums';
 import ConfirmationModal from './ConfirmationModal';
+import { useAddonMenu } from './addons/AddonMenuSection';
 
 function HostActionsMenu({
   host,
@@ -21,6 +22,7 @@ function HostActionsMenu({
   onRerunSetup,
   onOpenViewLogs
 }) {
+  const addonMenu = useAddonMenu('host_menu', host.id, host.name);
   const [isInstallQlFilterModalOpen, setIsInstallQlFilterModalOpen] = useState(false);
   const [isUninstallQlFilterModalOpen, setIsUninstallQlFilterModalOpen] = useState(false);
   const [isRerunSetupModalOpen, setIsRerunSetupModalOpen] = useState(false);
@@ -44,6 +46,9 @@ function HostActionsMenu({
 
   return (
     <>
+    {/* Outside <Menu> on purpose: Menu.Items unmounts on close, which would
+        tear down a dialog opened from one of its own entries. */}
+    {addonMenu.modal}
     <ConfirmationModal
       isOpen={isInstallQlFilterModalOpen}
       onClose={() => setIsInstallQlFilterModalOpen(false)}
@@ -333,6 +338,9 @@ function HostActionsMenu({
                     }}
                   </Menu.Item>
                 </div>
+
+                {/* Addon-contributed actions */}
+                {addonMenu.items(closeMenu)}
 
                 {/* Destructive action */}
                 <div className="px-1 py-1" style={{ borderTop: '1px solid var(--surface-border)' }}>
