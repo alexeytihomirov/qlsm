@@ -190,3 +190,55 @@ def test_download_plugin_raises_when_source_fetch_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(plugin_repositories.requests, 'get', lambda url, timeout: FakeResponse(404, b''))
     with pytest.raises(PluginRepositoryError):
         download_plugin('https://example.com/repo', 'demo_plugin.py', 'minqlx')
+
+
+def test_download_plugin_refuses_to_overwrite_an_existing_pool_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pool = tmp_path / 'ql-assets' / 'data' / 'minqlx-plugins'
+    pool.mkdir(parents=True)
+    (pool / 'balance.py').write_text('# bundled copy')
+
+    monkeypatch.setattr(
+        plugin_repositories.requests, 'get',
+        lambda url, timeout: FakeResponse(200, b'print("repo copy")'),
+    )
+    with pytest.raises(PluginRepositoryError) as excinfo:
+        download_plugin('https://example.com/repo', 'balance.py', 'minqlx')
+    assert excinfo.value.code == 'exists'
+    # The bundled copy must survive the refused download untouched.
+    assert (pool / 'balance.py').read_text() == '# bundled copy'
+
+
+def test_download_plugin_overwrite_true_replaces_the_existing_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pool = tmp_path / 'ql-assets' / 'data' / 'minqlx-plugins'
+    pool.mkdir(parents=True)
+    (pool / 'balance.py').write_text('# bundled copy')
+
+    def fake_get(url, timeout):
+        if url.endswith('.ql-plugin.json'):
+            return FakeResponse(404, b'')
+        return FakeResponse(200, b'print("repo copy")')
+
+    monkeypatch.setattr(plugin_repositories.requests, 'get', fake_get)
+    download_plugin('https://example.com/repo', 'balance.py', 'minqlx', overwrite=True)
+    assert (pool / 'balance.py').read_bytes() == b'print("repo copy")'
+
+
+def test_download_plugin_removes_a_stale_sidecar_when_the_new_copy_has_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pool = tmp_path / 'ql-assets' / 'data' / 'minqlx-plugins'
+    pool.mkdir(parents=True)
+    (pool / 'demo_plugin.py').write_text('# old copy')
+    (pool / 'demo_plugin.ql-plugin.json').write_text('{"label": "Old"}')
+
+    def fake_get(url, timeout):
+        if url.endswith('.ql-plugin.json'):
+            return FakeResponse(404, b'')
+        return FakeResponse(200, b'print("new copy")')
+
+    monkeypatch.setattr(plugin_repositories.requests, 'get', fake_get)
+    download_plugin('https://example.com/repo', 'demo_plugin.py', 'minqlx', overwrite=True)
+
+    assert (pool / 'demo_plugin.py').read_bytes() == b'print("new copy")'
+    assert not (pool / 'demo_plugin.ql-plugin.json').exists()

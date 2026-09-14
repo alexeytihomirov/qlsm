@@ -145,7 +145,8 @@ def download_plugin_repository_plugins(repo_id):
     local pool. Each entry in `filenames` needs a `runtime` to resolve which
     pool it lands in -- either the manifest's own declared runtime (looked up
     from the last synced list) or an explicit override, since a repo entry
-    may leave `runtime` unset."""
+    may leave `runtime` unset. `overwrite: true` in the body is required to
+    replace a pool file that already exists -- see download_plugin()."""
     repo = db.session.get(PluginRepository, repo_id)
     if not repo:
         return jsonify({'error': {'message': 'Repository not found.'}}), 404
@@ -157,6 +158,8 @@ def download_plugin_repository_plugins(repo_id):
     override_runtime = data.get('runtime')
     if override_runtime is not None and not is_valid_runtime(override_runtime):
         return jsonify({'error': {'message': f"Unknown runtime: {override_runtime!r}"}}), 400
+
+    overwrite = bool(data.get('overwrite'))
 
     known_by_filename = {}
     for entry in repo.to_dict()['plugins']:
@@ -176,10 +179,10 @@ def download_plugin_repository_plugins(repo_id):
             })
             continue
         try:
-            download_plugin(repo.url, filename, normalize_runtime(runtime))
+            download_plugin(repo.url, filename, normalize_runtime(runtime), overwrite=overwrite)
             downloaded.append(filename)
         except PluginRepositoryError as e:
-            errors.append({'filename': filename, 'error': str(e)})
+            errors.append({'filename': filename, 'error': str(e), 'code': e.code})
 
     status = 200 if downloaded and not errors else (207 if downloaded else 502)
     return jsonify({'downloaded': downloaded, 'errors': errors}), status

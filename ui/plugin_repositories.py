@@ -42,7 +42,15 @@ _FILENAME_RE = re.compile(r'^[A-Za-z0-9_\-]+\.py$')
 
 class PluginRepositoryError(Exception):
     """Any fetch/parse/download failure. The message is written to be shown
-    to the operator verbatim -- it never carries raw exception internals."""
+    to the operator verbatim -- it never carries raw exception internals.
+    `code` is set only for failures the caller (the route, then the UI) needs
+    to branch on rather than just display -- currently just 'exists', so a
+    download-blocked-by-an-existing-file can offer an overwrite confirmation
+    instead of a dead-end error."""
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
 
 
 def _fetch(url, max_size):
@@ -159,28 +167,45 @@ def _pool_dir(runtime):
     return os.path.abspath(os.path.join('ql-assets', 'data', runtime_paths(runtime)['asset_plugins_dir']))
 
 
-def download_plugin(base_url, filename, runtime):
+def download_plugin(base_url, filename, runtime, overwrite=False):
     """Fetch <base_url>/<filename> (and its `.ql-plugin.json` sidecar, if the
     repo ships one) over HTTP and write them into the local pool for
     `runtime`. Raises PluginRepositoryError if the plugin source itself can't
     be fetched; a missing or malformed sidecar is silently skipped, same as
     plugin_manifest.py already tolerates for any other plugin.
+
+    Refuses to replace a file already in the pool unless `overwrite` is set:
+    a repo plugin sharing a name with a bundled one (e.g. balance.py) would
+    otherwise silently replace it, and that copy then ships to every host and
+    breaks the manifest.json sha256 baseline. The caller (the route) is the
+    one that turns this into an operator-facing confirm-and-retry.
     """
     if not _FILENAME_RE.match(filename):
         raise PluginRepositoryError(f"Refusing to download unsafe filename: {filename!r}")
 
     pool_dir = _pool_dir(runtime)
     os.makedirs(pool_dir, exist_ok=True)
+    dest_path = os.path.join(pool_dir, filename)
+    if os.path.exists(dest_path) and not overwrite:
+        raise PluginRepositoryError(
+            f"{filename} already exists in the local pool.", code='exists',
+        )
 
     source = _fetch(base_url.rstrip('/') + '/' + filename, PLUGIN_FILE_MAX_SIZE)
-    with open(os.path.join(pool_dir, filename), 'wb') as f:
+    with open(dest_path, 'wb') as f:
         f.write(source)
 
     manifest_filename = filename[:-len('.py')] + '.ql-plugin.json'
+    manifest_path = os.path.join(pool_dir, manifest_filename)
     try:
         manifest_content = _fetch(base_url.rstrip('/') + '/' + manifest_filename, MANIFEST_MAX_SIZE)
         json.loads(manifest_content)  # validate before writing -- same trust boundary as the .py source
     except (PluginRepositoryError, ValueError):
+        # No usable sidecar this time around -- a stale one from a previous
+        # download of this same filename must not linger and describe the
+        # new .py incorrectly.
+        if os.path.exists(manifest_path):
+            os.remove(manifest_path)
         return
-    with open(os.path.join(pool_dir, manifest_filename), 'wb') as f:
+    with open(manifest_path, 'wb') as f:
         f.write(manifest_content)

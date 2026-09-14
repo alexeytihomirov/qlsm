@@ -920,12 +920,17 @@ export const deletePluginRepository = async (repoId) => {
   }
 };
 
-export const downloadPluginRepositoryPlugins = async (repoId, filenames, runtime = null) => {
+export const downloadPluginRepositoryPlugins = async (repoId, filenames, runtime = null, overwrite = false) => {
   try {
-    const payload = runtime ? { filenames, runtime } : { filenames };
+    const payload = { filenames };
+    if (runtime) payload.runtime = runtime;
+    if (overwrite) payload.overwrite = true;
     const response = await apiClient.post(`/plugin-repositories/${repoId}/download`, payload);
     return response.data;
   } catch (error) {
+    // A failed download (e.g. every file blocked) still carries
+    // {downloaded, errors} in error.response.data -- thrown as-is so the
+    // caller can show the per-file reasons instead of a dead-end message.
     console.error(`Failed to download from plugin repository ${repoId}:`, error.response ? error.response.data : error.message);
     throw error.response ? error.response.data : new Error(`Failed to download from plugin repository ${repoId}`);
   }

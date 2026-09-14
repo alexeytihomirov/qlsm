@@ -184,7 +184,7 @@ def test_download_uses_the_manifests_own_runtime(client, app, monkeypatch):
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime: calls.append((base_url, filename, runtime)),
+        lambda base_url, filename, runtime, overwrite=False: calls.append((base_url, filename, runtime)),
     )
     response = client.post(
         f'/api/plugin-repositories/{repo_id}/download', headers=headers,
@@ -225,7 +225,7 @@ def test_download_override_runtime_wins_over_manifest(client, app, monkeypatch):
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime: calls.append((base_url, filename, runtime)),
+        lambda base_url, filename, runtime, overwrite=False: calls.append((base_url, filename, runtime)),
     )
     response = client.post(
         f'/api/plugin-repositories/{repo_id}/download', headers=headers,
@@ -247,7 +247,7 @@ def test_download_partial_failure_returns_207(client, app, monkeypatch):
         ])
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime):
+    def fake_download(base_url, filename, runtime, overwrite=False):
         if filename == 'bad.py':
             raise PluginRepositoryError('download failed')
 
@@ -260,3 +260,31 @@ def test_download_partial_failure_returns_207(client, app, monkeypatch):
     body = response.get_json()
     assert body['downloaded'] == ['ok.py']
     assert body['errors'][0]['filename'] == 'bad.py'
+
+
+def test_download_surfaces_the_exists_code_and_overwrite_retries(client, app, monkeypatch):
+    make_user(app, 'dloverwrite', 'password123')
+    headers = auth_headers(app, 'dloverwrite')
+    with app.app_context():
+        repo = _seeded_repo('Repo I', 'https://example.com/i')
+        repo_id = repo.id
+
+    def fake_download(base_url, filename, runtime, overwrite=False):
+        if not overwrite:
+            raise PluginRepositoryError(f'{filename} already exists in the local pool.', code='exists')
+
+    monkeypatch.setattr(plugin_repository_routes, 'download_plugin', fake_download)
+
+    blocked = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['balance2.py']},
+    )
+    assert blocked.status_code == 502
+    assert blocked.get_json()['errors'][0]['code'] == 'exists'
+
+    retried = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['balance2.py'], 'overwrite': True},
+    )
+    assert retried.status_code == 200
+    assert retried.get_json()['downloaded'] == ['balance2.py']

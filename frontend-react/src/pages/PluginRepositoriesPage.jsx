@@ -22,6 +22,11 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
   const [checked, setChecked] = useState(new Set());
   const [downloading, setDownloading] = useState(false);
   const [fallbackRuntime, setFallbackRuntime] = useState('');
+  // Filenames a download attempt reported as already present in the local
+  // pool ({ code: 'exists' } from the backend) -- offered as an overwrite
+  // confirm rather than a dead-end error, since that's the one failure mode
+  // with an obvious next step.
+  const [overwriteConfirm, setOverwriteConfirm] = useState(null);
   const { showSuccess, showError } = useNotification();
 
   const toggle = (filename) => {
@@ -33,28 +38,62 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
     });
   };
 
-  const handleDownload = async () => {
-    if (checked.size === 0) return;
+  // `errors` here is always a plain array (never undefined), whether it came
+  // back in a 2xx body or from the catch block below -- the two shapes are
+  // {downloaded, errors} either way, just carried differently by axios.
+  const reportResult = (result) => {
+    const downloaded = result.downloaded || [];
+    const errors = result.errors || [];
+    if (downloaded.length) {
+      showSuccess(`Downloaded ${downloaded.length} plugin(s) into the local pool.`);
+    }
+    const existing = errors.filter(e => e.code === 'exists');
+    const otherErrors = errors.filter(e => e.code !== 'exists');
+    if (otherErrors.length) {
+      showError(otherErrors.map(e => `${e.filename}: ${e.error}`).join(' · '));
+    }
+    if (existing.length) {
+      setOverwriteConfirm({ filenames: existing.map(e => e.filename) });
+    }
+    if (downloaded.length || !existing.length) {
+      setChecked(prev => {
+        const next = new Set(prev);
+        downloaded.forEach(f => next.delete(f));
+        otherErrors.forEach(e => next.delete(e.filename));
+        return next;
+      });
+    }
+    if (downloaded.length) onDownloaded?.();
+  };
+
+  const runDownload = async (filenames, overwrite = false) => {
     setDownloading(true);
     try {
-      const result = await downloadPluginRepositoryPlugins(
-        repo.id,
-        [...checked],
-        fallbackRuntime || null,
-      );
-      if (result.downloaded?.length) {
-        showSuccess(`Downloaded ${result.downloaded.length} plugin(s) into the local pool.`);
-      }
-      if (result.errors?.length) {
-        showError(result.errors.map(e => `${e.filename}: ${e.error}`).join(' · '));
-      }
-      setChecked(new Set());
-      onDownloaded?.();
+      const result = await downloadPluginRepositoryPlugins(repo.id, filenames, fallbackRuntime || null, overwrite);
+      reportResult(result);
     } catch (err) {
-      showError(err.error?.message || err.message || 'Failed to download plugins.');
+      // A request where every file failed lands here (non-2xx), but the
+      // backend still sent {downloaded: [], errors: [...]} as the body --
+      // show those reasons instead of a generic message when present.
+      if (Array.isArray(err?.errors)) {
+        reportResult(err);
+      } else {
+        showError(err.error?.message || err.message || 'Failed to download plugins.');
+      }
     } finally {
       setDownloading(false);
     }
+  };
+
+  const handleDownload = () => {
+    if (checked.size === 0) return;
+    runDownload([...checked]);
+  };
+
+  const handleConfirmOverwrite = () => {
+    const filenames = overwriteConfirm?.filenames || [];
+    setOverwriteConfirm(null);
+    runDownload(filenames, true);
   };
 
   return (
@@ -185,6 +224,18 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
             </>
           )}
         </div>
+      )}
+
+      {overwriteConfirm && (
+        <ConfirmationModal
+          isOpen={!!overwriteConfirm}
+          onClose={() => setOverwriteConfirm(null)}
+          onConfirm={handleConfirmOverwrite}
+          title="Overwrite existing plugins?"
+          message={`Already in the local pool: ${overwriteConfirm.filenames.join(', ')}. Overwrite with this repository's copy?`}
+          confirmButtonText="Overwrite"
+          confirmButtonVariant="danger"
+        />
       )}
     </div>
   );
