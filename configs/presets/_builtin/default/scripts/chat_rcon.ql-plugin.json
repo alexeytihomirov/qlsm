@@ -10,5 +10,6 @@
     { "cvar": "qlx_chatRconAdminPerm", "label": "Admin Permission Level", "description": "Minimum minqlx permission level treated as the admin tier.", "type": "number", "default": 5, "min": 0, "max": 5 },
     { "cvar": "qlx_chatRconRefCommands", "label": "Referee-Allowed Commands", "description": "Comma-separated RCON commands referees are allowed to run.", "type": "string", "default": "pause,unpause,abort,map,teamsize,timelimit,fraglimit,g_password,lock,unlock,allready,forceteam,putteam" },
     { "cvar": "qlx_chatRconAdminDeny", "label": "Admin-Denied Commands", "description": "Comma-separated RCON commands even admins are not allowed to run.", "type": "string", "default": "quit,rconpassword,exec,vstr,alias,bind,system,devmap" }
-  ]
+  ],
+  "depends_on": ["chat_rcon_acl.py"]
 }
