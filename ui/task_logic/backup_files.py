@@ -14,6 +14,10 @@ CONFIGS_DIR = 'configs'
 MINQLX_PLUGINS_DIR = os.path.join('ql-assets', 'data', 'minqlx-plugins')
 MINQLXTENDED_PLUGINS_DIR = os.path.join('ql-assets', 'data', 'minqlxtended-plugins')
 SYSTEM_HOOKS_DIR = os.path.join('ql-assets', 'data', 'system-hooks')
+# Operator-installed addon packages. Real state: an addon uploaded through the
+# UI exists nowhere else, so a backup that skipped this would silently lose it
+# on a restore to a fresh host.
+ADDON_PACKAGES_DIR = 'addon-packages'
 RESTORE_PATH_PREFIX = '.qlsm-restore-'
 
 
@@ -42,7 +46,43 @@ def backup_file_trees():
         ('plugins/minqlx-plugins', MINQLX_PLUGINS_DIR, None),
         ('plugins/minqlxtended-plugins', MINQLXTENDED_PLUGINS_DIR, None),
         ('plugins/system-hooks', SYSTEM_HOOKS_DIR, None),
-    ]
+        ('addon-packages', ADDON_PACKAGES_DIR, None),
+    ] + _addon_contributed_trees()
+
+
+def _addon_contributed_trees():
+    """Extra trees enabled addons want captured.
+
+    Each handler returns (archive_prefix, directory) pairs. Prefixes are
+    namespaced under `addon/` by core, so an addon cannot collide with a core
+    tree -- or claim one -- by returning a clever prefix. Returns [] when no
+    addon contributes, so the archive layout is unchanged without addons.
+    """
+    try:
+        from ui.addons import dispatch
+
+        contributions = dispatch('backup.export') or []
+    except Exception:
+        return []
+
+    trees = []
+    for item in contributions:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            prefix, directory = item
+        elif isinstance(item, str):
+            prefix, directory = os.path.basename(item.rstrip('/').rstrip('\\')), item
+        else:
+            continue
+        # Rebuild the prefix from clean segments rather than patching the
+        # string: stripping '..' out of '../configs' leaves '/configs' and a
+        # doubled separator, which is namespaced but ugly enough to look like
+        # a bug later.
+        segments = [s for s in str(prefix).replace('\\', '/').split('/')
+                    if s and s not in ('.', '..')]
+        if not segments or not directory:
+            continue
+        trees.append(('addon/' + '/'.join(segments), str(directory), None))
+    return trees
 
 
 def walk_tree(root, skip=None):

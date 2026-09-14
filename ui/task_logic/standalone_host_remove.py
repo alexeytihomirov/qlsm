@@ -14,6 +14,22 @@ from .standalone_inventory import inventory_filename_for_host
 log = logging.getLogger(__name__)
 
 
+def _addon_cleanup_host(host_id):
+    """Run addon cleanup for a host that is being deleted.
+
+    Never raises: a failing addon must not block a delete the operator asked
+    for and leave a half-removed host behind. Core also drops the addon's own
+    AddonState rows here, since scope_id points at two different tables and
+    cannot be a foreign key.
+    """
+    try:
+        from ui.addons import cleanup_scope
+
+        cleanup_scope('host', host_id)
+    except Exception as e:
+        log.warning('Addon cleanup for host %s skipped: %s', host_id, e)
+
+
 def remove_standalone_host_logic(host_id):
     """
     Task logic to remove a standalone host from inventory.
@@ -133,6 +149,7 @@ def remove_standalone_host_logic(host_id):
 
         # 4. Delete the host record from the database
         log.info(f"Deleting host record {host_id} ({host_name}) from database.")
+        _addon_cleanup_host(host_id)
         db.session.delete(host)
         db.session.commit()
         log.info(f"Finished task remove_standalone_host for host_id: {host_id}. Record deleted.")

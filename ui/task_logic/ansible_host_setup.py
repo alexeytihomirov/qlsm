@@ -29,6 +29,29 @@ def _mark_host_firewall_pool_current(host):
     host.firewall_pool_v2 = True
 
 
+# Extra-vars core owns. An addon contributing one of these is ignored rather
+# than allowed to change the runtime or the firewall pool a host is built with.
+_RESERVED_SETUP_VARS = frozenset({
+    'host_timezone', 'game_udp_ports', 'rcon_tcp_ports', 'runtime',
+})
+
+
+def _addon_host_setup_extravars(host):
+    """Extra-vars dicts contributed by addons enabled on this host.
+
+    Returns [] when nothing is installed or enabled, so host setup runs the
+    exact command it ran before the addon system existed.
+    """
+    try:
+        from ui.addons import dispatch
+
+        results = dispatch('host.setup', host.id, host.id) or []
+    except Exception as e:
+        log.warning('Addon host.setup hook skipped for host %s: %s', host.id, e)
+        return []
+    return [r for r in results if isinstance(r, dict) and r]
+
+
 def setup_host_ansible_logic(host_id, rerun=False):
     """
     Task logic to perform initial host setup using Ansible after Terraform provisioning.
@@ -163,6 +186,15 @@ def setup_host_ansible_logic(host_id, rerun=False):
             # rebuilds the runtime the host was created with.
             'runtime': host_runtime(host),
         })]
+        # Addons may contribute extra-vars (a payload to deploy, a flag their
+        # own playbook tasks read). Each handler returns a dict; later addons
+        # cannot overwrite a key core already set, so an addon can never
+        # change the runtime or port pool the host is built with.
+        for contribution in _addon_host_setup_extravars(host):
+            safe = {k: v for k, v in contribution.items() if k not in _RESERVED_SETUP_VARS}
+            if safe:
+                ansible_command_args += ['-e', json.dumps(safe)]
+
         ansible_command_args.append(ansible_playbook_path)
 
         log.info(f"Executing Ansible command: {' '.join(ansible_command_args)}")

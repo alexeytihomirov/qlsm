@@ -123,9 +123,12 @@ def test_batch_zips_the_selection(client, auth, instance_id):
         assert zf.read(names[0]) == b'AAA'
 
 
-def test_batch_uses_the_selection_key_the_manifest_declares(client, auth, instance_id):
-    """The panel posts under `selection_key`. If that drifted from what this
-    endpoint reads, every bulk download would 400 with "must be a list"."""
+def test_the_manifest_mounts_the_built_in_demos_screen(client, auth, instance_id):
+    """Since the parity fix this addon mounts QLSM's own Demos modal rather
+    than a generic table, so there is no `selection_key` to keep in step -- the
+    modal posts `filenames` directly, which is what this endpoint reads. The
+    manifest is asserted here so a future switch back to a declarative panel
+    cannot silently drop that agreement."""
     import json
     import os
 
@@ -134,7 +137,13 @@ def test_batch_uses_the_selection_key_the_manifest_declares(client, auth, instan
     with open(manifest_path, encoding='utf-8') as f:
         manifest = json.load(f)
 
-    assert manifest['ui']['panels']['demos_table']['selection_key'] == 'filenames'
+    entry = manifest['ui']['instance_menu'][0]
+    assert entry['component'] == 'bundled:demos-modal'
+    assert entry['renders'] == 'modal'
+    assert not manifest['ui'].get('panels'), (
+        'a declarative panel reappeared -- it must declare '
+        'selection_key: "filenames" to match this endpoint'
+    )
 
 
 def test_batch_rejects_an_empty_selection(client, auth, instance_id):

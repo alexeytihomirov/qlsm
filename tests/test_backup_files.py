@@ -4,15 +4,30 @@ from ui.task_logic.backup_files import backup_file_trees, walk_tree
 
 
 class TestBackupFileTrees:
-    def test_returns_seven_trees_in_configs_before_presets_order(self):
+    def test_returns_the_core_trees_in_configs_before_presets_order(self):
         trees = backup_file_trees()
         prefixes = [t[0] for t in trees]
         assert prefixes == [
             'ssh-keys', 'terraform-state', 'configs', 'presets',
             'plugins/minqlx-plugins', 'plugins/minqlxtended-plugins',
             'plugins/system-hooks',
+            # Operator-installed addon packages: an addon uploaded through the
+            # UI exists nowhere else, so leaving it out would silently lose it
+            # when restoring onto a fresh host.
+            'addon-packages',
         ]
         assert prefixes.index('configs') < prefixes.index('presets')
+
+    def test_addon_contributed_trees_are_namespaced_and_come_last(self, monkeypatch):
+        """An addon must not be able to claim or shadow a core tree by
+        returning a clever prefix."""
+        import ui.task_logic.backup_files as backup_files
+
+        monkeypatch.setattr(backup_files, '_addon_contributed_trees',
+                            lambda: [('addon/mine', '/tmp/mine', None)])
+        prefixes = [t[0] for t in backup_file_trees()]
+        assert prefixes[-1] == 'addon/mine'
+        assert prefixes.count('configs') == 1
 
 
 class TestWalkTree:
