@@ -8,7 +8,8 @@
 // Schema (all fields optional):
 //   { label, description,
 //     commands: [{ name, usage, permission, description }, ...],
-//     cvars: [{ cvar, label, description, type, default, min, max }, ...] }
+//     cvars: [{ cvar, label, description, type, default, min, max }, ...],
+//     depends_on: [filename, ...] }
 // `name` is what the player/admin types after ! (a plugin registering
 // aliases, e.g. ("lobby", "servers"), gets one entry per alias so each shows
 // up distinctly). `permission` is the minqlx permission level required
@@ -17,8 +18,10 @@
 // the Plugins tab can offer a small edit form instead of hand-editing
 // server.cfg. `cvar` is the actual cvar name; `type` is "bool" | "number" |
 // "string" (anything else drops the entry); `min`/`max` only apply to
-// "number". Still no plugin-to-plugin dependency graph — that part of
-// ql-server-core's addon-manifest system stays out of scope here.
+// "number". `depends_on` names other root-level plugin files (e.g.
+// ["iouonegirl.py"]) this plugin needs; see pluginSelection.js — a dependency
+// gets no checkbox of its own and is enabled/disabled together with whichever
+// selected plugin(s) declare it.
 
 export function getPluginManifest(item) {
   return item?.plugin_manifest && typeof item.plugin_manifest === 'object'
