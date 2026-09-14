@@ -11,7 +11,13 @@ import PresetCompatibilityDialog from '../presetManager/PresetCompatibilityDialo
 import { combineAcceptedPaths, mergeReplacements } from '../../utils/presetCompatibility';
 import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, PluginCvarsModal, getPluginDisplayLabel, useStateAdapter, useDraftAdapter } from '../fileManager';
 import SubfolderPluginNotice from '../fileManager/SubfolderPluginNotice';
-import { partitionCheckedPaths, resolveRootPluginPaths, toQlxPluginNames } from '../fileManager/pluginSelection';
+import {
+  applyPluginDependencies,
+  collectDependencyFilenames,
+  partitionCheckedPaths,
+  resolveRootPluginPaths,
+  toQlxPluginNames,
+} from '../fileManager/pluginSelection';
 import { useNotification } from '../NotificationProvider';
 import { useCvarAutocomplete } from '../../hooks/useCvarAutocomplete';
 import InfoTooltip from '../common/InfoTooltip';
@@ -260,20 +266,26 @@ function EditInstanceConfigModal({
     return null;
   };
 
-  // Configure plugins based on checkboxes
+  // Configure plugins based on checkboxes. A dependency-only file never
+  // reaches here directly (its checkbox is hidden — see pluginSelection.js),
+  // so `prev` minus the library set is always the operator's manual picks;
+  // re-deriving the dependency closure from that on every toggle keeps a
+  // no-longer-needed dependency from lingering after its last dependent is
+  // unchecked, and pulls in a newly-declared one without extra bookkeeping.
   const togglePluginSelection = useCallback((filename, checked = undefined) => {
     setCheckedPlugins(prev => {
-      const newSet = new Set(prev);
-      const shouldCheck = checked ?? !newSet.has(filename);
+      const libraryNames = collectDependencyFilenames(pluginTree);
+      const manual = new Set([...prev].filter(path => !libraryNames.has(path)));
+      const shouldCheck = checked ?? !prev.has(filename);
       if (shouldCheck) {
-        newSet.add(filename);
+        manual.add(filename);
       } else {
-        newSet.delete(filename);
+        manual.delete(filename);
       }
-      return newSet;
+      return applyPluginDependencies(pluginTree, manual);
     });
     setIsDirty(true);
-  }, []);
+  }, [pluginTree]);
 
   const handleGetBinaryMeta = useCallback(
     (path) => getBinaryMeta(pluginDraftId, path, 'instance', String(instanceId)),
@@ -567,7 +579,7 @@ function EditInstanceConfigModal({
           )
         : (presetData.factories || {});
       resetFactories(factoriesToLoad);
-      const { selectable, dropped } = partitionCheckedPaths(presetData.checked_plugins || []);
+      const { selectable, dropped } = partitionCheckedPaths(presetData.checked_plugins || [], pluginTree);
       setCheckedPlugins(selectable);
       setDroppedPluginCount(dropped.length);
       setPluginNoticeDismissed(false);

@@ -5,6 +5,7 @@ import FileTreeRowMenu from './FileTreeRowMenu';
 import InfoTooltip from '../common/InfoTooltip';
 import { getFileType, sortFileTree, MAX_CONFIG_FOLDER_DEPTH } from './fileManagerUtils';
 import {
+  collectDependencyFilenames,
   folderHasPluginFiles,
   getPluginHintReason,
   isEnableablePluginPath,
@@ -26,10 +27,10 @@ const FILE_TYPE_COLORS = {
   font: 'text-pink-400',
 };
 
-function isCheckableFile(item, fileType, checkable, capabilities) {
+function isCheckableFile(item, fileType, checkable, capabilities, libraryNames) {
   if (!checkable || item.type === 'folder') return false;
   if (fileType !== 'python' && !item.name?.endsWith('.factories')) return false;
-  if (capabilities?.rootOnlyCheckable && !isEnableablePluginPath(item.path)) return false;
+  if (capabilities?.rootOnlyCheckable && !isEnableablePluginPath(item.path, libraryNames)) return false;
   return true;
 }
 
@@ -56,6 +57,7 @@ function TreeItem({
   onToggleFolder,
   rowMenuHandlers,
   onEditCvars,
+  libraryNames,
 }) {
   const expanded = item.type === 'folder' ? expandedFolders.has(item.path) : false;
   const isFolder = item.type === 'folder';
@@ -67,10 +69,10 @@ function TreeItem({
   const iconColor = isFolder
     ? 'text-yellow-400'
     : (FILE_TYPE_COLORS[fileType] || 'text-gray-400');
-  const showCheckbox = isCheckableFile(item, fileType, checkable, capabilities);
+  const showCheckbox = isCheckableFile(item, fileType, checkable, capabilities, libraryNames);
   const rootOnly = checkable && !!capabilities?.rootOnlyCheckable;
   const hintReason = !isFolder && rootOnly && !showCheckbox
-    ? getPluginHintReason(item.path)
+    ? getPluginHintReason(item.path, libraryNames)
     : null;
   // rootOnlyCheckable is plugin-tab-exclusive (see capabilities.js PLUGIN_CAPS) —
   // safe signal to only enrich rows there, never Config/Factories tabs.
@@ -108,6 +110,7 @@ function TreeItem({
             onToggleFolder={onToggleFolder}
             rowMenuHandlers={rowMenuHandlers}
             onEditCvars={onEditCvars}
+            libraryNames={libraryNames}
           />
         ))}
       </>
@@ -226,6 +229,7 @@ function TreeItem({
           onToggleFolder={onToggleFolder}
           rowMenuHandlers={rowMenuHandlers}
           onEditCvars={onEditCvars}
+          libraryNames={libraryNames}
         />
       ))}
     </>
@@ -247,6 +251,7 @@ export default function FileTree({
   onEditCvars = null,
 }) {
   const [search, setSearch] = useState('');
+  const libraryNames = useMemo(() => collectDependencyFilenames(files || []), [files]);
   const filesSignature = useMemo(() => getTreeSignature(files || []), [files]);
   const filesSignatureRef = useRef(null);
   const sortPriorityRef = useRef(null);
@@ -325,6 +330,7 @@ export default function FileTree({
             onToggleFolder={onToggleFolder}
             rowMenuHandlers={rowMenuHandlers}
             onEditCvars={onEditCvars}
+            libraryNames={libraryNames}
           />
         ))}
       </div>

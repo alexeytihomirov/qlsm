@@ -5,9 +5,9 @@ docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md in the monorepo).
 One row per (addon_id, scope, scope_id) holding the enable flag and the
 addon's own settings blob.
 
-Revision ID: 20260914120000
-Revises: 20260906120000
-Create Date: 2026-09-14 12:00:00.000000
+Revision ID: 20260914130000
+Revises: 20260914120000
+Create Date: 2026-09-14 13:00:00.000000
 
 """
 from alembic import op
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20260914120000'
-down_revision = '20260906120000'
+revision = '20260914130000'
+down_revision = '20260914120000'  # add_plugin_repository_table, landed the same day
 branch_labels = None
 depends_on = None
 
