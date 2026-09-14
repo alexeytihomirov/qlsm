@@ -76,7 +76,12 @@ export function huffmanReadString(msg, huffman, maxLen = 1024) {
   for (let i = 0; i < maxLen; i++) {
     const c = huffmanReadByte(msg, huffman);
     if (c === -1 || c === 0) break;
-    out += String.fromCharCode(c === 37 ? 46 : c > 127 ? 46 : c);
+    // Only '%' is rewritten (format-string hardening, same as the engine).
+    // Bytes >127 are kept: protocol 91 server commands carry UTF-8 (chat
+    // text, names) and clamping them to '.' - the old ioq3 habit this was
+    // ported with - silently destroyed every non-ASCII chat line, while
+    // huffmanReadBigString (configstrings) always kept them.
+    out += String.fromCharCode(c === 37 ? 46 : c);
   }
   return out;
 }
