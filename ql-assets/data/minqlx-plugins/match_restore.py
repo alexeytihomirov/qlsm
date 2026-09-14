@@ -252,7 +252,7 @@ class match_restore(minqlx.Plugin):
             self.cmd_restorecp,
             5,
             usage="export | test [name] | quiet | loud | clear | time | map | player | item | apply | verify | show "
-                  "| players [slot:cid...] | qlmatch list [filter] | qlmatch <N> <mm:ss>",
+                  "| players [slot:cid...] | qlmatch list [filter] [page] | qlmatch <N> <mm:ss>",
             client_cmd_pass=False,
         )
         self.add_hook("map", self._on_map)
@@ -1578,13 +1578,15 @@ class match_restore(minqlx.Plugin):
         if not tail:
             self._reply(
                 player, channel,
-                "^1restorecp qlmatch^7: usage ^3qlmatch list [filter]^7 | ^3qlmatch <N> <mm:ss>^7",
+                "^1restorecp qlmatch^7: usage ^3qlmatch list [filter] [page]^7 | ^3qlmatch <N> <mm:ss>^7",
             )
             return minqlx.Return.STOP_ALL
         head = str(tail[0]).strip().lower()
         if head == "list":
             return self._cmd_restorecp_qlmatch_list(player, channel, tail[1:])
         return self._cmd_restorecp_qlmatch_apply(player, channel, tail)
+
+    _QLMATCH_LIST_PAGE_SIZE = 10
 
     def _cmd_restorecp_qlmatch_list(self, player, channel, tail):
         demo_dir = self._qlmatch_demo_dir()
@@ -1594,7 +1596,12 @@ class match_restore(minqlx.Plugin):
                 "^1restorecp qlmatch list^7: fs_homepath cvar empty, cannot locate demo dir",
             )
             return minqlx.Return.STOP_ALL
-        filter_substr = " ".join(str(t) for t in tail).strip() or None
+        tokens = [str(t).strip() for t in tail if str(t).strip()]
+        page = 1
+        if tokens and tokens[-1].isdigit():
+            page = max(1, int(tokens[-1]))
+            tokens = tokens[:-1]
+        filter_substr = " ".join(tokens).strip() or None
         rows = restore_qlmatch.list_packs(demo_dir, filter_substr)
         # Cached so `qlmatch <N> <mm:ss>` resolves N against THIS listing,
         # not a directory rescan — numbering is only stable within one
@@ -1608,8 +1615,20 @@ class match_restore(minqlx.Plugin):
                 "^3restorecp qlmatch list^7: no .qlmatch packs found in {}{}".format(demo_dir, suffix),
             )
             return minqlx.Return.STOP_ALL
-        self._reply(player, channel, "^2restorecp qlmatch list^7: {} pack(s){}".format(len(rows), suffix))
-        for row in rows[:20]:
+        page_size = self._QLMATCH_LIST_PAGE_SIZE
+        pages = max(1, (len(rows) + page_size - 1) // page_size)
+        page = min(page, pages)
+        window = rows[(page - 1) * page_size:page * page_size]
+        # Sidecar-derived durations only for the rows actually shown — the
+        # full-directory fallback is what used to hitch the server.
+        restore_qlmatch.fill_sidecar_durations(window, demo_dir)
+        self._reply(
+            player, channel,
+            "^2restorecp qlmatch list^7: {} pack(s){} — page ^3{}^7/^3{}^7".format(
+                len(rows), suffix, page, pages
+            ),
+        )
+        for row in window:
             self._reply(
                 player, channel,
                 "  ^3{}^7. {} map={} time={} players={}".format(
@@ -1618,8 +1637,13 @@ class match_restore(minqlx.Plugin):
                     ",".join(row["players"][:8]) or "?",
                 ),
             )
-        if len(rows) > 20:
-            self._reply(player, channel, "  ^7... and {} more (narrow with a filter)".format(len(rows) - 20))
+        if page < pages:
+            self._reply(
+                player, channel,
+                "  ^7... ^3!restorecp qlmatch list {}{}^7 for the next page".format(
+                    (filter_substr + " ") if filter_substr else "", page + 1
+                ),
+            )
         return minqlx.Return.STOP_ALL
 
     def _cmd_restorecp_qlmatch_apply(self, player, channel, tail):

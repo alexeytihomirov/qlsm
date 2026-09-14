@@ -210,11 +210,58 @@ def _duration_from_sidecar(path):
     return last_positions_ms(sidecar.get("events"))
 
 
+# (path -> ((mtime_ns, size), summary)) / (path -> (mtime_ns, duration_ms)).
+# The game thread pays for every zip open and every gzip+JSON sidecar parse,
+# and a busy demo dir holds dozens of packs — without these caches every
+# `qlmatch list` re-read all of it and visibly hitched the server.
+_pack_summary_cache = {}
+_sidecar_duration_cache = {}
+
+
+def _pack_summary_cached(path, filename):
+    try:
+        st = os.stat(path)
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+    cached = _pack_summary_cache.get(path)
+    if cached is not None and cached[0] == key:
+        return dict(cached[1])
+    summary = _pack_summary(path, filename)
+    if summary is None:
+        return None
+    _pack_summary_cache[path] = (key, dict(summary))
+    return dict(summary)
+
+
+def fill_sidecar_durations(rows, demo_dir):
+    """Fill duration_ms from the sibling replay sidecar for rows whose
+    manifest window could not yield one. Heavy (gzip + full JSON parse per
+    sidecar) — call it only for the rows actually being displayed."""
+    for row in rows or []:
+        if row.get("duration_ms") is not None:
+            continue
+        path = sidecar_path_for(demo_dir, row["match_id"], row["map"])
+        try:
+            mtime = os.stat(path).st_mtime_ns
+        except OSError:
+            continue
+        cached = _sidecar_duration_cache.get(path)
+        if cached is not None and cached[0] == mtime:
+            row["duration_ms"] = cached[1]
+            continue
+        duration = _duration_from_sidecar(path)
+        _sidecar_duration_cache[path] = (mtime, duration)
+        row["duration_ms"] = duration
+    return rows
+
+
 def list_packs(demo_dir, filter_substr=None):
     """Numbered (1-based) list of .qlmatch packs in demo_dir, newest match_id
-    first. Reads manifest.json out of each pack's zip; if the window cannot
-    yield a duration, falls back to the sibling replay sidecar (not the
-    .dm_91 files).
+    first. Reads manifest.json out of each pack's zip (cached by mtime/size).
+    duration_ms may be None when the manifest window cannot yield one — the
+    heavy sidecar fallback lives in fill_sidecar_durations(), applied by the
+    caller to the rows it displays.
     """
     if not demo_dir or not os.path.isdir(demo_dir):
         return []
@@ -222,13 +269,9 @@ def list_packs(demo_dir, filter_substr=None):
     for filename in sorted(os.listdir(demo_dir)):
         if not filename.endswith(PACK_EXT):
             continue
-        summary = _pack_summary(os.path.join(demo_dir, filename), filename)
+        summary = _pack_summary_cached(os.path.join(demo_dir, filename), filename)
         if summary is None:
             continue
-        if summary.get("duration_ms") is None:
-            summary["duration_ms"] = _duration_from_sidecar(
-                sidecar_path_for(demo_dir, summary["match_id"], summary["map"])
-            )
         rows.append(summary)
     rows.sort(key=lambda r: r["match_id"], reverse=True)
     needle = str(filter_substr or "").strip().lower()
@@ -525,6 +568,35 @@ def pickup_state_at(events, target_ms):
     return by_key
 
 
+# Pickup events carry the item entity's live origin (r.currentOrigin after
+# FinishSpawningItem's drop-to-floor), while the spawn table carries the map
+# file's spawn point — for a suspended item those differ vertically (e.g.
+# bloodrun mega: event z=81, spawn z=88), never horizontally. So a spawn that
+# missed the exact key still matches the same classname at the same rounded
+# x/y within this much z; keeping x/y exact is what protects shard clusters
+# (48 units apart) from cross-matching a neighbour.
+_PICKUP_MATCH_MAX_Z_DELTA = 64.0
+
+
+def _pickup_for_spawn(pickup_state, classname, x, y, z):
+    """pickup_state entry for a spawn point, exact key first, then the same
+    classname at the same x/y with the closest z within the drop-to-floor
+    tolerance. None if the spot has no live pickup pending."""
+    exact = pickup_state.get((classname, x, y, z))
+    if exact is not None:
+        return exact
+    best = None
+    best_dz = _PICKUP_MATCH_MAX_Z_DELTA + 1
+    for (item, px, py, pz), info in pickup_state.items():
+        if item != classname or px != x or py != y:
+            continue
+        dz = abs(pz - z)
+        if dz <= _PICKUP_MATCH_MAX_Z_DELTA and dz < best_dz:
+            best = info
+            best_dz = dz
+    return best
+
+
 def build_item_rows(pickup_state, map_spawns_table, target_ms, map_key, wall_now):
     """items[] rows (pre-canonicalize) for every map spawn not in its
     default/available state at target_ms — addressed by classname+position
@@ -546,7 +618,7 @@ def build_item_rows(pickup_state, map_spawns_table, target_ms, map_key, wall_now
             )
         except (TypeError, ValueError):
             continue
-        bundled = pickup_state.get(key)
+        bundled = _pickup_for_spawn(pickup_state, *key)
         row = export_item_row(
             alias, meta, target_ms, wall_now=wall_now, bundled_pickup=bundled, map_key=map_key
         )

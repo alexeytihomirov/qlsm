@@ -148,6 +148,11 @@ class ListPacksTests(unittest.TestCase):
         rows = qlmatch.list_packs(self.tmp_dir)
         self.assertEqual(len(rows), 1)
         self.assertIsNone(qlmatch.duration_ms_from_window(rows[0]["window"]))
+        # The sidecar fallback is deliberately NOT part of list_packs any
+        # more (a gzip+JSON parse per pack hitched the game thread on big
+        # demo dirs) - it fills lazily, for the rows a caller displays.
+        self.assertIsNone(rows[0]["duration_ms"])
+        qlmatch.fill_sidecar_durations(rows, self.tmp_dir)
         self.assertEqual(rows[0]["duration_ms"], 121175)
         self.assertEqual(qlmatch.format_clock(rows[0]["duration_ms"]), "2:01.175")
 
