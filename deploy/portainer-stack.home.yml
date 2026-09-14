@@ -33,6 +33,7 @@ x-app: &app
     - /home/home/qlsm/ansible/inventory:/app/ansible/inventory
     - /home/home/qlsm/configs:/app/configs
     - /home/home/qlsm/logs:/app/logs
+    - /home/home/qlsm/addon-packages:/app/addon-packages
   restart: unless-stopped
   depends_on:
     redis:
@@ -76,6 +77,7 @@ services:
       - /home/home/qlsm/ansible/inventory:/app/ansible/inventory
       - /home/home/qlsm/configs:/app/configs
       - /home/home/qlsm/logs:/app/logs
+      - /home/home/qlsm/addon-packages:/app/addon-packages
     command:
       - gunicorn
       - --config=gunicorn.conf.py
@@ -112,6 +114,7 @@ services:
       - /home/home/qlsm/ansible/inventory:/app/ansible/inventory
       - /home/home/qlsm/configs:/app/configs
       - /home/home/qlsm/logs:/app/logs
+      - /home/home/qlsm/addon-packages:/app/addon-packages
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
 

@@ -12,6 +12,22 @@ export const listAddons = async () => {
   return response.data.data.addons;
 };
 
+export const installAddon = async (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  // Content-Type is left unset on purpose: the browser has to add the
+  // multipart boundary itself, and apiClient's JSON default would break it.
+  const response = await apiClient.post('/addons/install', form, {
+    headers: { 'Content-Type': undefined },
+  });
+  return response.data.data;
+};
+
+export const uninstallAddon = async (addonId) => {
+  const response = await apiClient.delete(`/addons/${addonId}`);
+  return response.data.data;
+};
+
 export const getAddonState = async (addonId, scope = 'global', scopeId = 0) => {
   const response = await apiClient.get(`/addons/${addonId}/state`, {
     params: { scope, scope_id: scopeId },

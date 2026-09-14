@@ -53,8 +53,107 @@ def list_addons_api():
     Broken addons are listed on purpose: an addon that silently vanished from
     the UI because its manifest has a typo is far harder to diagnose than one
     shown with its error attached.
+
+    The list is what this *process* loaded at startup, reconciled against
+    what is on the volume right now. An addon installed or removed since then
+    shows up as `pending_restart` rather than silently looking active -- the
+    alternative is an entry whose endpoints 404 with no explanation.
     """
-    return jsonify({"data": {"addons": catalog()}})
+    from ui.addons.install import scan_installed_ids
+
+    entries = catalog()
+    loaded_ids = {entry['id'] for entry in entries}
+    on_disk = scan_installed_ids(current_app.config.get('ADDON_PACKAGES_DIR'))
+
+    for entry in entries:
+        # Loaded, but its package is gone from the volume -> uninstalled since boot.
+        entry['pending_restart'] = (entry['source'] == 'installed' and entry['id'] not in on_disk)
+        entry['pending_action'] = 'uninstall' if entry['pending_restart'] else None
+
+    for addon_id in sorted(on_disk - loaded_ids):
+        entries.append({
+            'id': addon_id, 'name': addon_id, 'version': '', 'description': '',
+            'scopes': [], 'ui': {}, 'ui_api': None, 'settings_schema': {},
+            'source': 'installed', 'loaded': False, 'ui_mountable': False,
+            'errors': [], 'pending_restart': True, 'pending_action': 'install',
+        })
+
+    return jsonify({"data": {"addons": entries}})
+
+
+@addon_api_bp.route('/install', methods=['POST'], endpoint='install_addon_api')
+@jwt_required()
+def install_addon_api():
+    """Install an addon package from an uploaded .zip.
+
+    The addon is **not** live until QLSM restarts: Flask cannot unregister or
+    hot-add a blueprint on a running app, and pretending otherwise would give
+    the operator an addon that is listed but whose endpoints 404. The catalog
+    marks it `pending_restart` instead, and the UI says so.
+    """
+    from ui.addons.install import AddonInstallError, install_addon_zip
+
+    upload = request.files.get('file')
+    if upload is None:
+        return jsonify({"error": {"message": "No file uploaded (field name: 'file')."}}), 400
+
+    packages_dir = current_app.config.get('ADDON_PACKAGES_DIR')
+    if not packages_dir:
+        return jsonify({"error": {"message": "ADDON_PACKAGES_DIR is not configured."}}), 500
+
+    try:
+        manifest = install_addon_zip(upload.read(), packages_dir)
+    except AddonInstallError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
+    except Exception as e:
+        current_app.logger.error(f'Addon install failed: {e}', exc_info=True)
+        return jsonify({"error": {"message": "Failed to install the addon."}}), 500
+
+    current_app.logger.info(f'Addon "{manifest["id"]}" v{manifest["version"]} installed.')
+    return jsonify({"data": {
+        "id": manifest['id'],
+        "name": manifest['name'],
+        "version": manifest['version'],
+        "pending_restart": True,
+    }, "message": f'"{manifest["name"]}" installed. Restart QLSM to activate it.'}), 201
+
+
+@addon_api_bp.route('/<addon_id>', methods=['DELETE'], endpoint='uninstall_addon_api')
+@jwt_required()
+def uninstall_addon_api(addon_id):
+    """Remove an installed addon package.
+
+    Refuses bundled addons: they live in the image, so deleting the directory
+    would leave this container inconsistent and the addon would reappear on
+    the next deploy anyway.
+
+    AddonState rows are kept on purpose -- reinstalling the same addon should
+    find its settings again. See addons/TRUST.md for what uninstalling does
+    *not* undo.
+    """
+    from ui.addons.install import AddonInstallError, uninstall_addon
+
+    addon = get_addon(addon_id)
+    if addon is not None and addon.source == 'bundled':
+        return jsonify({"error": {
+            "message": "This addon ships with QLSM and cannot be uninstalled."
+        }}), 400
+
+    packages_dir = current_app.config.get('ADDON_PACKAGES_DIR')
+    if not packages_dir:
+        return jsonify({"error": {"message": "ADDON_PACKAGES_DIR is not configured."}}), 500
+
+    try:
+        removed = uninstall_addon(addon_id, packages_dir)
+    except AddonInstallError as e:
+        return jsonify({"error": {"message": str(e)}}), 400
+
+    if not removed:
+        return jsonify({"error": {"message": f'Addon "{addon_id}" is not installed.'}}), 404
+
+    current_app.logger.info(f'Addon "{addon_id}" uninstalled.')
+    return jsonify({"data": {"id": addon_id, "pending_restart": True},
+                    "message": f'"{addon_id}" removed. Restart QLSM to unload it.'})
 
 
 @addon_api_bp.route('/<addon_id>/state', methods=['GET'], endpoint='get_addon_state_api')

@@ -32,6 +32,11 @@ x-app: &app
     - ./ansible/inventory:/app/ansible/inventory
     - ./configs:/app/configs
     - ./logs:/app/logs
+    # Operator-installed addon packages. Separate from the `addons/` directory
+    # baked into the image so installing one does not mean rebuilding, and so
+    # a rebuild cannot wipe what the operator installed. Shared with the
+    # workers because an addon's tasks run there too.
+    - ./addon-packages:/app/addon-packages
   restart: unless-stopped
   depends_on:
     redis:

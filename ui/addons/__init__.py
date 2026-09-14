@@ -7,6 +7,12 @@ Design: docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md (monorepo)
 """
 from ui.addons.context import AddonContext
 from ui.addons.hooks import HOOK_SCOPES, LIST_HOOKS, UnknownHookError
+from ui.addons.install import (
+    AddonInstallError,
+    install_addon_zip,
+    scan_installed_ids,
+    uninstall_addon,
+)
 from ui.addons.manifest import CURRENT_UI_API, MANIFEST_FILENAME, read_manifest, validate_manifest
 from ui.addons.registry import (
     catalog,
@@ -20,6 +26,7 @@ from ui.addons.settings import AddonSettings, AddonSettingsError
 
 __all__ = [
     'AddonContext',
+    'AddonInstallError',
     'AddonSettings',
     'AddonSettingsError',
     'CURRENT_UI_API',
@@ -33,6 +40,9 @@ __all__ = [
     'get_addon',
     'get_addons',
     'init_app',
+    'install_addon_zip',
     'read_manifest',
+    'scan_installed_ids',
+    'uninstall_addon',
     'validate_manifest',
 ]

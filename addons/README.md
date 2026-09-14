@@ -53,12 +53,38 @@ a component that crashes while rendering — each is contained and reported.
 Broken addons stay **visible** on the Addons page with their error attached,
 because silently disappearing is the harder failure to diagnose.
 
+## Installing
+
+Settings → Addons → **Install**, and upload a `.zip`. The archive may have
+`qlsm-addon.json` at its root or nested one folder deep (what "Compress this
+folder" produces). The install directory is named after the manifest's `id`,
+not the folder in the archive.
+
+**The addon is not live until QLSM restarts.** Flask cannot hot-add or drop a
+blueprint on a running app, so a freshly installed addon is listed as
+*pending restart* rather than pretended to be active — the alternative is an
+entry whose endpoints 404 with no explanation. Same for uninstall.
+
+Uninstall removes the package directory. It keeps the addon's `AddonState`
+rows, so reinstalling the same addon finds its settings again.
+
+The upload is checked for archive size, total uncompressed size, entry count,
+per-member compression ratio, absolute/`..` paths, symlinks, and a valid
+manifest. Nothing is swapped into place until the whole archive has been
+validated and staged, so a rejected upload leaves the previous install
+untouched.
+
 ## Trust
 
 An addon's Python half runs in-process with QLSM's full authority: the
 database, SSH private keys, the cloud API key. There is no sandbox, and the
 `AddonContext` is an ergonomics boundary, not a security one. Only install
 addons you would trust with the QLSM host itself.
+
+**Read [TRUST.md](TRUST.md) before installing an addon you did not write.**
+The install checks above are about not being exploitable by a malformed
+archive; they say nothing about whether the code inside is safe to run, and
+there is no signing.
 
 ## Scopes
 
