@@ -259,6 +259,9 @@ def create_app(test_config=None):
     from ui.routes.cvar_catalog_routes import cvar_catalog_bp
     api_bp.register_blueprint(cvar_catalog_bp, url_prefix='/cvar-catalog')
 
+    from ui.routes.plugin_repository_routes import plugin_repository_api_bp
+    api_bp.register_blueprint(plugin_repository_api_bp, url_prefix='/plugin-repositories')
+
     app.register_blueprint(api_bp)
     app.register_blueprint(index_bp) # Register index_bp
 

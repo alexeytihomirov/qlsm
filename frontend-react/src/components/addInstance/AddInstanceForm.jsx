@@ -21,7 +21,12 @@ import {
   useDraftAdapter,
   useStateAdapter,
 } from '../fileManager';
-import { partitionCheckedPaths, toQlxPluginNames } from '../fileManager/pluginSelection';
+import {
+  applyPluginDependencies,
+  collectDependencyFilenames,
+  partitionCheckedPaths,
+  toQlxPluginNames,
+} from '../fileManager/pluginSelection';
 import { useCvarAutocomplete } from '../../hooks/useCvarAutocomplete';
 import {
   qlcfgLanguage,
@@ -340,6 +345,22 @@ function AddInstanceForm({
   // Autocomplete in the config editor: engine cvars from the backend catalog,
   // qlx_ cvars from the plugins this instance will actually carry.
   useCvarAutocomplete({ pluginTree: pluginsAdapter.tree, checkedPlugins });
+
+  // Normalize once the plugin tree loads: a seed (default preset, saved
+  // preset, or a runtime switch) is applied before the tree is fetched, so it
+  // can't run through the dependency closure yet -- this folds in anything a
+  // manifest declares that the seed itself didn't carry. Idempotent (a
+  // closure of an already-closed set adds nothing), so comparing before
+  // setState converges after one pass instead of looping.
+  useEffect(() => {
+    if (!pluginsAdapter.tree?.length) return;
+    const libraryNames = collectDependencyFilenames(pluginsAdapter.tree);
+    const manual = new Set([...checkedPlugins].filter(path => !libraryNames.has(path)));
+    const normalized = applyPluginDependencies(pluginsAdapter.tree, manual);
+    if (!areSetsEqual(normalized, checkedPlugins)) {
+      setCheckedPlugins(normalized);
+    }
+  }, [pluginsAdapter.tree, checkedPlugins]);
 
   const pluginDraftId = pluginsAdapter.draftId;
   const pluginConsume = pluginsAdapter.consume;
@@ -820,7 +841,7 @@ function AddInstanceForm({
       // null means the preset pre-dates this feature — keep current defaults.
       let nextCheckedBaseline = new Set(checkedPlugins);
       if (presetData.checked_plugins != null) {
-        const { selectable, dropped } = partitionCheckedPaths(presetData.checked_plugins);
+        const { selectable, dropped } = partitionCheckedPaths(presetData.checked_plugins, pluginsAdapter.tree);
         nextCheckedBaseline = selectable;
         setCheckedPlugins(selectable);
         setDroppedPluginCount(dropped.length);
@@ -1197,19 +1218,23 @@ function AddInstanceForm({
     onCancel();
   }, [onCancel, pluginDiscard]);
 
-  // Configure plugins based on checkboxes
+  // Configure plugins based on checkboxes. See the matching comment in
+  // EditInstanceConfigModal.jsx: a dependency-only file has no checkbox, so
+  // `prev` minus the library set is always the manual picks, and re-deriving
+  // the closure from that on every toggle keeps it self-healing.
   const togglePluginSelection = useCallback((filename, checked = undefined) => {
     setCheckedPlugins(prev => {
-      const newSet = new Set(prev);
-      const shouldCheck = checked ?? !newSet.has(filename);
+      const libraryNames = collectDependencyFilenames(pluginsAdapter.tree);
+      const manual = new Set([...prev].filter(path => !libraryNames.has(path)));
+      const shouldCheck = checked ?? !prev.has(filename);
       if (shouldCheck) {
-        newSet.add(filename);
+        manual.add(filename);
       } else {
-        newSet.delete(filename);
+        manual.delete(filename);
       }
-      return newSet;
+      return applyPluginDependencies(pluginsAdapter.tree, manual);
     });
-  }, []);
+  }, [pluginsAdapter.tree]);
 
   const handleGetBinaryMeta = useCallback(
     (path) => getBinaryMeta(pluginDraftId, path, 'preset', draftPreset),
