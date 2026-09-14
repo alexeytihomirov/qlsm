@@ -28,6 +28,9 @@ import { qlaccessLanguage } from '../../codemirror-lang-qlaccess';
 import { qlworkshopLanguage } from '../../codemirror-lang-qlworkshop';
 import { qlentLanguage, qlentLinter } from '../../codemirror-lang-qlent';
 import HooksTab from './HooksTab';
+import AddonPanel from '../addons/AddonPanel';
+import { resolveAddonIcon } from '../addons/addonIcons';
+import { useAddonMounts } from '../../contexts/AddonsContext';
 import OwnerAdminEditor from '../operators/OwnerAdminEditor';
 import {
   canEnableLanRate,
@@ -130,6 +133,9 @@ function EditInstanceConfigModal({
   const [expandedFileLinterSource, setExpandedFileLinterSource] = useState(null);
   const [expandedPluginPath, setExpandedPluginPath] = useState(null);
   const [expandedFactoryPath, setExpandedFactoryPath] = useState(null);
+
+  // Addon-contributed tabs (empty when no addon declares instance_tabs)
+  const addonTabs = useAddonMounts('instance_tabs');
 
   // State for preset manager
   const [isPresetManagerOpen, setIsPresetManagerOpen] = useState(false);
@@ -1136,6 +1142,13 @@ function EditInstanceConfigModal({
                             { key: 'scripts', icon: Code2, label: 'Plugins' },
                             { key: 'factories', icon: LayoutGrid, label: 'Factories' },
                             { key: 'hooks', icon: Webhook, label: 'Hooks' },
+                            // Addon tabs come last so a newly installed addon
+                            // never reorders the tabs an operator already knows.
+                            ...addonTabs.map((mount) => ({
+                              key: `addon:${mount.key}`,
+                              icon: resolveAddonIcon(mount.icon),
+                              label: mount.label,
+                            })),
                           ].map((tab) => (
                             <button
                               key={tab.key}
@@ -1228,6 +1241,19 @@ function EditInstanceConfigModal({
                               />
                             </div>
                           )}
+                          {addonTabs.map((mount) => (
+                            activeMainTab === `addon:${mount.key}` && (
+                              <div key={mount.key} className="flex-1 min-h-0 overflow-y-auto">
+                                <AddonPanel
+                                  addon={mount.addon}
+                                  entry={mount.entry}
+                                  panel={mount.panel}
+                                  scope={mount.scope}
+                                  scopeId={instanceId}
+                                />
+                              </div>
+                            )
+                          ))}
                         </div>
 
                         <div className="mt-4 flex justify-between items-center flex-shrink-0">
