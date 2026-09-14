@@ -8,7 +8,7 @@ import datetime
 
 from ui import db
 from ui.models import (
-    ApiKey, AppSetting, BinaryMetadata, ConfigPreset, Host, HostStatus,
+    AddonState, ApiKey, AppSetting, BinaryMetadata, ConfigPreset, Host, HostStatus,
     InstanceStatus, Operator, QLFilterStatus, QLInstance, User,
 )
 from ui.runtime import normalize_runtime
@@ -68,6 +68,7 @@ def replace_database(data):
     ApiKey.query.delete()
     AppSetting.query.delete()
     Operator.query.delete()
+    AddonState.query.delete()
     db.session.flush()
 
     for row in data['hosts']:
@@ -122,6 +123,18 @@ def replace_database(data):
         db.session.add(Operator(
             id=row['id'], name=row['name'], steam_id64=row['steam_id64'],
             default_level=row.get('default_level', 5),
+            created_at=_parse_dt(row.get('created_at')), updated_at=_parse_dt(row.get('updated_at')),
+        ))
+
+    # 'addon_states' is likewise absent from _REQUIRED_KEYS: backups taken
+    # before the addon system simply have no addon state to restore. A row
+    # whose addon is no longer installed is kept as-is rather than dropped --
+    # reinstalling the addon must find its settings again.
+    for row in data.get('addon_states') or []:
+        db.session.add(AddonState(
+            id=row['id'], addon_id=row['addon_id'], scope=row['scope'],
+            scope_id=row.get('scope_id', 0), enabled=bool(row.get('enabled', False)),
+            settings_json=row.get('settings_json') or '{}',
             created_at=_parse_dt(row.get('created_at')), updated_at=_parse_dt(row.get('updated_at')),
         ))
     db.session.flush()
