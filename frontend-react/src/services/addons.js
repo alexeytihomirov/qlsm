@@ -47,3 +47,71 @@ export const addonRequest = async (addonId, method, path, { params, data } = {})
 // on the same origin anyway.
 export const addonAssetUrl = (addonId, filename) =>
   `/api/addons/${addonId}/ui/${String(filename).replace(/^\/+/, '')}`;
+
+/** Filename from a Content-Disposition header, or null. */
+export function filenameFromDisposition(disposition) {
+  if (typeof disposition !== 'string') return null;
+  const star = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1]);
+    } catch {
+      return star[1];
+    }
+  }
+  const plain = disposition.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1] : null;
+}
+
+/**
+ * Fetch a file from an addon endpoint and hand it to the browser.
+ *
+ * A blob round-trip rather than pointing a link at the URL, for two reasons:
+ * it keeps the CSRF header and 401 interceptor that apiClient installs, and it
+ * works for POST endpoints too (the batch download returns a zip built from a
+ * posted selection). Same approach the built-in Demos modal already uses.
+ *
+ * An error response also arrives as a blob, so it is read back into JSON --
+ * otherwise a failed download shows "[object Blob]" instead of the reason.
+ */
+export const addonDownload = async (addonId, method, path, { params, data, fallbackName } = {}) => {
+  const clean = String(path || '').replace(/^\/+/, '');
+  try {
+    const response = await apiClient.request({
+      url: `/addons/${addonId}/${clean}`,
+      method: (method || 'GET').toLowerCase(),
+      params,
+      data,
+      responseType: 'blob',
+    });
+    const name = filenameFromDisposition(response.headers?.['content-disposition'])
+      || fallbackName || 'download';
+    return { blob: response.data, filename: name };
+  } catch (error) {
+    const blob = error?.response?.data;
+    if (blob && typeof blob.text === 'function') {
+      try {
+        const parsed = JSON.parse(await blob.text());
+        const message = parsed?.error?.message;
+        if (message) throw new Error(message);
+      } catch (parseError) {
+        if (parseError instanceof Error && parseError.message && !(parseError instanceof SyntaxError)) {
+          throw parseError;
+        }
+      }
+    }
+    throw error;
+  }
+};
+
+/** Save a blob under `filename` using a temporary object URL. */
+export function saveBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}

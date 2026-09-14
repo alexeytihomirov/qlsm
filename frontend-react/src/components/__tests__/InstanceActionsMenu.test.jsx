@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import InstanceActionsMenu from '../InstanceActionsMenu';
+import { NotificationProvider } from '../NotificationProvider';
 
 vi.mock('@headlessui/react', () => {
   const Menu = ({ children }) => <div>{children({ open: true })}</div>;
@@ -39,7 +40,10 @@ vi.mock('../common/InfoTooltip', () => ({
 function renderMenu(instanceOverrides = {}) {
   const handleToggleLanRate = vi.fn();
   const onViewMinqlxLogs = vi.fn();
+  // InstanceActionsMenu calls useNotification(), which throws outside a
+  // provider -- without this wrapper every test here fails at render.
   render(
+    <NotificationProvider>
     <InstanceActionsMenu
       instance={{
         id: 1,
@@ -62,6 +66,7 @@ function renderMenu(instanceOverrides = {}) {
       onViewMinqlxLogs={onViewMinqlxLogs}
       onOpenRconConsole={vi.fn()}
     />
+    </NotificationProvider>
   );
 
   return { handleToggleLanRate, onViewMinqlxLogs };

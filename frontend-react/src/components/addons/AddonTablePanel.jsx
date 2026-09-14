@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
-import { addonRequest } from '../../services/addons';
+import { addonDownload, addonRequest, saveBlob } from '../../services/addons';
 import { resolveRoute } from './panelRoute';
 
 /**
@@ -32,7 +32,10 @@ function formatCell(value, format) {
     let n = bytes;
     let i = 0;
     while (n >= 1024 && i < units.length - 1) { n /= 1024; i += 1; }
-    return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
+    // One decimal below 10 so 4.5 MB does not round to 5 MB, but no trailing
+    // ".0" -- "1.0 KB" reads worse than "1 KB" for no extra information.
+    const rounded = n >= 10 || i === 0 ? Math.round(n) : Math.round(n * 10) / 10;
+    return `${rounded} ${units[i]}`;
   }
   if (format === 'datetime') {
     // Accepts both an epoch (what SFTP mtime gives) and an ISO string.
@@ -137,12 +140,26 @@ function AddonTablePanel({ addon, panel, scope, scopeId }) {
               : encodeURIComponent(String(row[key])))),
         };
       }
-      const payload = row ? undefined : { selected: Array.from(selected) };
-      const result = await addonRequest(addon.id, path.method, path.path, { data: payload });
-      if (action.download && result?.url) window.open(result.url, '_blank', 'noopener');
-      if (!action.download) await load();
+      // Bulk actions post the selection under the key the panel declares
+      // (default "selected"), so an addon can keep the name its API already
+      // uses -- the demos endpoint, for one, expects "filenames".
+      const selectionKey = panel?.selection_key || 'selected';
+      const payload = row ? undefined : { [selectionKey]: Array.from(selected) };
+
+      if (action.download) {
+        const { blob, filename } = await addonDownload(addon.id, path.method, path.path, {
+          data: payload,
+          fallbackName: row ? String(row[rowKey]) : 'download',
+        });
+        saveBlob(blob, filename);
+      } else {
+        await addonRequest(addon.id, path.method, path.path, { data: payload });
+        await load();
+      }
     } catch (err) {
-      setActionError(err?.response?.data?.error?.message || 'Action failed');
+      // addonDownload re-throws a plain Error carrying the decoded message,
+      // so err.message has to be part of the chain here.
+      setActionError(err?.response?.data?.error?.message || err?.message || 'Action failed');
     } finally {
       setBusyAction(null);
     }
