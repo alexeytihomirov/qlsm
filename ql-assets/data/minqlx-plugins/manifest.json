@@ -90,7 +90,7 @@
     },
     "match_restore.py": {
       "origin": "qlsm",
-      "sha256": "6adb052f36d49ad9b52bec562ce39fe5dd705687924daec7aa1b182c647fbc89"
+      "sha256": "4a45b613be3db126de8866ffb1d3e3ffba9558c42f3000a3a24762db2a03cf6a"
     },
     "match_restore_lab.py": {
       "origin": "qlsm",

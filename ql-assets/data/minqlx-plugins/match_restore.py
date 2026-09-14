@@ -352,7 +352,10 @@ class match_restore(minqlx.Plugin):
         return self._map_spawns.get(map_key) or {}
 
     def _restore_engine_timer_active(self):
-        return hasattr(minqlx, "set_item_respawn_delay")
+        # Patched runtime schedules through set_item_respawn_delay; stock
+        # minqlxtended (>= v1.1.0) through respawn_item (see
+        # _prime_stock_respawn). Either one makes engine-timer restore work.
+        return hasattr(minqlx, "set_item_respawn_delay") or hasattr(minqlx, "respawn_item")
 
     def _ensure_lab_sparring_bot(self, cp=None):
         """Spawn duel bot only for restorecp test — never on map load (steals pickups)."""
