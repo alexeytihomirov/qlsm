@@ -122,6 +122,34 @@ Mount points: `host_menu`, `instance_menu`, `instance_tabs`,
 addon's own `/api/addons/<id>/` prefix; absolute paths are rejected at
 manifest validation, so a panel cannot point at a core endpoint.
 
+## UI, tier 1.5 — a component QLSM already builds (bundled addons only)
+
+A feature that already has a purpose-built screen must not lose half of it on
+the way into an addon. The declarative panels are generic by design; the
+Demos modal alone has a filename filter, a "N of M" counter, a refresh
+button, a header subtitle, monospace filenames and a Recorded column that no
+generic table reproduces by accident.
+
+So a **bundled** addon may name a component QLSM already builds:
+
+```json
+{ "id": "relay", "label": "Telemetry Relay", "icon": "radio",
+  "component": "bundled:relay-modal", "renders": "modal" }
+```
+
+`renders: "modal"` means the component *is* the whole dialog — QLSM's modal
+shell is skipped. The registry lives in
+`frontend-react/src/components/addons/bundledPanels.jsx`, and each entry
+mounts the same component the built-in menu mounts with its data source
+swapped for the addon's endpoints. Parity is then true by construction and
+stays true when either side changes.
+
+Only addons shipped in the image can do this — an uploaded `.zip` cannot
+reach into QLSM's build, and `bundled:` is refused for it. Everything in that
+registry is loaded lazily: it sits in the import chain of every action menu,
+and anything heavy at module scope there breaks unrelated pages and their
+tests.
+
 ## UI, tier 2 — the addon's own component
 
 Build it yourself and ship the built file in `ui/`:

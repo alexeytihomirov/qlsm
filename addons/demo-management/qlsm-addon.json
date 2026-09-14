@@ -1,8 +1,8 @@
 {
   "id": "demo-management",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Demos (addon)",
-  "description": "Lists and downloads the server-side demo files an instance recorded (.dm_91, .qlmatch, .replay.json.gz, .packer.log). Runs alongside the built-in Demos modal during migration.",
+  "description": "Lists and downloads the server-side demo files an instance recorded (.dm_91, .qlmatch, .replay.json.gz, .packer.log). Runs alongside the built-in Demos modal during migration and mounts the same screen, so nothing is lost by switching.",
   "scopes": ["global", "host", "instance"],
   "ui_api": 1,
 
@@ -10,30 +10,15 @@
     "icon": "film",
 
     "instance_menu": [
-      { "id": "demos", "label": "Demos (addon)", "icon": "film", "panel": "demos_table" }
+      {
+        "id": "demos",
+        "label": "Demos (addon)",
+        "icon": "film",
+        "component": "bundled:demos-modal",
+        "renders": "modal"
+      }
     ],
 
-    "panels": {
-      "demos_table": {
-        "kind": "table",
-        "load": "GET instances/{instance_id}/demos",
-        "rows": "demos",
-        "row_key": "name",
-        "selectable": true,
-        "selection_key": "filenames",
-        "empty": "No demo files on this server yet. Recording is opt-in: set sv_demoRecord or qlx_nativeDemoRecordEnabled.",
-        "columns": [
-          { "key": "name", "label": "File" },
-          { "key": "size", "label": "Size", "format": "bytes", "align": "right" },
-          { "key": "mtime", "label": "Recorded", "format": "datetime", "align": "right" }
-        ],
-        "row_actions": [
-          { "id": "download", "label": "Download", "route": "GET instances/{instance_id}/demos/download?filename={name}", "download": true }
-        ],
-        "bulk_actions": [
-          { "id": "download-batch", "label": "Download selected as ZIP", "route": "POST instances/{instance_id}/demos/download-batch", "download": true }
-        ]
-      }
-    }
+    "panels": {}
   }
 }

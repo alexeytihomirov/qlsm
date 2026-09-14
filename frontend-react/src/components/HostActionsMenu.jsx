@@ -22,7 +22,7 @@ function HostActionsMenu({
   onRerunSetup,
   onOpenViewLogs
 }) {
-  const addonMenu = useAddonMenu('host_menu', host.id, host.name);
+  const addonMenu = useAddonMenu('host_menu', host, host.name);
   const [isInstallQlFilterModalOpen, setIsInstallQlFilterModalOpen] = useState(false);
   const [isUninstallQlFilterModalOpen, setIsUninstallQlFilterModalOpen] = useState(false);
   const [isRerunSetupModalOpen, setIsRerunSetupModalOpen] = useState(false);

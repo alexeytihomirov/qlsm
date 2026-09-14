@@ -153,3 +153,53 @@ def test_read_manifest_round_trip(tmp_path):
     manifest, errors = read_manifest(str(tmp_path))
     assert errors == []
     assert manifest['name'] == 'Telemetry Relay'
+
+
+# ---- bundled components + render mode ---------------------------------
+
+def test_a_bundled_component_reference_is_accepted():
+    """A migration addon names a component core already builds, so it can
+    mount the exact screen the built-in menu mounts rather than a look-alike."""
+    manifest, errors = validate_manifest(_minimal(ui={
+        'host_menu': [{'id': 'relay', 'component': 'bundled:relay-modal', 'renders': 'modal'}],
+    }))
+    assert errors == []
+    assert manifest['ui']['host_menu'][0]['renders'] == 'modal'
+
+
+def test_a_bundled_component_name_may_not_contain_a_path():
+    _, errors = validate_manifest(_minimal(ui={
+        'host_menu': [{'id': 'relay', 'component': 'bundled:../secret'}],
+    }))
+    assert any('not valid' in e for e in errors)
+
+
+def test_an_empty_bundled_component_name_is_rejected():
+    _, errors = validate_manifest(_minimal(ui={
+        'host_menu': [{'id': 'relay', 'component': 'bundled:'}],
+    }))
+    assert any('not valid' in e for e in errors)
+
+
+def test_render_mode_must_be_known():
+    _, errors = validate_manifest(_minimal(ui={
+        'host_menu': [{'id': 'relay', 'component': 'bundled:relay-modal', 'renders': 'hologram'}],
+    }))
+    assert any('"renders" must be one of' in e for e in errors)
+
+
+def test_modal_render_mode_requires_a_component():
+    """A declarative panel cannot be the whole dialog -- it has no shell."""
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form'}},
+        'host_menu': [{'id': 'relay', 'panel': 'p', 'renders': 'modal'}],
+    }))
+    assert any('needs a component' in e for e in errors)
+
+
+def test_panel_render_mode_is_fine_with_a_panel():
+    manifest, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form'}},
+        'host_menu': [{'id': 'relay', 'panel': 'p', 'renders': 'panel'}],
+    }))
+    assert errors == []
