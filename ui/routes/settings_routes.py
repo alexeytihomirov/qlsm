@@ -9,6 +9,12 @@ from ui.telemetry_relay_settings import (
     get_stats_hub_ingest_token,
     set_stats_hub_ingest_token,
 )
+from ui.demo_stream_settings import (
+    get_relay_host,
+    set_relay_host,
+    get_relay_port,
+    set_relay_port,
+)
 
 settings_api_bp = Blueprint('settings_api_routes', __name__)
 
@@ -117,4 +123,35 @@ def update_stats_hub_setting():
         'url': get_stats_hub_url() or None,
         'ingest_token': get_stats_hub_ingest_token() or None,
     }, 'message': 'Stats-hub target updated.'})
+
+
+@settings_api_bp.route('/demo-stream-relay', methods=['GET'])
+@jwt_required()
+def get_demo_stream_relay_setting():
+    """The central demo-stream relay's TCP ingest address (host:port) every
+    instance's sv_demoStreamHost/sv_demoStreamPort point at - see
+    ql-stats-hub's "Live demo stream" contour (STATS_HUB_DEMO_STREAM_TCP_*)."""
+    return jsonify({'data': {
+        'host': get_relay_host() or None,
+        'port': get_relay_port() or None,
+    }})
+
+
+@settings_api_bp.route('/demo-stream-relay', methods=['PUT'])
+@jwt_required()
+def update_demo_stream_relay_setting():
+    """Set (or clear, with an empty string) the demo-stream relay host/port."""
+    data = request.get_json() or {}
+    host = data.get('host', '')
+    port = data.get('port', '')
+    if not isinstance(host, str) or not isinstance(port, (str, int)):
+        return jsonify({'error': {'message': 'host and port must be strings.'}}), 400
+    set_relay_host(host)
+    set_relay_port(str(port))
+    db.session.commit()
+    current_app.logger.info('Demo-stream relay target updated via Settings.')
+    return jsonify({'data': {
+        'host': get_relay_host() or None,
+        'port': get_relay_port() or None,
+    }, 'message': 'Demo-stream relay target updated.'})
 

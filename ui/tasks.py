@@ -22,6 +22,7 @@ from ui.task_logic.ansible_host_auto_restart import configure_host_auto_restart_
 from ui.task_logic.ansible_watchdog import configure_host_watchdog_logic
 from ui.task_logic.ansible_telemetry_relay import configure_host_telemetry_relay_logic
 from ui.task_logic.telemetry_relay_instance import enable_instance_telemetry_logic
+from ui.task_logic.demo_stream_instance import enable_instance_demo_stream_logic
 
 # Import Terraform task logic from new files
 from ui.task_logic.terraform_provision import provision_host_logic
@@ -301,6 +302,18 @@ def enable_instance_telemetry_task(instance_id, lock_token=None):
     instance's qlx_statsHub* cvars at the host's telemetry relay."""
     try:
         return enable_instance_telemetry_logic(instance_id)
+    finally:
+        if lock_token:
+            from ui.task_lock import release_lock
+            release_lock('instance', instance_id, lock_token)
+
+@rq.job(timeout=300)
+@with_app_context
+def enable_instance_demo_stream_task(instance_id, lock_token=None):
+    """RQ task entry point for wiring an instance's sv_demoStream* cvars at
+    the central demo-stream relay and registering its route with stats-hub."""
+    try:
+        return enable_instance_demo_stream_logic(instance_id)
     finally:
         if lock_token:
             from ui.task_lock import release_lock
