@@ -27,6 +27,11 @@ class Config:
     
     # Ansible Runner
     ANSIBLE_RUNNER_PRIVATE_DATA_DIR = os.environ.get('ANSIBLE_RUNNER_PRIVATE_DATA_DIR', './ansible_runner_data')
+
+    # Addons: operator-installed packages live on a writable volume, separate
+    # from the `addons/` directory baked into the image, so installing one
+    # does not mean rebuilding. An id present in both resolves here.
+    ADDON_PACKAGES_DIR = os.environ.get('ADDON_PACKAGES_DIR', './addon-packages')
     
     # Logging
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
