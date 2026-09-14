@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from tests.helpers import make_user, auth_headers
 from ui.models import PluginRepository
@@ -20,6 +22,19 @@ def _patch_fetch(monkeypatch, plugins=None, error=None):
     monkeypatch.setattr(plugin_repository_routes, 'fetch_manifest', fake_fetch_manifest)
 
 
+def _seeded_repo(name, url, plugins=None):
+    """A PluginRepository as it looks right after a real sync -- unlike a bare
+    db.session.add(), this populates manifest_json, which to_dict()['plugins']
+    (and the download route's lookup) reads from. Creating a repo without this
+    and then asserting on its plugin list is the bug three of these tests
+    originally had (caught by CI, not locally -- see commit history)."""
+    repo = PluginRepository(name=name, url=url)
+    repo.manifest_json = json.dumps(plugins if plugins is not None else list(PLUGIN_LIST))
+    db.session.add(repo)
+    db.session.commit()
+    return repo
+
+
 # --- GET /api/plugin-repositories/ ---
 
 def test_list_repositories_authenticated(client, app, monkeypatch):
@@ -31,7 +46,11 @@ def test_list_repositories_authenticated(client, app, monkeypatch):
         db.session.commit()
     response = client.get('/api/plugin-repositories/', headers=headers)
     assert response.status_code == 200
-    assert response.get_json()['data'] == []
+    data = response.get_json()['data']
+    assert len(data) == 1
+    assert data[0]['name'] == 'Repo A'
+    # Never synced -- manifest_json is unset, so the plugin list is empty.
+    assert data[0]['plugins'] == []
 
 
 def test_list_repositories_unauthenticated(client, app):
@@ -156,13 +175,10 @@ def test_delete_repository(client, app, monkeypatch):
 # --- POST /api/plugin-repositories/<id>/download ---
 
 def test_download_uses_the_manifests_own_runtime(client, app, monkeypatch):
-    _patch_fetch(monkeypatch)
     make_user(app, 'dlruntime', 'password123')
     headers = auth_headers(app, 'dlruntime')
     with app.app_context():
-        repo = PluginRepository(name='Repo E', url='https://example.com/e')
-        db.session.add(repo)
-        db.session.commit()
+        repo = _seeded_repo('Repo E', 'https://example.com/e')
         repo_id = repo.id
 
     calls = []
@@ -180,16 +196,13 @@ def test_download_uses_the_manifests_own_runtime(client, app, monkeypatch):
 
 
 def test_download_requires_a_runtime_when_manifest_has_none(client, app, monkeypatch):
-    _patch_fetch(monkeypatch, plugins=[
-        {'filename': 'no_runtime.py', 'label': None, 'description': None,
-         'runtime': None, 'requires_qlsm_version': None},
-    ])
     make_user(app, 'dlnoruntime', 'password123')
     headers = auth_headers(app, 'dlnoruntime')
     with app.app_context():
-        repo = PluginRepository(name='Repo F', url='https://example.com/f')
-        db.session.add(repo)
-        db.session.commit()
+        repo = _seeded_repo('Repo F', 'https://example.com/f', plugins=[
+            {'filename': 'no_runtime.py', 'label': None, 'description': None,
+             'runtime': None, 'requires_qlsm_version': None},
+        ])
         repo_id = repo.id
 
     response = client.post(
@@ -202,13 +215,11 @@ def test_download_requires_a_runtime_when_manifest_has_none(client, app, monkeyp
 
 
 def test_download_override_runtime_wins_over_manifest(client, app, monkeypatch):
-    _patch_fetch(monkeypatch)
     make_user(app, 'dloverride', 'password123')
     headers = auth_headers(app, 'dloverride')
     with app.app_context():
-        repo = PluginRepository(name='Repo G', url='https://example.com/g')
-        db.session.add(repo)
-        db.session.commit()
+        # Manifest says minqlx; the request below overrides to minqlxtended.
+        repo = _seeded_repo('Repo G', 'https://example.com/g')
         repo_id = repo.id
 
     calls = []
@@ -225,18 +236,15 @@ def test_download_override_runtime_wins_over_manifest(client, app, monkeypatch):
 
 
 def test_download_partial_failure_returns_207(client, app, monkeypatch):
-    _patch_fetch(monkeypatch, plugins=[
-        {'filename': 'ok.py', 'label': None, 'description': None,
-         'runtime': 'minqlx', 'requires_qlsm_version': None},
-        {'filename': 'bad.py', 'label': None, 'description': None,
-         'runtime': 'minqlx', 'requires_qlsm_version': None},
-    ])
     make_user(app, 'dlpartial', 'password123')
     headers = auth_headers(app, 'dlpartial')
     with app.app_context():
-        repo = PluginRepository(name='Repo H', url='https://example.com/h')
-        db.session.add(repo)
-        db.session.commit()
+        repo = _seeded_repo('Repo H', 'https://example.com/h', plugins=[
+            {'filename': 'ok.py', 'label': None, 'description': None,
+             'runtime': 'minqlx', 'requires_qlsm_version': None},
+            {'filename': 'bad.py', 'label': None, 'description': None,
+             'runtime': 'minqlx', 'requires_qlsm_version': None},
+        ])
         repo_id = repo.id
 
     def fake_download(base_url, filename, runtime):
