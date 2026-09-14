@@ -876,6 +876,61 @@ export const deleteOperator = async (operatorId) => {
   }
 };
 
+// Plugin Repository APIs
+export const getPluginRepositories = async () => {
+  try {
+    const response = await apiClient.get('/plugin-repositories/');
+    return response.data.data;
+  } catch (error) {
+    console.error('Failed to fetch plugin repositories:', error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error('Failed to fetch plugin repositories');
+  }
+};
+
+export const createPluginRepository = async ({ name, url }) => {
+  try {
+    const response = await apiClient.post('/plugin-repositories/', { name, url });
+    return response.data;
+  } catch (error) {
+    console.error('Failed to create plugin repository:', error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error('Failed to create plugin repository');
+  }
+};
+
+export const syncPluginRepository = async (repoId) => {
+  try {
+    const response = await apiClient.post(`/plugin-repositories/${repoId}/sync`);
+    return response.data;
+  } catch (error) {
+    // A failed sync still carries the repository's last-known state in
+    // error.response.data.data -- the caller decides whether to show that
+    // alongside the error, rather than losing it to a thrown Error.
+    console.error(`Failed to sync plugin repository ${repoId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to sync plugin repository ${repoId}`);
+  }
+};
+
+export const deletePluginRepository = async (repoId) => {
+  try {
+    const response = await apiClient.delete(`/plugin-repositories/${repoId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to delete plugin repository ${repoId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to delete plugin repository ${repoId}`);
+  }
+};
+
+export const downloadPluginRepositoryPlugins = async (repoId, filenames, runtime = null) => {
+  try {
+    const payload = runtime ? { filenames, runtime } : { filenames };
+    const response = await apiClient.post(`/plugin-repositories/${repoId}/download`, payload);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to download from plugin repository ${repoId}:`, error.response ? error.response.data : error.message);
+    throw error.response ? error.response.data : new Error(`Failed to download from plugin repository ${repoId}`);
+  }
+};
+
 // Script Management APIs
 export const getScriptTree = async ({ preset, host, instanceId } = {}) => {
   try {
