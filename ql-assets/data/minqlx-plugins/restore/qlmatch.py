@@ -406,16 +406,31 @@ def _attach_velocity(row, p, prev_p=None, dt_ms=None):
         row["vz"] = float(vz)
 
 
-def build_player_rows(snapshot_event, prev_by_cn=None, dt_ms=None):
+def build_player_rows(snapshot_event, prev_by_cn=None, dt_ms=None, roster=None):
     """Loose (pre-canonicalize) players[] rows from one 'positions' event.
 
     Health/armor default to 100/0 when the sidecar doesn't carry them (a
     single-POV-derived replay only has real vitals for its own recording
     player — see the research spec section 5) rather than 0/0, which
     codec.canonicalize would otherwise read as a dead/near-dead player.
+
+    positions events carry only clientNum, not steam_id64 — the steam ids
+    live in meta.roster. Without them restore falls back to raw client slots
+    (_resolve_player_from_row -> self.player(cid)), which swaps players
+    whenever the live slots differ from the recorded ones. So map
+    clientNum -> steam_id64/name from `roster` here and attach them, letting
+    restore pair by steam id first, nick second, slot only as last resort.
     """
     rows = []
     prev_by_cn = prev_by_cn or {}
+    roster_by_cn = {}
+    for entry in roster or []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            roster_by_cn[int(entry.get("clientNum"))] = entry
+        except (TypeError, ValueError):
+            continue
     for p in (snapshot_event or {}).get("players") or []:
         if not isinstance(p, dict):
             continue
@@ -437,8 +452,15 @@ def build_player_rows(snapshot_event, prev_by_cn=None, dt_ms=None):
             "a": int(armor) if armor is not None else 0,
         }
         sid = p.get("steam_id64") or p.get("st")
+        nick = p.get("nickname") or p.get("name")
+        roster_entry = roster_by_cn.get(cn)
+        if roster_entry:
+            sid = sid or roster_entry.get("steam_id64") or roster_entry.get("st")
+            nick = nick or roster_entry.get("name") or roster_entry.get("nickname")
         if sid:
             row["sid"] = str(sid).strip()
+        if nick:
+            row["nick"] = str(nick)
         if health is not None:
             try:
                 if int(health) <= 0:
@@ -583,7 +605,8 @@ def build_checkpoint_doc(sidecar, target_ms, map_spawns_table, map_key, wall_now
             prev_by_cn[int(p.get("clientNum"))] = p
         except (TypeError, ValueError):
             continue
-    players = build_player_rows(snapshot, prev_by_cn=prev_by_cn, dt_ms=dt_ms)
+    roster = (sidecar.get("meta") or {}).get("roster")
+    players = build_player_rows(snapshot, prev_by_cn=prev_by_cn, dt_ms=dt_ms, roster=roster)
     pickup_state = pickup_state_at(events, target_ms)
     items = build_item_rows(pickup_state, map_spawns_table, target_ms, map_key, wall_now)
     doc = {

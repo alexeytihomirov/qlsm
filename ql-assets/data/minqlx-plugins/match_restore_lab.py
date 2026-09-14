@@ -320,7 +320,26 @@ class match_restore_lab(minqlx.Plugin):
                 self._reply(player, channel, "^1bad delay^7")
                 return minqlx.Return.STOP
             if not hasattr(minqlx, "hide_map_item"):
-                self._reply(player, channel, "^1hide_map_item missing^7 — patched-runtime native (not on stock minqlxtended)")
+                # Stock minqlxtended: hide via writable fields and hand the
+                # timer to the engine's own RespawnItem — no wall-clock poll.
+                core = self._core()
+                if core is None or not hasattr(minqlx, "respawn_item"):
+                    self._reply(player, channel, "^1no stock respawn path^7 (match_restore not loaded?)")
+                    return minqlx.Return.STOP
+                if not core._stock_hide_item(int(eid)):
+                    self._reply(player, channel, "^1stock hide failed^7 e{}".format(eid))
+                    return minqlx.Return.STOP
+                try:
+                    ok = minqlx.respawn_item(int(eid), int(delay_sec * 1000))
+                except (AttributeError, TypeError, ValueError) as exc:
+                    self._reply(player, channel, "^1respawn_item failed^7: {}".format(exc))
+                    return minqlx.Return.STOP
+                self._itemlab_arm_engine_entity(eid)
+                self._reply(player, channel,
+                    "^2itemlab respawn(stock)^7 e{} in ^6{}^7s ok={} — ^3!itemlab stat {}^7".format(
+                        eid, delay_sec, ok, eid
+                    )
+                )
                 return minqlx.Return.STOP
             rescheduled = int(eid) in self._itemlab_pending_respawns
             try:

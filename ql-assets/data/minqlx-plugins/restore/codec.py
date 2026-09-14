@@ -192,6 +192,9 @@ def canonicalize(doc):
         sid = row.get("sid", row.get("steam_id64"))
         if sid:
             p["sid"] = str(sid).strip()
+        nick = row.get("nick", row.get("nickname", row.get("name")))
+        if nick:
+            p["nick"] = str(nick)
         for axis in ("vx", "vy", "vz"):
             if row.get(axis) is not None:
                 p[axis] = int(round(float(row[axis])))
