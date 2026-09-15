@@ -1148,8 +1148,6 @@ Credentials are never included in any payload.
 
 ## External API
 
-Base URL: `/api/v1`
-
 The external API uses **Bearer token authentication** (not JWT cookies). Tokens are managed via the Settings page and stored as `ApiKey` records.
 
 ```
@@ -1159,9 +1157,16 @@ Authorization: Bearer <api_key>
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/v1/instances` | GET | Bearer token | List all instances for external service integration |
-| `/api/v1/instances/<id>/matches` | GET | Bearer token | List recorded `.qlmatch` demos for an instance. Each entry: `{name, size, mtime, has_replay, replay_name}` |
-| `/api/v1/instances/<id>/matches/download?filename=` | GET | Bearer token | Download a single `.qlmatch` file |
-| `/api/v1/instances/<id>/matches/replay?filename=` | GET | Bearer token | Download the `.replay.json.gz` sidecar for a match, by its `replay_name` |
+| `/api/addons/demo-management/instances/<id>/matches` | GET | Bearer token | List recorded `.qlmatch` demos for an instance. Each entry: `{name, size, mtime, has_replay, replay_name}` |
+| `/api/addons/demo-management/instances/<id>/matches/download?filename=` | GET | Bearer token | Download a single `.qlmatch` file |
+| `/api/addons/demo-management/instances/<id>/matches/replay?filename=` | GET | Bearer token | Download the `.replay.json.gz` sidecar for a match, by its `replay_name` |
+
+The instance listing stays under core's `/api/v1` prefix - nothing
+demo-specific about it. The three match/demo endpoints moved to the
+`demo-management` addon (were `/api/v1/instances/<id>/matches*` before);
+**external callers must update to the new URL** - uninstalling that addon
+now removes this part of the external API along with the operator UI, by
+design (see `addons/README.md`).
 
 - Rate limited: 200 requests/minute
 - Excludes sensitive fields: `zmq_rcon_port`, `zmq_rcon_password`, `zmq_stats_port`, `zmq_stats_password`, `logs`, `config`

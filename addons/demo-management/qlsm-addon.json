@@ -1,7 +1,7 @@
 {
   "id": "demo-management",
-  "version": "1.1.0",
-  "name": "Demos (addon)",
+  "version": "1.2.0",
+  "name": "Demos",
   "description": "Lists and downloads the server-side demo files an instance recorded (.dm_91, .qlmatch, .replay.json.gz, .packer.log). Runs alongside the built-in Demos modal during migration and mounts the same screen, so nothing is lost by switching.",
   "scopes": ["global", "host", "instance"],
   "ui_api": 1,
@@ -12,7 +12,7 @@
     "instance_menu": [
       {
         "id": "demos",
-        "label": "Demos (addon)",
+        "label": "Demos",
         "icon": "film",
         "component": "bundled:demos-modal",
         "renders": "modal"

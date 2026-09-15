@@ -2,10 +2,12 @@
 
 Guards the demo endpoints, which moved to the demo-management addon when
 demo management stopped being part of QLSM core. The endpoints are now under
-/api/addons/demo-management/; the listing and fetch helpers they call
-(ui/task_logic/ansible_instance_demos.py) deliberately stayed in core,
-because the versioned external API at /api/v1/ uses them too and must not
-break when an addon is uninstalled.
+/api/addons/demo-management/, and so are the listing/fetch helpers they call
+(addons/demo-management/ansible_instance_demos.py) - including the external,
+Bearer-token API that used to live at /api/v1/ in core (see
+addons/demo-management/backend.py's external_* routes). Uninstalling this
+addon now removes demo listing/download entirely, for the UI and for
+external callers alike.
 
 Missing instance/host state is
 classified before any SFTP session is opened, a successful list is returned
@@ -26,7 +28,7 @@ from ui import db
 from ui.database import create_host, create_instance
 from ui.models import HostStatus, QLInstance
 
-FETCH_MODULE = 'ui.task_logic.ansible_instance_demos'
+FETCH_MODULE = 'qlsm_addon_demo_management.ansible_instance_demos'
 
 
 def _make_instance(app):
@@ -119,7 +121,7 @@ def test_list_failure_returns_500(mock_list, client, app):
 
 
 def test_list_unexpected_exception_returns_generic_error():
-    from ui.task_logic.ansible_instance_demos import list_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_demos
     with patch(f'{FETCH_MODULE}._resolve_instance', side_effect=RuntimeError('boom')):
         success, demos, error = list_instance_demos(1)
     assert success is False
@@ -128,7 +130,7 @@ def test_list_unexpected_exception_returns_generic_error():
 
 
 def test_list_missing_directory_returns_empty_list_not_error():
-    from ui.task_logic.ansible_instance_demos import list_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_demos
 
     sftp = MagicMock()
     sftp.listdir_attr.side_effect = FileNotFoundError()
@@ -144,7 +146,7 @@ def test_list_missing_directory_returns_empty_list_not_error():
 
 
 def test_list_sorts_newest_first_and_drops_malformed_entries():
-    from ui.task_logic.ansible_instance_demos import list_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_demos
 
     sftp = MagicMock()
     sftp.listdir_attr.return_value = [
@@ -169,7 +171,7 @@ def test_list_keeps_qlmatch_and_replay_sidecar_entries_alongside_dm91():
     # next to the per-POV .dm_91 files, and qlmatch-packer additionally
     # drops "{match_id}_{map}.replay.json.gz" in the same demos/ directory -
     # the listing must not drop either.
-    from ui.task_logic.ansible_instance_demos import list_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_demos
 
     sftp = MagicMock()
     sftp.listdir_attr.return_value = [
@@ -193,7 +195,7 @@ def test_list_keeps_qlmatch_and_replay_sidecar_entries_alongside_dm91():
 
 
 def test_list_ssh_failure_returns_error_not_exception():
-    from ui.task_logic.ansible_instance_demos import list_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_demos
 
     with patch(f'{FETCH_MODULE}._resolve_instance',
                return_value=(MagicMock(port=27960), _fake_host(), None)), \
@@ -323,7 +325,7 @@ def test_batch_failure_returns_500(mock_fetch, client, app):
 
 
 def test_fetch_rejects_empty_filenames_without_touching_ssh():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
     with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(1, [])
     assert success is False
@@ -333,7 +335,7 @@ def test_fetch_rejects_empty_filenames_without_touching_ssh():
 
 
 def test_fetch_rejects_invalid_filename_without_touching_ssh():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
     with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(1, ['../../../etc/passwd'])
     assert success is False
@@ -343,7 +345,7 @@ def test_fetch_rejects_invalid_filename_without_touching_ssh():
 
 
 def test_fetch_rejects_non_demo_extension_without_touching_ssh():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
     with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(1, ['a.zip'])
     assert success is False
@@ -353,7 +355,7 @@ def test_fetch_rejects_non_demo_extension_without_touching_ssh():
 
 
 def test_fetch_accepts_qlmatch_filename():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
 
     sftp = MagicMock()
     sftp.open.return_value.__enter__.return_value.read.return_value = b'zip-bytes'
@@ -370,7 +372,7 @@ def test_fetch_accepts_qlmatch_filename():
 
 
 def test_fetch_accepts_replay_sidecar_filename():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
 
     sftp = MagicMock()
     sftp.open.return_value.__enter__.return_value.read.return_value = b'gz-bytes'
@@ -387,7 +389,7 @@ def test_fetch_accepts_replay_sidecar_filename():
 
 
 def test_fetch_rejects_batch_over_limit_without_touching_ssh():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos, MAX_DEMO_BATCH
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos, MAX_DEMO_BATCH
     with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, files, missing, error = fetch_instance_demos(
             1, [f'{i}.dm_91' for i in range(MAX_DEMO_BATCH + 1)])
@@ -398,7 +400,7 @@ def test_fetch_rejects_batch_over_limit_without_touching_ssh():
 
 
 def test_fetch_dedupes_filenames_before_running_sftp():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
 
     sftp = MagicMock()
     sftp.open.return_value.__enter__.return_value.read.return_value = b'hello'
@@ -416,7 +418,7 @@ def test_fetch_dedupes_filenames_before_running_sftp():
 
 
 def test_fetch_returns_bytes_for_found_files_and_lists_missing():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
 
     def fake_open(path, mode):
         cm = MagicMock()
@@ -441,7 +443,7 @@ def test_fetch_returns_bytes_for_found_files_and_lists_missing():
 
 
 def test_fetch_ssh_failure_returns_error_not_exception():
-    from ui.task_logic.ansible_instance_demos import fetch_instance_demos
+    from qlsm_addon_demo_management.ansible_instance_demos import fetch_instance_demos
 
     with patch(f'{FETCH_MODULE}._resolve_instance',
                return_value=(MagicMock(port=27960), _fake_host(), None)), \
@@ -463,7 +465,7 @@ def test_fetch_ssh_failure_returns_error_not_exception():
 
 
 def test_qlmatch_sidecar_name_matches_restore_qlmatch_formula():
-    from ui.task_logic.ansible_instance_demos import qlmatch_sidecar_name
+    from qlsm_addon_demo_management.ansible_instance_demos import qlmatch_sidecar_name
     assert qlmatch_sidecar_name('20260827T170920Z', 'phrantic') == \
         '20260827T170920Z_phrantic.replay.json.gz'
 
@@ -478,7 +480,7 @@ def _fake_qlmatch_zip(manifest):
 
 
 def test_manifest_rejects_non_qlmatch_filename_without_touching_ssh():
-    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    from qlsm_addon_demo_management.ansible_instance_demos import read_qlmatch_manifest
     with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, manifest, error = read_qlmatch_manifest(1, 'a.dm_91')
     assert success is False
@@ -488,7 +490,7 @@ def test_manifest_rejects_non_qlmatch_filename_without_touching_ssh():
 
 
 def test_manifest_rejects_path_traversal_without_touching_ssh():
-    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    from qlsm_addon_demo_management.ansible_instance_demos import read_qlmatch_manifest
     with patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:
         success, manifest, error = read_qlmatch_manifest(1, '../../etc/passwd.qlmatch')
     assert success is False
@@ -497,7 +499,7 @@ def test_manifest_rejects_path_traversal_without_touching_ssh():
 
 
 def test_manifest_reads_match_id_and_map_from_zip_via_seekable_sftp_handle():
-    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    from qlsm_addon_demo_management.ansible_instance_demos import read_qlmatch_manifest
 
     zip_bytes = _fake_qlmatch_zip({'match_id': '20260902T210633Z', 'map': 'phrantic'})
     sftp = MagicMock()
@@ -514,7 +516,7 @@ def test_manifest_reads_match_id_and_map_from_zip_via_seekable_sftp_handle():
 
 
 def test_manifest_missing_file_returns_error_not_exception():
-    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    from qlsm_addon_demo_management.ansible_instance_demos import read_qlmatch_manifest
 
     sftp = MagicMock()
     sftp.open.side_effect = FileNotFoundError()
@@ -530,7 +532,7 @@ def test_manifest_missing_file_returns_error_not_exception():
 
 
 def test_manifest_bad_zip_returns_error_not_exception():
-    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    from qlsm_addon_demo_management.ansible_instance_demos import read_qlmatch_manifest
 
     sftp = MagicMock()
     sftp.open.return_value.__enter__.return_value = io.BytesIO(b'not a zip file')
@@ -545,7 +547,7 @@ def test_manifest_bad_zip_returns_error_not_exception():
 
 
 def test_manifest_missing_match_id_or_map_returns_error():
-    from ui.task_logic.ansible_instance_demos import read_qlmatch_manifest
+    from qlsm_addon_demo_management.ansible_instance_demos import read_qlmatch_manifest
 
     zip_bytes = _fake_qlmatch_zip({'match_id': '20260902T210633Z'})  # no "map"
     sftp = MagicMock()
@@ -587,7 +589,7 @@ def _sftp_open_side_effect(contents):
 
 
 def test_list_qlmatches_uses_a_single_ssh_connection_for_multiple_packs():
-    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_qlmatches
 
     sftp = MagicMock()
     sftp.listdir_attr.return_value = [
@@ -615,7 +617,7 @@ def test_list_qlmatches_uses_a_single_ssh_connection_for_multiple_packs():
 
 
 def test_list_qlmatches_pairs_replay_via_manifest_not_filename():
-    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_qlmatches
 
     sftp = MagicMock()
     sftp.listdir_attr.return_value = [
@@ -647,7 +649,7 @@ def test_list_qlmatches_pairs_replay_via_manifest_not_filename():
 
 
 def test_list_qlmatches_unreadable_manifest_reports_no_replay_not_error():
-    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_qlmatches
 
     sftp = MagicMock()
     sftp.listdir_attr.return_value = [_attr('broken.qlmatch', 100, 1.0)]
@@ -669,7 +671,7 @@ def test_list_qlmatches_unreadable_manifest_reports_no_replay_not_error():
 
 
 def test_list_qlmatches_missing_instance_returns_error_before_ssh():
-    from ui.task_logic.ansible_instance_demos import list_instance_qlmatches
+    from qlsm_addon_demo_management.ansible_instance_demos import list_instance_qlmatches
     with patch(f'{FETCH_MODULE}._resolve_instance',
                return_value=(None, None, 'Instance 1 not found.')), \
          patch(f'{FETCH_MODULE}.paramiko.SSHClient') as mock_cls:

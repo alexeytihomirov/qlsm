@@ -28,9 +28,14 @@ or privilege escalation to justify Ansible's overhead, so a plain SFTP
 listdir + open is both faster and simpler to reason about than shelling out
 to ansible-playbook for a two-line remote operation.
 
-Kept separate from ansible_instance_mgmt.py for the same reason as
-ansible_server_log_archives.py: that file is already past the project's
-file-size guideline.
+Lives inside the demo-management addon (moved from ui/task_logic/ in core).
+Both the addon's own JWT-protected panel and its Bearer-token external API
+(see backend.py's /instances/<id>/matches* routes) call straight into this
+module - uninstalling this addon now genuinely removes demo listing/download,
+including for whatever external service was using the old core-hosted
+/api/v1/instances/<id>/matches endpoints. That used to be a reason to keep
+this in core; the operator decided it should move anyway and will repoint
+those external callers at the addon's URL instead.
 """
 import json
 import os

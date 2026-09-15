@@ -25,17 +25,20 @@ restart.
 | Addon | State |
 |-------|-------|
 | `telemetry-relay` | **Owns the feature.** QLSM core has no telemetry endpoints, tasks, settings module, playbook, payload or UI left. All of it lives here, including `ui/TelemetryRelayModal.jsx`. |
-| `demo-management` | **Owns the UI.** The Demos screen and its endpoints live here. `ui/task_logic/ansible_instance_demos.py` deliberately stayed in core -- the versioned external API (`/api/v1/instances/<id>/matches`) uses it too, and uninstalling this addon must not break an integration outside QLSM. |
+| `demo-management` | **Owns the feature.** The Demos screen, its endpoints, `ansible_instance_demos.py`, and the Bearer-token external API (`/api/addons/demo-management/instances/<id>/matches`, moved from core's old `/api/v1/instances/<id>/matches`) all live here. Uninstalling this addon removes demo listing/download for the UI and for external callers alike -- by design. |
 | `demo-stream` | **Owns the UI.** The built-in feature had four endpoints and no frontend at all, so this adds a screen rather than replacing one. Still delegates to `ui/task_logic/demo_stream_instance.py`. |
 | `_examples/hello-addon` | Reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
 
-**Where the line falls.** Anything two features need stays in core. The
-clearest case is `ui/stats_hub.py`: where ql-stats-hub is (cluster URL and
-ingest token, per-host override, per-instance server ID, the reserve call and
-the server.cfg cvar helpers) is used by both telemetry and the live demo
-stream, so putting it in either addon would mean uninstalling one silently
-breaks the other. What is left in `telemetry-relay/settings.py` is the one
-thing only it cares about: whether the relay sidecar is on for a host.
+**Where the line falls.** `ui/stats_hub.py` holds the *mechanics* every
+stats-hub integration needs (key storage, the reserve call, the server.cfg
+cvar helpers) - that part stays in core because both telemetry and the live
+demo stream use it. But the actual stats-hub *target* (URL, ingest token,
+per-host override, per-instance server ID) is **not shared** between them:
+each feature has its own, bound to a `feature` argument ('telemetry' vs
+'demo_stream'), because the two may legitimately point at different
+stats-hub instances. `telemetry-relay/settings.py` and `demo-stream`'s own
+stats-hub endpoints each own their half; neither can see or overwrite the
+other's configuration.
 
 ## Layout
 

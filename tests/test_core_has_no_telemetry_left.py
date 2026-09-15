@@ -120,10 +120,12 @@ def test_the_telemetry_addon_still_provides_them():
     assert '/api/addons/demo-management/instances/<int:instance_id>/demos' in rules
 
 
-def test_the_external_api_still_serves_matches():
-    """/api/v1/ is a contract with services outside QLSM. It uses the demo
-    helpers that stayed in core precisely so uninstalling an addon cannot
-    break it."""
+def test_the_external_api_moved_with_demo_management():
+    """/api/v1/instances is still a core contract (no demo helpers involved),
+    but the match-listing endpoints moved into the demo-management addon
+    along with ansible_instance_demos.py itself - uninstalling that addon
+    now removes this part of the external API too, by design (see
+    addons/README.md)."""
     from ui import create_app
 
     app = create_app({
@@ -131,4 +133,6 @@ def test_the_external_api_still_serves_matches():
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:', 'RCON_ENABLED': False,
     })
     rules = {str(r) for r in app.url_map.iter_rules()}
-    assert '/api/v1/instances/<int:instance_id>/matches' in rules
+    assert '/api/v1/instances' in rules
+    assert '/api/v1/instances/<int:instance_id>/matches' not in rules
+    assert '/api/addons/demo-management/instances/<int:instance_id>/matches' in rules
