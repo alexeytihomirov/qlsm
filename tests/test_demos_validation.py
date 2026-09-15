@@ -1,6 +1,13 @@
 """Validation tests for the demo-listing and demo-download endpoints.
 
-Guards GET /api/instances/<id>/demos: missing instance/host state is
+Guards the demo endpoints, which moved to the demo-management addon when
+demo management stopped being part of QLSM core. The endpoints are now under
+/api/addons/demo-management/; the listing and fetch helpers they call
+(ui/task_logic/ansible_instance_demos.py) deliberately stayed in core,
+because the versioned external API at /api/v1/ uses them too and must not
+break when an addon is uninstalled.
+
+Missing instance/host state is
 classified before any SFTP session is opened, a successful list is returned
 sorted newest-first, and a missing demos/ directory degrades to an empty
 list rather than a 500. Also guards GET .../demos/download and
@@ -49,7 +56,7 @@ def _headers(token):
 
 
 def _get_demos(client, instance_id, token):
-    return client.get(f'/api/instances/{instance_id}/demos', headers=_headers(token))
+    return client.get(f'/api/addons/demo-management/instances/{instance_id}/demos', headers=_headers(token))
 
 
 def _fake_host():
@@ -201,7 +208,7 @@ def test_list_ssh_failure_returns_error_not_exception():
 
 def _get_download(client, instance_id, token, filename):
     return client.get(
-        f'/api/instances/{instance_id}/demos/download',
+        f'/api/addons/demo-management/instances/{instance_id}/demos/download',
         query_string={'filename': filename},
         headers=_headers(token),
     )
@@ -209,7 +216,7 @@ def _get_download(client, instance_id, token, filename):
 
 def _post_batch(client, instance_id, token, filenames):
     return client.post(
-        f'/api/instances/{instance_id}/demos/download-batch',
+        f'/api/addons/demo-management/instances/{instance_id}/demos/download-batch',
         json={'filenames': filenames},
         headers=_headers(token),
     )

@@ -9,10 +9,19 @@ a reserved stats-hub server_id.
 import json
 
 from flask import current_app
+import os
+
 from ui import db
 from ui.models import Host, HostStatus, QLInstance
 from ui.task_logic.ansible_runner import _run_host_ansible_playbook, run_host_ansible_adhoc
-from ui.telemetry_relay_settings import (
+# The playbook and its template now live next to this module, inside the
+# addon, so the path is resolved here rather than assumed to be under
+# ansible/playbooks/ (see _run_host_ansible_playbook -- it takes an absolute
+# path as-is).
+PLAYBOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'playbooks', 'install_telemetry_relay.yml')
+
+from .settings import (
     get_effective_stats_hub_ingest_token,
     get_effective_stats_hub_url,
     get_instance_server_id,
@@ -69,7 +78,7 @@ def push_relay_config_logic(host_id):
     }
     success, _stdout, _stderr = _run_host_ansible_playbook(
         host=host,
-        playbook_name='install_telemetry_relay.yml',
+        playbook_name=PLAYBOOK,
         extravars=extra_vars,
     )
     if not success:
@@ -103,7 +112,7 @@ def configure_host_telemetry_relay_logic(host_id, enabled):
 
     success, stdout_str, stderr_str = _run_host_ansible_playbook(
         host=host,
-        playbook_name='install_telemetry_relay.yml',
+        playbook_name=PLAYBOOK,
         extravars=extra_vars,
     )
 

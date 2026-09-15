@@ -12,6 +12,7 @@ a sandbox.
 """
 import logging
 import os
+import sys
 from functools import wraps
 
 from ui.addons.hooks import validate_hook_name
@@ -21,10 +22,14 @@ from ui.addons.settings import AddonSettings
 class AddonContext:
     """Handed to `register(ctx)` in an addon's backend.py."""
 
-    def __init__(self, addon_id, manifest, root_dir):
+    def __init__(self, addon_id, manifest, root_dir, module_name=None):
         self.addon_id = addon_id
         self.manifest = manifest
         self.root_dir = root_dir
+        # The synthetic module the addon's backend.py was loaded under. Needed
+        # so registered tasks can be published as module attributes -- see
+        # task() for why that is not optional.
+        self.module_name = module_name
         self.settings = AddonSettings(addon_id, manifest)
         self.logger = logging.getLogger(f'qlsm.addon.{addon_id}')
 
@@ -101,6 +106,26 @@ class AddonContext:
                         release_lock(lock_scope, args[0], lock_token)
 
             job = rq.job(timeout=timeout)(with_app_context(with_lock_release))
+
+            # Publish the job as a module-level attribute of the addon's
+            # backend module. This is load-bearing, not tidiness: RQ stores a
+            # job as the dotted path "<module>.<function>" and re-imports it
+            # in the worker. An addon registers its tasks *inside*
+            # register(ctx), so the function is a closure whose qualname is
+            # "register.<locals>.<name>" and which is not an attribute of the
+            # module -- the worker would fail to resolve it and the job would
+            # silently never run. Verified by experiment, not assumption; see
+            # tests/test_addon_tasks_are_dequeuable.py.
+            module = sys.modules.get(self.module_name) if self.module_name else None
+            if module is not None:
+                job.__qualname__ = fn.__name__
+                setattr(module, fn.__name__, job)
+            else:
+                self.logger.error(
+                    'Task %r registered without a resolvable module; it will '
+                    'queue but never run.', fn.__name__,
+                )
+
             self.tasks[fn.__name__] = job
             return job
 

@@ -75,7 +75,9 @@ def test_host_panel_reports_defaults(client, auth, host_and_instance):
 def test_overrides_round_trip_without_touching_the_relay(client, auth, host_and_instance, monkeypatch):
     """Saving with the toggle unchanged must not queue a host task -- it only
     re-pushes config, so editing a URL cannot knock a host into CONFIGURING."""
-    import ui.task_logic.ansible_telemetry_relay as relay
+    import importlib
+
+    relay = importlib.import_module('qlsm_addon_telemetry_relay.relay_ops')
 
     pushed = []
     monkeypatch.setattr(relay, 'push_relay_config_logic', lambda host_id: pushed.append(host_id))
@@ -104,7 +106,7 @@ def test_overrides_are_persisted_before_the_enable_task_is_queued(client, auth, 
     so the ordering is pinned here: at the moment the task is queued, the new
     override must already be readable."""
     import ui.tasks as tasks
-    from ui.telemetry_relay_settings import get_host_stats_hub_url
+    from ui.stats_hub import get_host_stats_hub_url
 
     host_id, _ = host_and_instance
     seen = {}
@@ -134,7 +136,7 @@ def test_enabling_queues_a_host_task(client, auth, host_and_instance, monkeypatc
         'enabled': True, 'url_override': '', 'ingest_token_override': '',
     })
     assert resp.status_code == 202
-    assert queued and queued[0][0] == 'configure_host_telemetry_relay_task'
+    assert queued and queued[0][0] == 'configure_host_relay'
     assert queued[0][1][0] == host_id
 
 
@@ -164,7 +166,7 @@ def test_non_string_override_is_rejected(client, auth, host_and_instance):
 def test_stats_hub_round_trips_through_the_same_keys_core_uses(client, auth):
     """One store, one reader: the addon must not create a second source of
     truth for a production credential while both code paths exist."""
-    from ui.telemetry_relay_settings import get_stats_hub_ingest_token, get_stats_hub_url
+    from ui.stats_hub import get_stats_hub_ingest_token, get_stats_hub_url
 
     resp = client.put(f'{ADDON}/stats-hub', headers=auth,
                       json={'url': 'https://hub.example/', 'ingest_token': 'ingest-abc'})
@@ -201,7 +203,7 @@ def test_enable_is_refused_when_the_host_relay_is_off(client, auth, host_and_ins
 
 
 def test_enable_is_refused_when_stats_hub_is_unconfigured(client, auth, host_and_instance):
-    from ui.telemetry_relay_settings import set_relay_enabled
+    from qlsm_addon_telemetry_relay.settings import set_relay_enabled
 
     host_id, instance_id = host_and_instance
     with client.application.app_context():
@@ -215,9 +217,8 @@ def test_enable_is_refused_when_stats_hub_is_unconfigured(client, auth, host_and
 
 def test_enable_queues_the_task_once_prerequisites_are_met(client, auth, host_and_instance, monkeypatch):
     import ui.tasks as tasks
-    from ui.telemetry_relay_settings import (
-        set_relay_enabled, set_stats_hub_ingest_token, set_stats_hub_url,
-    )
+    from qlsm_addon_telemetry_relay.settings import set_relay_enabled
+    from ui.stats_hub import set_stats_hub_ingest_token, set_stats_hub_url
 
     queued = []
     monkeypatch.setattr(tasks, 'enqueue_task', lambda fn, *a, **kw: queued.append((fn.__name__, a)))
@@ -236,9 +237,8 @@ def test_enable_queues_the_task_once_prerequisites_are_met(client, auth, host_an
 
 
 def test_enable_is_refused_while_the_instance_is_busy(client, auth, host_and_instance):
-    from ui.telemetry_relay_settings import (
-        set_relay_enabled, set_stats_hub_ingest_token, set_stats_hub_url,
-    )
+    from qlsm_addon_telemetry_relay.settings import set_relay_enabled
+    from ui.stats_hub import set_stats_hub_ingest_token, set_stats_hub_url
 
     host_id, instance_id = host_and_instance
     with client.application.app_context():
@@ -256,10 +256,9 @@ def test_enable_is_refused_while_the_instance_is_busy(client, auth, host_and_ins
 # ---- cleanup hooks -----------------------------------------------------
 
 def test_deleting_a_host_forgets_its_relay_settings(app, host_and_instance):
+    from qlsm_addon_telemetry_relay.settings import is_relay_enabled, set_relay_enabled
     from ui.addons import registry
-    from ui.telemetry_relay_settings import (
-        get_host_stats_hub_url, is_relay_enabled, set_host_stats_hub_url, set_relay_enabled,
-    )
+    from ui.stats_hub import get_host_stats_hub_url, set_host_stats_hub_url
 
     host_id, _ = host_and_instance
     with app.app_context():
@@ -275,7 +274,7 @@ def test_deleting_a_host_forgets_its_relay_settings(app, host_and_instance):
 
 def test_deleting_an_instance_forgets_its_server_id(app, host_and_instance):
     from ui.addons import registry
-    from ui.telemetry_relay_settings import get_instance_server_id, set_instance_server_id
+    from ui.stats_hub import get_instance_server_id, set_instance_server_id
 
     _, instance_id = host_and_instance
     with app.app_context():

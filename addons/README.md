@@ -24,14 +24,18 @@ restart.
 
 | Addon | State |
 |-------|-------|
-| `telemetry-relay` | **Migration.** Runs alongside the built-in Telemetry Relay panel; entries suffixed "(addon)". Delegates to `ui/telemetry_relay_settings.py` + `ui/task_logic/ansible_telemetry_relay.py` rather than copying them, so the two paths cannot drift while both exist. |
-| `demo-management` | **Migration.** Runs alongside the built-in Demos modal. Delegates to `ui/task_logic/ansible_instance_demos.py`, which owns the filename validation that keeps a remote path safe. |
+| `telemetry-relay` | **Owns the feature.** QLSM core has no telemetry endpoints, tasks, settings module, playbook, payload or UI left. All of it lives here, including `ui/TelemetryRelayModal.jsx`. |
+| `demo-management` | **Owns the UI.** The Demos screen and its endpoints live here. `ui/task_logic/ansible_instance_demos.py` deliberately stayed in core -- the versioned external API (`/api/v1/instances/<id>/matches`) uses it too, and uninstalling this addon must not break an integration outside QLSM. |
+| `demo-stream` | **Owns the UI.** The built-in feature had four endpoints and no frontend at all, so this adds a screen rather than replacing one. Still delegates to `ui/task_logic/demo_stream_instance.py`. |
 | `_examples/hello-addon` | Reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
 
-Both migration addons are verified against a real host **before** the
-built-in code they duplicate is deleted, and that deletion is a separate
-change. Until then, seeing two "Telemetry Relay" entries in a host menu is
-expected, not a bug.
+**Where the line falls.** Anything two features need stays in core. The
+clearest case is `ui/stats_hub.py`: where ql-stats-hub is (cluster URL and
+ingest token, per-host override, per-instance server ID, the reserve call and
+the server.cfg cvar helpers) is used by both telemetry and the live demo
+stream, so putting it in either addon would mean uninstalling one silently
+breaks the other. What is left in `telemetry-relay/settings.py` is the one
+thing only it cares about: whether the relay sidecar is on for a host.
 
 ## Layout
 

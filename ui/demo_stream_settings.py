@@ -1,6 +1,6 @@
 """DB-backed settings for the live demo stream feature (sv_demoStream).
 
-Mirrors ui/telemetry_relay_settings.py's pattern (generic AppSetting
+Mirrors ui/stats_hub.py's pattern (generic AppSetting
 key/value table, no dedicated columns/migration - see
 qlsm-migrations-branched-heads in project memory for why a new column is
 avoided here).

@@ -10,7 +10,7 @@ through the UI still has permission level 0 in the running instance and chat_rco
 !rcon silently denies them ("permission denied"), even though access.txt looks right.
 
 Call sync_instance_access_permissions(instance) from apply_instance_config_logic
-after every successful config apply, mirroring telemetry_relay_instance.py's
+after every successful config apply, mirroring the telemetry-relay addon's
 sync_instance_server_id_from_config -- same "config on disk is the source of truth,
 reconcile the running instance's external state after every apply" shape.
 
@@ -192,7 +192,7 @@ def sync_instance_access_permissions(instance):
 
     No-op (returns None) if the instance has no host or no access.txt on disk
     yet -- matches sync_instance_server_id_from_config's "nothing written yet"
-    handling in telemetry_relay_instance.py.
+    handling in the telemetry-relay addon's instance_ops.py.
     """
     if not instance.host:
         return None

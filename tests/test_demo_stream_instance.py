@@ -12,8 +12,8 @@ from ui.demo_stream_settings import (
 )
 from ui.models import HostStatus
 from ui.task_logic.demo_stream_instance import enable_instance_demo_stream_logic
-from ui.task_logic.telemetry_relay_instance import read_cvars_from_text
-from ui.telemetry_relay_settings import (
+from ui.stats_hub import read_cvars_from_text
+from ui.stats_hub import (
     get_instance_server_id,
     set_stats_hub_ingest_token,
     set_stats_hub_url,
@@ -83,7 +83,7 @@ class TestEnableInstanceDemoStream:
             import requests
 
             with patch(
-                'ui.task_logic.demo_stream_instance._reserve_server_id', return_value=7
+                'ui.task_logic.demo_stream_instance.reserve_server_id', return_value=7
             ), patch(
                 'ui.task_logic.demo_stream_instance.requests.post',
                 side_effect=requests.RequestException('boom'),
@@ -103,7 +103,7 @@ class TestEnableInstanceDemoStream:
             host = create_host(name='germany', provider='vultr', status=HostStatus.ACTIVE)
             instance = create_instance(name='sD test', host_id=host.id, port=27960, hostname='sD')
 
-            with patch('ui.task_logic.demo_stream_instance._reserve_server_id', return_value=7) as mock_reserve:
+            with patch('ui.task_logic.demo_stream_instance.reserve_server_id', return_value=7) as mock_reserve:
                 ok, message = enable_instance_demo_stream_logic(instance.id)
 
             assert ok is True
@@ -145,12 +145,12 @@ class TestEnableInstanceDemoStream:
             instance = create_instance(name='sD test', host_id=host.id, port=27960, hostname='sD')
 
             from ui.demo_stream_settings import set_instance_demo_stream_token
-            from ui.telemetry_relay_settings import set_instance_server_id
+            from ui.stats_hub import set_instance_server_id
             set_instance_server_id(instance.id, 3)
             set_instance_demo_stream_token(instance.id, 'existing-token')
             db.session.commit()
 
-            with patch('ui.task_logic.demo_stream_instance._reserve_server_id') as mock_reserve:
+            with patch('ui.task_logic.demo_stream_instance.reserve_server_id') as mock_reserve:
                 ok, _message = enable_instance_demo_stream_logic(instance.id)
 
             assert ok is True

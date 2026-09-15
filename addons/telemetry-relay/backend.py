@@ -42,7 +42,7 @@ def _host_or_404(host_id):
 @jwt_required()
 def get_host_relay(host_id):
     """Everything the host panel's form needs, in one round trip."""
-    from ui.telemetry_relay_settings import (
+    from .settings import (
         get_host_stats_hub_ingest_token, get_host_stats_hub_url, is_relay_enabled,
     )
 
@@ -65,7 +65,7 @@ def get_host_relay_status(host_id):
     One SSH round trip, so this is a separate endpoint from the form load --
     the panel fetches it once per open rather than on every keystroke.
     """
-    from ui.task_logic.ansible_telemetry_relay import get_relay_status_logic
+    from .relay_ops import get_relay_status_logic
 
     _, error = _host_or_404(host_id)
     if error:
@@ -106,10 +106,10 @@ def update_host_relay(host_id):
     from ui.database import update_host
     from ui.models import HostStatus
     from ui.task_lock import acquire_lock, release_lock
-    from ui.task_logic.ansible_telemetry_relay import push_relay_config_logic
+    from .relay_ops import push_relay_config_logic
     from ui.task_logic.job_failure_handlers import host_job_failure_handler
-    from ui.tasks import configure_host_telemetry_relay_task, enqueue_task
-    from ui.telemetry_relay_settings import (
+    from ui.tasks import enqueue_task
+    from .settings import (
         is_relay_enabled, set_host_stats_hub_ingest_token, set_host_stats_hub_url,
     )
 
@@ -146,7 +146,7 @@ def update_host_relay(host_id):
         }}), 409
     try:
         update_host(host.id, status=HostStatus.CONFIGURING)
-        enqueue_task(configure_host_telemetry_relay_task, host.id, wanted,
+        enqueue_task(TASKS['configure_host_relay'], host.id, wanted,
                      lock_token=lock_token, on_failure=host_job_failure_handler)
     except Exception as e:
         release_lock('host', host.id, lock_token)
@@ -162,7 +162,7 @@ def update_host_relay(host_id):
 @bp.route('/stats-hub', methods=['GET'], endpoint='get_stats_hub')
 @jwt_required()
 def get_stats_hub():
-    from ui.telemetry_relay_settings import get_stats_hub_ingest_token, get_stats_hub_url
+    from .settings import get_stats_hub_ingest_token, get_stats_hub_url
 
     return jsonify({"data": {
         'url': get_stats_hub_url() or '',
@@ -176,7 +176,7 @@ def update_stats_hub():
     """Cluster-wide stats-hub target. Same AppSetting keys the built-in
     Settings page writes, so the two cannot disagree while both exist."""
     from ui import db
-    from ui.telemetry_relay_settings import set_stats_hub_ingest_token, set_stats_hub_url
+    from .settings import set_stats_hub_ingest_token, set_stats_hub_url
 
     data = request.get_json(silent=True) or {}
     url = data.get('url', '')
@@ -194,7 +194,7 @@ def update_stats_hub():
 @jwt_required()
 def get_instance_telemetry(instance_id):
     from ui.database import get_instance
-    from ui.telemetry_relay_settings import get_instance_server_id
+    from .settings import get_instance_server_id
 
     instance = get_instance(instance_id)
     if not instance:
@@ -215,8 +215,8 @@ def enable_instance_telemetry(instance_id):
     from ui.models import InstanceStatus
     from ui.task_lock import acquire_lock, release_lock
     from ui.task_logic.job_failure_handlers import instance_job_failure_handler
-    from ui.tasks import enable_instance_telemetry_task, enqueue_task
-    from ui.telemetry_relay_settings import is_relay_enabled, is_stats_hub_configured_for_host
+    from ui.tasks import enqueue_task
+    from .settings import is_relay_enabled, is_stats_hub_configured_for_host
 
     instance = get_instance(instance_id)
     if not instance:
@@ -247,7 +247,7 @@ def enable_instance_telemetry(instance_id):
         }}), 409
     try:
         update_instance(instance.id, status=InstanceStatus.CONFIGURING)
-        enqueue_task(enable_instance_telemetry_task, instance.id,
+        enqueue_task(TASKS['enable_instance_telemetry'], instance.id,
                      lock_token=lock_token, on_failure=instance_job_failure_handler)
     except Exception as e:
         release_lock('instance', instance.id, lock_token)
@@ -258,8 +258,57 @@ def enable_instance_telemetry(instance_id):
     return jsonify({"message": f'Telemetry enable queued for "{instance.name}".'}), 202
 
 
+# Set by register(); the endpoints enqueue through these rather than through
+# ui.tasks, which no longer knows telemetry exists.
+TASKS = {}
+
+
 def register(ctx):
     ctx.blueprint(bp)
+
+    @ctx.task(timeout=120, lock_scope='host')
+    def configure_host_relay(host_id, enabled):
+        """Install or remove the relay sidecar on a host.
+
+        ctx.task wraps this with the app context and the lock release, the
+        same way ui/tasks.py wraps core's own tasks -- and publishes it as a
+        module attribute so the RQ worker can resolve it by name. Without that
+        last part the job queues and never runs; see
+        tests/test_addon_tasks_are_dequeuable.py.
+        """
+        from .relay_ops import configure_host_telemetry_relay_logic
+
+        return configure_host_telemetry_relay_logic(host_id, enabled)
+
+    @ctx.task(timeout=300, lock_scope='instance')
+    def enable_instance_telemetry_task(instance_id):
+        """Reserve a stats-hub server_id and wire the instance's cvars."""
+        from .instance_ops import enable_instance_telemetry_logic
+
+        return enable_instance_telemetry_logic(instance_id)
+
+    TASKS['configure_host_relay'] = configure_host_relay
+    TASKS['enable_instance_telemetry'] = enable_instance_telemetry_task
+
+    @ctx.on('instance.config_applied')
+    def resync_server_id(instance_id):
+        """Keep the relay's routing entry in step with what server.cfg
+        actually carries.
+
+        Runs after every config apply, including the one an operator triggers
+        by editing qlx_statsHubServerId by hand in the Plugins tab and never
+        touching the assisted flow. Without it that server.cfg looks fully
+        configured while the relay's routing table stays empty and every POST
+        is dropped as "no_route" -- a real incident, see
+        qlsm-telemetry-relay-server-id-db-desync in project memory.
+        """
+        from ui.database import get_instance
+
+        from .instance_ops import sync_instance_server_id_from_config
+
+        instance = get_instance(instance_id)
+        if instance is not None:
+            sync_instance_server_id_from_config(instance)
 
     @ctx.on('host.delete')
     def forget_host(host_id):
@@ -269,7 +318,7 @@ def register(ctx):
         AppSetting keys the shared logic still reads, which nothing else
         would clean up.
         """
-        from ui.telemetry_relay_settings import (
+        from .settings import (
             set_host_stats_hub_ingest_token, set_host_stats_hub_url, set_relay_enabled,
         )
         set_relay_enabled(host_id, False)
@@ -278,5 +327,5 @@ def register(ctx):
 
     @ctx.on('instance.delete')
     def forget_instance(instance_id):
-        from ui.telemetry_relay_settings import set_instance_server_id
+        from .settings import set_instance_server_id
         set_instance_server_id(instance_id, None)

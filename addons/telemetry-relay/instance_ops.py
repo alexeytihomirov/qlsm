@@ -20,14 +20,16 @@ from flask import current_app
 
 from ui import db
 from ui.models import QLInstance
-from ui.task_logic.ansible_telemetry_relay import push_relay_config_logic
-from ui.telemetry_relay_settings import (
-    get_effective_stats_hub_ingest_token,
-    get_effective_stats_hub_url,
+from .relay_ops import push_relay_config_logic
+from .settings import (
     get_instance_server_id,
     is_relay_enabled,
     is_stats_hub_configured_for_host,
+    read_cvars_from_text,
+    reserve_server_id,
     set_instance_server_id,
+    strip_cvars_from_text,
+    upsert_cvars_in_text,
 )
 
 _RESERVE_TIMEOUT_SEC = 10
@@ -36,62 +38,6 @@ _RESERVE_TIMEOUT_SEC = 10
 # server.cfg still carrying them from before this change so the file doesn't
 # keep advertising stale/duplicated secrets.
 _LEGACY_INSTANCE_CVARS = ('qlx_statsHubUrl', 'qlx_statsHubToken')
-
-
-def _reserve_server_id(label, host_id):
-    url = f"{get_effective_stats_hub_url(host_id)}/api/admin/server-ids/reserve"
-    headers = {'Authorization': f'Bearer {get_effective_stats_hub_ingest_token(host_id)}'}
-    resp = requests.post(url, json={'label': label}, headers=headers, timeout=_RESERVE_TIMEOUT_SEC)
-    resp.raise_for_status()
-    return int(resp.json()['server_id'])
-
-
-def upsert_cvars_in_text(text, cvars):
-    """Replace/append `set <cvar> "value"` lines in raw server.cfg text.
-
-    Only touches the given cvar names - every other line (including cvars
-    the operator set by hand through the Plugins tab) is left alone.
-    """
-    lines = text.splitlines()
-    remaining = dict(cvars)
-    out = []
-    for line in lines:
-        m = re.match(r'^(\s*set\s+)([A-Za-z0-9_]+)(\s+)"(.*)"(\s*)$', line)
-        if m and m.group(2) in remaining:
-            value = remaining.pop(m.group(2))
-            out.append(f'{m.group(1)}{m.group(2)}{m.group(3)}"{value}"{m.group(5)}')
-        else:
-            out.append(line)
-    for cvar, value in remaining.items():
-        out.append(f'set {cvar} "{value}"')
-    return '\n'.join(out) + '\n'
-
-
-def strip_cvars_from_text(text, cvar_names):
-    """Removes `set <cvar> ...` lines for the given cvar names entirely
-    (as opposed to upsert_cvars_in_text, which sets a value) - used to clean
-    up cvars a server.cfg should no longer carry at all."""
-    names = set(cvar_names)
-    out = []
-    for line in text.splitlines():
-        m = re.match(r'^\s*set\s+([A-Za-z0-9_]+)\s+"', line)
-        if m and m.group(1) in names:
-            continue
-        out.append(line)
-    return '\n'.join(out) + ('\n' if out else '')
-
-
-def read_cvars_from_text(text, cvar_names):
-    """Returns {name: value} for whichever of `cvar_names` appear as
-    `set <name> "value"` lines. Last occurrence wins, matching how the
-    engine execs a cfg top to bottom."""
-    names = set(cvar_names)
-    found = {}
-    for line in text.splitlines():
-        m = re.match(r'^\s*set\s+([A-Za-z0-9_]+)\s+"(.*)"\s*$', line)
-        if m and m.group(1) in names:
-            found[m.group(1)] = m.group(2)
-    return found
 
 
 def sync_instance_server_id_from_config(instance):
@@ -161,7 +107,7 @@ def enable_instance_telemetry_logic(instance_id):
     server_id = get_instance_server_id(instance.id)
     if server_id is None:
         try:
-            server_id = _reserve_server_id(instance.name, host_id)
+            server_id = reserve_server_id(instance.name, host_id)
         except (requests.RequestException, ValueError, KeyError) as exc:
             current_app.logger.error(
                 f"Failed to reserve stats-hub server_id for instance {instance.id}: {exc}"

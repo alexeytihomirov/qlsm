@@ -1,16 +1,9 @@
 import React from 'react';
 import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { X, RefreshCw, Film, AlertCircle, FolderOpen, Download, Search } from 'lucide-react';
-import { listInstanceDemos, downloadInstanceDemo, downloadInstanceDemosBatch } from '../../services/api';
-
-// Same idea as TelemetryRelayModal: the demo-management addon mounts this
-// exact component with its own endpoints, so the addon path cannot drift
-// from the built-in one by so much as a column.
-const CORE_API = {
-    list: listInstanceDemos,
-    downloadOne: downloadInstanceDemo,
-    downloadBatch: downloadInstanceDemosBatch,
-};
+// Lives inside the addon that owns it: QLSM core no longer has demo
+// endpoints to default to, so `api` comes from the addon's mount wrapper and
+// is required.
 
 /**
  * Modal for viewing server-side demo files (.dm_91, plus .qlmatch - the
@@ -51,7 +44,7 @@ function triggerBlobDownload(blob, filename) {
     window.URL.revokeObjectURL(url);
 }
 
-function ViewDemosModal({ isOpen, onClose, instance, api = CORE_API }) {
+function ViewDemosModal({ isOpen, onClose, instance, api }) {
     const [demos, setDemos] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState(null);

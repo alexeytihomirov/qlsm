@@ -1,22 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { Radio, X, RefreshCw, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
-import {
-    getTelemetryRelay,
-    getTelemetryRelayStatus,
-    getHostStatsHubOverride,
-} from '../../services/api';
-
-// Where this modal reads its data from. Defaults to the built-in endpoints;
-// the telemetry-relay addon passes its own so the *same* component can be
-// mounted from an addon without the operator losing a single field. Keeping
-// one component instead of a look-alike is the only way parity stays true as
-// either side changes.
-const CORE_API = {
-    getRelay: getTelemetryRelay,
-    getStatus: getTelemetryRelayStatus,
-    getOverride: getHostStatsHubOverride,
-};
+// This component now lives inside the addon that owns it, so it has no
+// default data source: QLSM core no longer has telemetry endpoints to fall
+// back to. `api` is supplied by the addon's mount wrapper and is required.
 
 function StatusBadge({ status, statusLoading }) {
     if (statusLoading) {
@@ -43,7 +30,7 @@ function StatusBadge({ status, statusLoading }) {
     );
 }
 
-function TelemetryRelayModal({ isOpen, onClose, onSubmit, host, api = CORE_API }) {
+function TelemetryRelayModal({ isOpen, onClose, onSubmit, host, api }) {
     const [enabled, setEnabled] = useState(false);
     const [urlOverride, setUrlOverride] = useState('');
     const [tokenOverride, setTokenOverride] = useState('');
