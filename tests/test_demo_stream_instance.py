@@ -23,8 +23,8 @@ from ui.stats_hub import (
 def _configure_globals():
     set_relay_host('relay.example.com')
     set_relay_port('27999')
-    set_stats_hub_url('https://hub.example.com')
-    set_stats_hub_ingest_token('ingest-token')
+    set_stats_hub_url('demo_stream', 'https://hub.example.com')
+    set_stats_hub_ingest_token('demo_stream', 'ingest-token')
     db.session.commit()
 
 
@@ -109,7 +109,7 @@ class TestEnableInstanceDemoStream:
             assert ok is True
             assert 'server_id=7' in message
             mock_reserve.assert_called_once_with(instance.name, host.id)
-            assert get_instance_server_id(instance.id) == 7
+            assert get_instance_server_id('demo_stream', instance.id) == 7
             assert is_instance_demo_stream_enabled(instance.id) is True
 
             token = get_instance_demo_stream_token(instance.id)
@@ -146,7 +146,7 @@ class TestEnableInstanceDemoStream:
 
             from ui.demo_stream_settings import set_instance_demo_stream_token
             from ui.stats_hub import set_instance_server_id
-            set_instance_server_id(instance.id, 3)
+            set_instance_server_id('demo_stream', instance.id, 3)
             set_instance_demo_stream_token(instance.id, 'existing-token')
             db.session.commit()
 

@@ -1,6 +1,7 @@
 """Enables the live demo stream feature (sv_demoStream) for a single QL
-instance: reserve a cluster-wide server_id (shared with telemetry, if this
-instance already has one - see ui/stats_hub.py), generate a
+instance: reserve a server_id from the demo stream's own stats-hub target
+(independent of telemetry's - see ui/stats_hub.py's module docstring, the two
+features may not even be the same stats-hub cluster), generate a
 per-instance secret token, register {token -> server_id} with ql-stats-hub's
 "Live demo stream" contour, point the instance's sv_demoStream* cvars at the
 central relay, and apply+restart (same mechanism the Plugins tab config-save
@@ -30,21 +31,38 @@ from ui.demo_stream_settings import (
     set_instance_demo_stream_token,
 )
 from ui.models import QLInstance
-from ui.stats_hub import reserve_server_id, upsert_cvars_in_text
+from ui.stats_hub import reserve_server_id as _reserve_server_id, upsert_cvars_in_text
 from ui.stats_hub import (
-    get_effective_stats_hub_ingest_token,
-    get_effective_stats_hub_url,
-    get_instance_server_id,
-    is_stats_hub_configured_for_host,
-    set_instance_server_id,
+    get_effective_stats_hub_ingest_token as _get_effective_stats_hub_ingest_token,
+    get_effective_stats_hub_url as _get_effective_stats_hub_url,
+    get_instance_server_id as _get_instance_server_id,
+    is_stats_hub_configured_for_host as _is_stats_hub_configured_for_host,
+    set_instance_server_id as _set_instance_server_id,
 )
 
+_FEATURE = 'demo_stream'
 _ROUTES_TIMEOUT_SEC = 10
 
 
+def reserve_server_id(label, host_id):
+    return _reserve_server_id(_FEATURE, label, host_id)
+
+
+def get_instance_server_id(instance_id):
+    return _get_instance_server_id(_FEATURE, instance_id)
+
+
+def set_instance_server_id(instance_id, server_id):
+    return _set_instance_server_id(_FEATURE, instance_id, server_id)
+
+
+def is_stats_hub_configured_for_host(host_id):
+    return _is_stats_hub_configured_for_host(_FEATURE, host_id)
+
+
 def _register_route(host_id, server_id, server_name, token):
-    url = f"{get_effective_stats_hub_url(host_id)}/api/demo-stream/routes"
-    headers = {'Authorization': f'Bearer {get_effective_stats_hub_ingest_token(host_id)}'}
+    url = f"{_get_effective_stats_hub_url(_FEATURE, host_id)}/api/demo-stream/routes"
+    headers = {'Authorization': f'Bearer {_get_effective_stats_hub_ingest_token(_FEATURE, host_id)}'}
     resp = requests.post(
         url,
         json={'token': token, 'server_id': server_id, 'server_name': server_name},

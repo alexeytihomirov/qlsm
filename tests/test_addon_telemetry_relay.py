@@ -112,7 +112,7 @@ def test_overrides_are_persisted_before_the_enable_task_is_queued(client, auth, 
     seen = {}
 
     def _capture(fn, *args, **kwargs):
-        seen['url_at_queue_time'] = get_host_stats_hub_url(host_id)
+        seen['url_at_queue_time'] = get_host_stats_hub_url('telemetry', host_id)
 
     monkeypatch.setattr(tasks, 'enqueue_task', _capture)
 
@@ -173,8 +173,8 @@ def test_stats_hub_round_trips_through_the_same_keys_core_uses(client, auth):
     assert resp.status_code == 200
 
     with client.application.app_context():
-        assert get_stats_hub_url() == 'https://hub.example'
-        assert get_stats_hub_ingest_token() == 'ingest-abc'
+        assert get_stats_hub_url('telemetry') == 'https://hub.example'
+        assert get_stats_hub_ingest_token('telemetry') == 'ingest-abc'
 
     data = client.get(f'{ADDON}/stats-hub', headers=auth).get_json()['data']
     assert data == {'url': 'https://hub.example', 'ingest_token': 'ingest-abc'}
@@ -226,8 +226,8 @@ def test_enable_queues_the_task_once_prerequisites_are_met(client, auth, host_an
     host_id, instance_id = host_and_instance
     with client.application.app_context():
         set_relay_enabled(host_id, True)
-        set_stats_hub_url('https://hub.example')
-        set_stats_hub_ingest_token('ingest-abc')
+        set_stats_hub_url('telemetry', 'https://hub.example')
+        set_stats_hub_ingest_token('telemetry', 'ingest-abc')
         db.session.commit()
 
     resp = client.post(f'{ADDON}/instances/{instance_id}/enable', headers=auth)
@@ -243,8 +243,8 @@ def test_enable_is_refused_while_the_instance_is_busy(client, auth, host_and_ins
     host_id, instance_id = host_and_instance
     with client.application.app_context():
         set_relay_enabled(host_id, True)
-        set_stats_hub_url('https://hub.example')
-        set_stats_hub_ingest_token('ingest-abc')
+        set_stats_hub_url('telemetry', 'https://hub.example')
+        set_stats_hub_ingest_token('telemetry', 'ingest-abc')
         db.session.get(QLInstance, instance_id).status = InstanceStatus.DEPLOYING
         db.session.commit()
 
@@ -263,13 +263,13 @@ def test_deleting_a_host_forgets_its_relay_settings(app, host_and_instance):
     host_id, _ = host_and_instance
     with app.app_context():
         set_relay_enabled(host_id, True)
-        set_host_stats_hub_url(host_id, 'https://hub.example')
+        set_host_stats_hub_url('telemetry', host_id, 'https://hub.example')
         db.session.commit()
 
         registry.cleanup_scope('host', host_id, commit=True)
 
         assert is_relay_enabled(host_id) is False
-        assert get_host_stats_hub_url(host_id) is None
+        assert get_host_stats_hub_url('telemetry', host_id) is None
 
 
 def test_deleting_an_instance_forgets_its_server_id(app, host_and_instance):
@@ -278,9 +278,9 @@ def test_deleting_an_instance_forgets_its_server_id(app, host_and_instance):
 
     _, instance_id = host_and_instance
     with app.app_context():
-        set_instance_server_id(instance_id, 42)
+        set_instance_server_id('telemetry', instance_id, 42)
         db.session.commit()
 
         registry.cleanup_scope('instance', instance_id, commit=True)
 
-        assert get_instance_server_id(instance_id) is None
+        assert get_instance_server_id('telemetry', instance_id) is None

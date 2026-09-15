@@ -87,6 +87,36 @@ def test_relay_can_be_cleared(client, auth):
     assert client.get(f'{ADDON}/relay', headers=auth).get_json()['data'] == {'host': '', 'port': ''}
 
 
+# ---- stats-hub settings -------------------------------------------------
+
+def test_stats_hub_round_trips_through_its_own_keys(client, auth):
+    """Independent of telemetry-relay's stats-hub target - see
+    ui/stats_hub.py's module docstring for why the two are not shared."""
+    from ui.stats_hub import get_stats_hub_ingest_token, get_stats_hub_url
+
+    resp = client.put(f'{ADDON}/stats-hub', headers=auth,
+                      json={'url': 'https://stream-hub.example/', 'ingest_token': 'ingest-xyz'})
+    assert resp.status_code == 200
+
+    with client.application.app_context():
+        assert get_stats_hub_url('demo_stream') == 'https://stream-hub.example'
+        assert get_stats_hub_ingest_token('demo_stream') == 'ingest-xyz'
+        # Telemetry's own target is untouched.
+        assert get_stats_hub_url('telemetry') is None
+
+    data = client.get(f'{ADDON}/stats-hub', headers=auth).get_json()['data']
+    assert data == {'url': 'https://stream-hub.example', 'ingest_token': 'ingest-xyz'}
+
+
+def test_stats_hub_rejects_non_strings(client, auth):
+    resp = client.put(f'{ADDON}/stats-hub', headers=auth, json={'url': None, 'ingest_token': 5})
+    assert resp.status_code == 400
+
+
+def test_stats_hub_requires_auth(client):
+    assert client.get(f'{ADDON}/stats-hub').status_code == 401
+
+
 # ---- instance panel ----------------------------------------------------
 
 def test_instance_reports_not_streaming_by_default(client, auth, instance_id):
@@ -156,13 +186,16 @@ def test_deleting_an_instance_forgets_its_stream_state(app, instance_id):
         get_instance_demo_stream_token, is_instance_demo_stream_enabled,
         set_instance_demo_stream_enabled, set_instance_demo_stream_token,
     )
+    from ui.stats_hub import get_instance_server_id, set_instance_server_id
 
     with app.app_context():
         set_instance_demo_stream_enabled(instance_id, True)
         set_instance_demo_stream_token(instance_id, 'tok')
+        set_instance_server_id('demo_stream', instance_id, 5)
         db.session.commit()
 
         registry.cleanup_scope('instance', instance_id, commit=True)
 
         assert is_instance_demo_stream_enabled(instance_id) is False
         assert get_instance_demo_stream_token(instance_id) is None
+        assert get_instance_server_id('demo_stream', instance_id) is None

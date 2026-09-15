@@ -1,7 +1,7 @@
 {
   "id": "demo-stream",
-  "version": "1.0.0",
-  "name": "Live Demo Stream (addon)",
+  "version": "1.1.0",
+  "name": "Live Demo Stream",
   "description": "Points an instance's sv_demoStream* cvars at the central demo-stream relay and registers its route with ql-stats-hub, so a spectator can watch a POV live. Unlike the telemetry relay there is nothing to install per host - the relay is one address for the whole cluster.",
   "scopes": ["global", "host", "instance"],
   "ui_api": 1,
@@ -10,11 +10,12 @@
     "icon": "share",
 
     "instance_menu": [
-      { "id": "demo-stream", "label": "Live Demo Stream (addon)", "icon": "share", "panel": "instance_stream" }
+      { "id": "demo-stream", "label": "Live Demo Stream", "icon": "share", "panel": "instance_stream" }
     ],
-    "settings_section": {
-      "label": "Demo Stream Relay (addon)", "icon": "share", "panel": "relay_settings"
-    },
+    "settings_section": [
+      { "label": "Demo Stream Relay", "icon": "share", "panel": "relay_settings" },
+      { "label": "Demo Stream Stats Hub", "icon": "share", "panel": "stats_hub_settings" }
+    ],
 
     "panels": {
       "instance_stream": {
@@ -36,6 +37,17 @@
         "fields": [
           { "key": "host", "type": "string", "label": "Relay host", "placeholder": "stats.example or 10.0.0.5", "description": "Hostname or IP the game servers can reach." },
           { "key": "port", "type": "string", "label": "Relay port", "placeholder": "7788", "description": "TCP ingest port (STATS_HUB_DEMO_STREAM_TCP_PORT on the stats-hub side)." }
+        ]
+      },
+
+      "stats_hub_settings": {
+        "kind": "form",
+        "description": "Where ql-stats-hub is for registering demo-stream routes. Independent of the telemetry-relay addon's stats-hub target - the two may point at different stats-hub instances.",
+        "load": "GET stats-hub",
+        "submit": "PUT stats-hub",
+        "fields": [
+          { "key": "url", "type": "string", "label": "Stats-hub URL", "placeholder": "https://stats.example", "description": "Base URL the demo stream registers routes against." },
+          { "key": "ingest_token", "type": "secret", "label": "Ingest token", "description": "STATS_HUB_INGEST_TOKEN, not STATS_HUB_API_TOKEN. The wrong one fails silently with a 401." }
         ]
       }
     }

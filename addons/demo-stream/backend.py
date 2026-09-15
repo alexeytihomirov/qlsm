@@ -61,6 +61,37 @@ def update_relay():
     return jsonify({"data": {'host': host.strip(), 'port': port.strip()}})
 
 
+@bp.route('/stats-hub', methods=['GET'], endpoint='get_stats_hub')
+@jwt_required()
+def get_stats_hub():
+    """This addon's own stats-hub target - independent of telemetry-relay's,
+    see ui/stats_hub.py's module docstring for why they are not shared."""
+    from ui.stats_hub import get_stats_hub_ingest_token, get_stats_hub_url
+
+    return jsonify({"data": {
+        'url': get_stats_hub_url('demo_stream') or '',
+        'ingest_token': get_stats_hub_ingest_token('demo_stream') or '',
+    }})
+
+
+@bp.route('/stats-hub', methods=['PUT'], endpoint='update_stats_hub')
+@jwt_required()
+def update_stats_hub():
+    from ui import db
+    from ui.stats_hub import set_stats_hub_ingest_token, set_stats_hub_url
+
+    data = request.get_json(silent=True) or {}
+    url = data.get('url', '')
+    token = data.get('ingest_token', '')
+    if not isinstance(url, str) or not isinstance(token, str):
+        return jsonify({"error": {"message": "url and ingest_token must be strings."}}), 400
+
+    set_stats_hub_url('demo_stream', url)
+    set_stats_hub_ingest_token('demo_stream', token)
+    db.session.commit()
+    return jsonify({"data": {'url': url.strip().rstrip('/'), 'ingest_token': token.strip()}})
+
+
 @bp.route('/instances/<int:instance_id>', methods=['GET'], endpoint='get_instance_stream')
 @jwt_required()
 def get_instance_stream(instance_id):
@@ -158,5 +189,7 @@ def register(ctx):
         from ui.demo_stream_settings import (
             set_instance_demo_stream_enabled, set_instance_demo_stream_token,
         )
+        from ui.stats_hub import set_instance_server_id
         set_instance_demo_stream_enabled(instance_id, False)
         set_instance_demo_stream_token(instance_id, None)
+        set_instance_server_id('demo_stream', instance_id, None)

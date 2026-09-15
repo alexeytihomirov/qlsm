@@ -67,7 +67,7 @@ class TestSyncInstanceServerIdFromConfig:
                 'set qlx_statsHubUnifiedEnabled "1"\nset qlx_statsHubServerId "1"\n',
             )
 
-            assert get_instance_server_id(instance.id) is None
+            assert get_instance_server_id('telemetry', instance.id) is None
 
             _instance_ops()
             with patch(
@@ -75,7 +75,7 @@ class TestSyncInstanceServerIdFromConfig:
             ) as mock_push:
                 _sync()(instance)
 
-            assert get_instance_server_id(instance.id) == 1
+            assert get_instance_server_id('telemetry', instance.id) == 1
             mock_push.assert_called_once_with(host.id)
 
     def test_disabled_plugin_clears_any_stale_mapping(self, app, tmp_path, monkeypatch):
@@ -84,7 +84,7 @@ class TestSyncInstanceServerIdFromConfig:
             host = create_host(name='germany', provider='vultr', status=HostStatus.ACTIVE)
             instance = create_instance(name='sD test server', host_id=host.id, port=27960, hostname='sD')
             from ui.stats_hub import set_instance_server_id
-            set_instance_server_id(instance.id, 7)
+            set_instance_server_id('telemetry', instance.id, 7)
             db.session.commit()
 
             _write_cfg(
@@ -98,7 +98,7 @@ class TestSyncInstanceServerIdFromConfig:
             ) as mock_push:
                 _sync()(instance)
 
-            assert get_instance_server_id(instance.id) is None
+            assert get_instance_server_id('telemetry', instance.id) is None
             mock_push.assert_called_once_with(host.id)
 
     def test_already_in_sync_does_not_push_relay_config(self, app, tmp_path, monkeypatch):
@@ -107,7 +107,7 @@ class TestSyncInstanceServerIdFromConfig:
             host = create_host(name='germany', provider='vultr', status=HostStatus.ACTIVE)
             instance = create_instance(name='sD test server', host_id=host.id, port=27960, hostname='sD')
             from ui.stats_hub import set_instance_server_id
-            set_instance_server_id(instance.id, 1)
+            set_instance_server_id('telemetry', instance.id, 1)
             db.session.commit()
 
             _write_cfg(
@@ -135,5 +135,5 @@ class TestSyncInstanceServerIdFromConfig:
             ) as mock_push:
                 _sync()(instance)
 
-            assert get_instance_server_id(instance.id) is None
+            assert get_instance_server_id('telemetry', instance.id) is None
             mock_push.assert_not_called()
