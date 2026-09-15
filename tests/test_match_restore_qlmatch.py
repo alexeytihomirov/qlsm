@@ -298,8 +298,10 @@ class SnapshotAndCheckpointTests(unittest.TestCase):
 
     def test_build_checkpoint_doc_degrades_gracefully_without_inventory(self):
         sidecar = {"meta": {"generator_version": 1}, "events": self._events()}
+        # 11000, not 15000: >2s past the nearest snapshot now refuses (gap
+        # guard) - this test is about inventory degradation, not gaps.
         doc, warning, snap_t = qlmatch.build_checkpoint_doc(
-            sidecar, 15000, self.MAP_SPAWNS, "bloodrun", wall_now=1000.0,
+            sidecar, 11000, self.MAP_SPAWNS, "bloodrun", wall_now=1000.0,
         )
         self.assertEqual(snap_t, 10000)
         self.assertIsNone(warning)
@@ -314,6 +316,16 @@ class SnapshotAndCheckpointTests(unittest.TestCase):
         self.assertEqual(players_by_cid[1]["h"], 100)
         self.assertEqual(players_by_cid[1]["a"], 0)
         self.assertNotIn("dead", players_by_cid[1])
+
+    def test_build_checkpoint_doc_refuses_a_stale_snapshot(self):
+        """A paused stretch is a hole in positions; restoring across it used
+        to silently place players at the pre-gap (even warmup) snapshot."""
+        sidecar = {"meta": {}, "events": self._events()}
+        with self.assertRaises(ValueError) as ctx:
+            qlmatch.build_checkpoint_doc(
+                sidecar, 15000, self.MAP_SPAWNS, "bloodrun", wall_now=1000.0,
+            )
+        self.assertIn("gap", str(ctx.exception))
 
     def test_dead_flag_set_from_zero_health(self):
         sidecar = {"meta": {}, "events": self._events()}
