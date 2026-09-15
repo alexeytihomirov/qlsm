@@ -651,6 +651,11 @@ def pause_warning(sidecar_meta):
     )
 
 
+# Positions stream at ~10-20Hz; anything older than this behind the target is
+# a hole in the record (pause, feed outage), not normal cadence.
+_SNAPSHOT_MAX_AGE_MS = 2000
+
+
 def build_checkpoint_doc(sidecar, target_ms, map_spawns_table, map_key, wall_now, window=None):
     """Return (doc, warning, snapshot_t_ms) for restore.codec.canonicalize().
 
@@ -664,6 +669,29 @@ def build_checkpoint_doc(sidecar, target_ms, map_spawns_table, map_key, wall_now
         raise ValueError(
             "no snapshot at or before {}ms in this replay (match may start later, "
             "or the sidecar has no positions events)".format(target_ms)
+        )
+    # A stale snapshot silently restores garbage: server pauses are not
+    # recorded, so a paused stretch is just a hole in positions, and the
+    # nearest snapshot before it can even be a warmup one (negative t) -
+    # players end up at pre-match spots and the item list comes out empty.
+    # Refuse instead and point at usable times.
+    if snap_t is not None and (target_ms - snap_t > _SNAPSHOT_MAX_AGE_MS
+                               or (snap_t < 0 <= target_ms)):
+        next_t = None
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("event") != "positions":
+                continue
+            t = _event_time_ms(ev)
+            if t is not None and t > target_ms:
+                next_t = t
+                break
+        raise ValueError(
+            "no positions data at {} - the replay has a gap there (a paused "
+            "stretch is not recorded). Nearest snapshots: {} before{}".format(
+                format_clock(target_ms),
+                format_clock(snap_t) if snap_t >= 0 else "warmup only",
+                (", " + format_clock(next_t) + " after") if next_t is not None else "",
+            )
         )
     prev_event, prev_t = (
         nearest_positions_event(events, snap_t - 1) if snap_t is not None else (None, None)
