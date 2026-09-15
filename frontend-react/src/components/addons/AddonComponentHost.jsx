@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import * as addonUi from './uiKit';
 import { addonAssetUrl, addonRequest } from '../../services/addons';
+import { ensureAddonCss } from './addonCss';
 
 /**
  * Tier-2: mounts an addon's own pre-built component (spec section 5.2).
@@ -32,6 +33,7 @@ function AddonComponentHost({ addon, entry, scope, scopeId }) {
   useEffect(() => {
     let cancelled = false;
     publishRuntime();
+    ensureAddonCss(addon.id, entry.component);
     const url = addonAssetUrl(addon.id, entry.component);
 
     import(/* @vite-ignore */ url)

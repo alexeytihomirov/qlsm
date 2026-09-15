@@ -1,0 +1,15 @@
+{
+  "id": "css-test-addon",
+  "version": "1.0.0",
+  "name": "CSS Test Addon",
+  "description": "Reference addon proving a tier-2 component's CSS is loaded by convention. Not loaded by default - see README.md.",
+  "scopes": ["global"],
+  "ui_api": 1,
+
+  "ui": {
+    "icon": "puzzle",
+    "page": {
+      "label": "CSS Test Addon", "icon": "puzzle", "component": "Panel.js"
+    }
+  }
+}

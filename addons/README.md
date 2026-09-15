@@ -28,6 +28,7 @@ restart.
 | `demo-management` | **Owns the feature.** The Demos screen, its endpoints, `ansible_instance_demos.py`, and the Bearer-token external API (`/api/addons/demo-management/instances/<id>/matches`, moved from core's old `/api/v1/instances/<id>/matches`) all live here. Uninstalling this addon removes demo listing/download for the UI and for external callers alike -- by design. |
 | `demo-stream` | **Owns the UI.** The built-in feature had four endpoints and no frontend at all, so this adds a screen rather than replacing one. Still delegates to `ui/task_logic/demo_stream_instance.py`. |
 | `_examples/hello-addon` | Reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
+| `_examples/css-test-addon` | Reference only. Smallest possible tier-2 component, there only to prove `ui/Panel.css` gets loaded next to `ui/Panel.js`. Not loaded; copy it into the volume to try it. |
 
 **Where the line falls.** `ui/stats_hub.py` holds the *mechanics* every
 stats-hub integration needs (key storage, the reserve call, the server.cfg
@@ -186,3 +187,11 @@ prefix. `ctx.ui` is the shared component kit.
 Declare `"ui_api"` in the manifest. A core that does not implement the
 version you ask for lists the addon but withholds its UI, with the reason
 shown — instead of mounting it and crashing.
+
+**CSS is optional and found by convention, not declared in the manifest.**
+If your component is `ui/Panel.js`, drop a `ui/Panel.css` next to it and
+QLSM links it into the page automatically when that component mounts — no
+manifest field needed. It stays in `document.head` for the page's lifetime
+(not removed when the mount point unmounts), so switching a tab or panel in
+and out doesn't reload it. See `_examples/css-test-addon` for the smallest
+possible example.
