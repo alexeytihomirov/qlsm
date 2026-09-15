@@ -211,7 +211,7 @@ function ViewDemosModal({ isOpen, onClose, instance, api }) {
                         {!isLoading && !error && demos.length > 0 && (
                             <div className="flex items-center gap-3 px-6 py-3 border-b border-theme flex-shrink-0">
                                 <div className="relative flex-1 max-w-xs">
-                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-theme-muted" />
+                                    <Search className="demo-search-icon absolute top-1/2 -translate-y-1/2 text-theme-muted" />
                                     <input
                                         type="text"
                                         value={filterText}

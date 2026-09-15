@@ -1,7 +1,7 @@
 {
   "id": "telemetry-relay",
-  "version": "1.1.0",
-  "name": "Telemetry Relay (addon)",
+  "version": "1.2.0",
+  "name": "Telemetry Relay",
   "description": "Forwards live match/player/pickup telemetry from each game instance to ql-stats-hub through a per-host relay sidecar. Runs alongside the built-in Telemetry Relay panel during migration and mounts the same screen, so nothing is lost by switching.",
   "scopes": ["global", "host", "instance"],
   "ui_api": 1,
@@ -12,7 +12,7 @@
     "host_menu": [
       {
         "id": "relay",
-        "label": "Telemetry Relay (addon)",
+        "label": "Telemetry Relay",
         "icon": "radio",
         "component": "bundled:relay-modal",
         "renders": "modal"
@@ -22,7 +22,7 @@
       { "id": "telemetry", "label": "Telemetry", "icon": "radio", "panel": "instance_telemetry" }
     ],
     "settings_section": {
-      "label": "Stats Hub (addon)", "icon": "radio", "panel": "global_settings"
+      "label": "Telemetry Stats Hub", "icon": "radio", "panel": "global_settings"
     },
 
     "panels": {

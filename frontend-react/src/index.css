@@ -503,6 +503,22 @@ body {
   opacity: 0.5;
 }
 
+/* Bundled addon UI (addons/*/ui/*.jsx) lives outside Tailwind's
+   content-scanning root, so arbitrary-value utility classes used only
+   there can silently disappear from the build - plain rules below stand
+   in for the ones that go missing this way, for the addon UI files that
+   hit it. Add here (not a Tailwind class) if a future addon UI component
+   needs a one-off value nothing else in the app already uses. */
+.telemetry-relay-modal-panel {
+  max-width: 560px;
+}
+
+.demo-search-icon {
+  left: 0.625rem;   /* left-2.5 */
+  height: 0.875rem; /* h-3.5 */
+  width: 0.875rem;  /* w-3.5 */
+}
+
 .dark .accent-line-top {
   @apply opacity-100;
 }

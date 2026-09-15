@@ -90,7 +90,7 @@ function TelemetryRelayModal({ isOpen, onClose, onSubmit, host, api }) {
 
             <div className="fixed inset-0 overflow-y-auto scrollbar-thick">
                 <div className="flex min-h-full items-center justify-center p-4">
-                    <Dialog.Panel transition className="modal-panel w-full max-w-[560px] transform p-6 text-left align-middle transition-all transition data-[enter]:ease-out data-[enter]:duration-300 data-[leave]:ease-in data-[leave]:duration-200 data-[closed]:opacity-0 data-[closed]:translate-y-4 data-[closed]:scale-95">
+                    <Dialog.Panel transition className="modal-panel telemetry-relay-modal-panel w-full transform p-6 text-left align-middle transition-all transition data-[enter]:ease-out data-[enter]:duration-300 data-[leave]:ease-in data-[leave]:duration-200 data-[closed]:opacity-0 data-[closed]:translate-y-4 data-[closed]:scale-95">
                         <div className="accent-line-top" />
 
                         <Dialog.Title as="h3" className="relative z-10 flex items-center gap-3 mb-6">
@@ -112,19 +112,25 @@ function TelemetryRelayModal({ isOpen, onClose, onSubmit, host, api }) {
                                     stats-hub URL/ingest token live here, not on any instance.
                                 </p>
 
-                                <div className="flex items-center justify-between p-3 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-raised)]">
-                                    <span className="text-sm font-medium text-[var(--text-primary)]">Sidecar Enabled</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setEnabled((v) => !v)}
-                                        className="neu-toggle"
-                                        aria-pressed={enabled}
-                                    >
-                                        <span className="sr-only">Toggle telemetry relay</span>
-                                        <span className={`neu-toggle__track ${enabled ? 'neu-toggle__track--on' : 'neu-toggle__track--off'}`}>
-                                            <span className={`neu-toggle__knob ${enabled ? 'neu-toggle__knob--on' : 'neu-toggle__knob--off'}`} />
-                                        </span>
-                                    </button>
+                                <div className="p-3 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-raised)] space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-[var(--text-primary)]">Sidecar Enabled</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEnabled((v) => !v)}
+                                            className="neu-toggle"
+                                            aria-pressed={enabled}
+                                        >
+                                            <span className="sr-only">Toggle telemetry relay</span>
+                                            <span className={`neu-toggle__track ${enabled ? 'neu-toggle__track--on' : 'neu-toggle__track--off'}`}>
+                                                <span className={`neu-toggle__knob ${enabled ? 'neu-toggle__knob--on' : 'neu-toggle__knob--off'}`} />
+                                            </span>
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-[var(--text-muted)]">
+                                        Installs and runs the ql-telemetry-relay sidecar process on this host.
+                                        Saving with this on (or off) installs (or removes) it and restarts the host's relay.
+                                    </p>
                                 </div>
 
                                 <div className="p-3 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-raised)] space-y-2">
