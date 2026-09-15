@@ -1720,7 +1720,9 @@ class match_restore(minqlx.Plugin):
         if warning:
             self._reply(player, channel, warning)
 
-        ok, detail = self._apply_checkpoint(player, cp)
+        ok, detail = self._apply_checkpoint(
+            player, cp, slot_remap=dict(self._restorecp_slot_remap)
+        )
         if ok:
             self._reply(player, channel, "^2restorecp qlmatch OK^7: {}".format(detail))
         else:
