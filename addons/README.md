@@ -29,6 +29,7 @@ restart.
 | `demo-stream` | **Owns the UI.** The built-in feature had four endpoints and no frontend at all, so this adds a screen rather than replacing one. Still delegates to `ui/task_logic/demo_stream_instance.py`. |
 | `_examples/hello-addon` | Reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
 | `_examples/css-test-addon` | Reference only. Smallest possible tier-2 component, there only to prove `ui/Panel.css` gets loaded next to `ui/Panel.js`. Not loaded; copy it into the volume to try it. |
+| `_examples/ui-kit-test-addon` | Reference only. Exercises the shared `window.__qlsm.ui` kit (`Modal`, `Button`, `Panel`/`Card`, `AddonField`, `Icon`, `Stack`/`Row`) and needs no CSS of its own. Not loaded; copy it into the volume to try it. |
 
 **Where the line falls.** `ui/stats_hub.py` holds the *mechanics* every
 stats-hub integration needs (key storage, the reserve call, the server.cfg
@@ -194,4 +195,5 @@ QLSM links it into the page automatically when that component mounts — no
 manifest field needed. It stays in `document.head` for the page's lifetime
 (not removed when the mount point unmounts), so switching a tab or panel in
 and out doesn't reload it. See `_examples/css-test-addon` for the smallest
-possible example.
+possible example, or `_examples/ui-kit-test-addon` for one that needs no CSS
+at all because every visual piece comes from `ctx.ui`.

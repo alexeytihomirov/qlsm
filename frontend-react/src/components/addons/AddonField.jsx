@@ -43,6 +43,39 @@ function AddonField({ field, value, error, disabled, onChange }) {
     );
   }
 
+  if (field.type === 'select') {
+    const options = Array.isArray(field.options) ? field.options : [];
+    return (
+      <div className="py-2">
+        <label htmlFor={inputId} className="mb-1 block text-sm text-theme-primary">
+          {field.label}
+        </label>
+        <select
+          id={inputId}
+          value={value ?? ''}
+          disabled={disabled}
+          onChange={(e) => onChange(field.key, e.target.value)}
+          className="select-base"
+        >
+          {field.placeholder && <option value="" disabled>{field.placeholder}</option>}
+          {options.map((option) => {
+            const optionValue = option && typeof option === 'object' ? option.value : option;
+            const optionLabel = option && typeof option === 'object' ? (option.label ?? option.value) : option;
+            return (
+              <option key={optionValue} value={optionValue}>{optionLabel}</option>
+            );
+          })}
+        </select>
+        {field.description && !error && (
+          <p className="mt-1 text-xs text-theme-muted">{field.description}</p>
+        )}
+        {error && (
+          <p className="mt-1 text-xs" style={{ color: 'var(--accent-danger)' }}>{error}</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="py-2">
       <label htmlFor={inputId} className="mb-1 block text-sm text-theme-primary">

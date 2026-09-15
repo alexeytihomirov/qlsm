@@ -35,7 +35,7 @@ BUNDLED_COMPONENT_PREFIX = 'bundled:'
 # Bumped when the contract a mounted component sees (ctx shape, ui kit) changes
 # in a way an already-built addon bundle cannot survive. An addon declaring a
 # higher value is listed but not mounted -- see ui/addons/registry.py.
-CURRENT_UI_API = 1
+CURRENT_UI_API = 2
 
 
 class ManifestError(ValueError):

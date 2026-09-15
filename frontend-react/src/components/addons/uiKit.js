@@ -8,8 +8,14 @@
 // ui/addons/manifest.py so an older core refuses to mount a newer addon
 // instead of failing at runtime.
 export { default as ConfirmationModal } from '../ConfirmationModal';
+export { default as Modal } from '../Modal';
+export { default as Button } from '../Button';
+export { default as Panel } from '../Panel';
+export { default as Card } from '../Panel';
 export { default as StatusIndicator } from '../StatusIndicator';
 export { default as AddonField } from './AddonField';
+export { default as Icon } from './Icon';
+export { Stack, Row } from '../Stack';
 export { useNotification } from '../NotificationProvider';
 
 // CodeMirrorEditor is deliberately NOT here yet. This module sits in the
