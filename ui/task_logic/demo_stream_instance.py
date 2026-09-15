@@ -1,13 +1,13 @@
 """Enables the live demo stream feature (sv_demoStream) for a single QL
 instance: reserve a cluster-wide server_id (shared with telemetry, if this
-instance already has one - see ui/telemetry_relay_settings.py), generate a
+instance already has one - see ui/stats_hub.py), generate a
 per-instance secret token, register {token -> server_id} with ql-stats-hub's
 "Live demo stream" contour, point the instance's sv_demoStream* cvars at the
 central relay, and apply+restart (same mechanism the Plugins tab config-save
 flow already uses).
 
 No disable_instance_demo_stream_logic - mirrors the existing telemetry
-feature's asymmetry (see enable_instance_telemetry_logic's own docstring):
+feature's asymmetry (see the telemetry addon's own enable flow's own docstring):
 an operator can flip sv_demoStream back to "0" by hand through the raw
 config editor, same as any other cvar. A stale registered route on
 stats-hub is harmless (see docs/BUSINESS.md there) - QLDS simply never
@@ -30,8 +30,8 @@ from ui.demo_stream_settings import (
     set_instance_demo_stream_token,
 )
 from ui.models import QLInstance
-from ui.task_logic.telemetry_relay_instance import _reserve_server_id, upsert_cvars_in_text
-from ui.telemetry_relay_settings import (
+from ui.stats_hub import reserve_server_id, upsert_cvars_in_text
+from ui.stats_hub import (
     get_effective_stats_hub_ingest_token,
     get_effective_stats_hub_url,
     get_instance_server_id,
@@ -76,7 +76,7 @@ def enable_instance_demo_stream_logic(instance_id):
     server_id = get_instance_server_id(instance.id)
     if server_id is None:
         try:
-            server_id = _reserve_server_id(instance.name, host_id)
+            server_id = reserve_server_id(instance.name, host_id)
         except (requests.RequestException, ValueError, KeyError) as exc:
             current_app.logger.error(
                 f"Failed to reserve stats-hub server_id for instance {instance.id}: {exc}"

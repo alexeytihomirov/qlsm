@@ -19,6 +19,10 @@ COPY VERSION /VERSION
 COPY frontend-react/ .
 # Resolve the public/docs symlink (-> ../../docs/user) at its expected absolute path
 COPY docs/user/ /docs/user/
+# Bundled addons own their UI components now (see addons/README.md), and the
+# bundled-component registry imports them by relative path from /build/src/...
+# up to /addons. Without this the frontend build fails to resolve them.
+COPY addons/ /addons/
 RUN pnpm build
 
 # ── Stage 2: Application ───────────────────────────────────────────────────────

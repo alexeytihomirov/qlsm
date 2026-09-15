@@ -571,61 +571,6 @@ export const listInstanceMinqlxLogs = async (instanceId) => {
   }
 };
 
-export const listInstanceDemos = async (instanceId) => {
-  try {
-    const response = await apiClient.get(`/instances/${instanceId}/demos`);
-    return response.data.data; // { demos: [{ name, size, mtime }], instance_name }
-  } catch (error) {
-    console.error(`Failed to list demos for instance ${instanceId}:`, error.response ? error.response.data : error.message);
-    throw error.response ? error.response.data : new Error(`Failed to list demos for instance ${instanceId}`);
-  }
-};
-
-async function _blobErrorToJson(error, fallbackMessage) {
-  // responseType: 'blob' applies to error responses too, so a JSON error body
-  // arrives as a Blob. Parse it back so the caller sees the server's message.
-  if (error.response?.data instanceof Blob) {
-    try {
-      const text = await error.response.data.text();
-      throw JSON.parse(text);
-    } catch (parseError) {
-      if (!(parseError instanceof SyntaxError)) {
-        throw parseError;
-      }
-      // Blob wasn't JSON; fall through to the generic error below.
-    }
-  }
-  throw error.response ? error.response.data : new Error(fallbackMessage);
-}
-
-export const downloadInstanceDemo = async (instanceId, filename) => {
-  try {
-    const response = await apiClient.get(`/instances/${instanceId}/demos/download`, {
-      params: { filename },
-      responseType: 'blob',
-    });
-    return response.data;
-  } catch (error) {
-    console.error(`Failed to download demo ${filename} for instance ${instanceId}:`, error.response ? error.response.data : error.message);
-    await _blobErrorToJson(error, `Failed to download demo ${filename}`);
-  }
-};
-
-export const downloadInstanceDemosBatch = async (instanceId, filenames) => {
-  try {
-    const response = await apiClient.post(
-      `/instances/${instanceId}/demos/download-batch`,
-      { filenames },
-      { responseType: 'blob' },
-    );
-    return response.data;
-  } catch (error) {
-    console.error(`Failed to batch-download demos for instance ${instanceId}:`, error.response ? error.response.data : error.message);
-    await _blobErrorToJson(error, 'Failed to download demos');
-  }
-};
-
-// Config Preset APIs
 export const getPresets = async () => {
   try {
     // Relying on the interceptor to add the Authorization header
@@ -1121,59 +1066,6 @@ export const setVultrKeySetting = async (key) => {
 
 // Stats-hub target (global): base URL + ingest token used by every host's
 // telemetry relay and by instance server_id reservation.
-export const getStatsHubSetting = async () => {
-  const response = await apiClient.get('/settings/stats-hub');
-  return response.data.data;
-};
-
-export const setStatsHubSetting = async (url, ingestToken) => {
-  const response = await apiClient.put('/settings/stats-hub', { url, ingest_token: ingestToken });
-  return response.data.data;
-};
-
-// Telemetry relay (per host)
-export const getTelemetryRelay = async (hostId) => {
-  const response = await apiClient.get(`/hosts/${hostId}/telemetry-relay`);
-  return response.data.data;
-};
-
-export const configureTelemetryRelay = async (hostId, enabled) => {
-  const response = await apiClient.post(`/hosts/${hostId}/telemetry-relay`, { enabled });
-  return response.data;
-};
-
-// Live sidecar health/reachability + instances currently routed through it.
-export const getTelemetryRelayStatus = async (hostId) => {
-  const response = await apiClient.get(`/hosts/${hostId}/telemetry-relay/status`);
-  return response.data.data;
-};
-
-// This host's stats-hub URL/ingest-token override (falls back to the global
-// Settings values when unset).
-export const getHostStatsHubOverride = async (hostId) => {
-  const response = await apiClient.get(`/hosts/${hostId}/telemetry-relay/stats-hub`);
-  return response.data.data;
-};
-
-export const updateHostStatsHubOverride = async (hostId, urlOverride, ingestTokenOverride) => {
-  const response = await apiClient.put(`/hosts/${hostId}/telemetry-relay/stats-hub`, {
-    url_override: urlOverride,
-    ingest_token_override: ingestTokenOverride,
-  });
-  return response.data;
-};
-
-// Instance telemetry (reserves a stats-hub server_id + wires cvars at the relay)
-export const getInstanceTelemetry = async (instanceId) => {
-  const response = await apiClient.get(`/instances/${instanceId}/telemetry`);
-  return response.data.data;
-};
-
-export const enableInstanceTelemetry = async (instanceId) => {
-  const response = await apiClient.post(`/instances/${instanceId}/telemetry`);
-  return response.data;
-};
-
 export const getServerStatus = async () => {
   const response = await apiClient.get('/server-status');
   return response.data.data; // {instanceId: statusData}

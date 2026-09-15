@@ -723,14 +723,15 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
             instance.status = final_status
             db.session.commit()
 
-            try:
-                from .telemetry_relay_instance import sync_instance_server_id_from_config
-                sync_instance_server_id_from_config(instance)
-            except Exception:
-                log.warning(
-                    "Telemetry-relay server_id sync failed for instance %s (non-fatal)",
-                    instance_id, exc_info=True,
-                )
+            # Config is on disk and applied. Addons that mirror something out
+            # of server.cfg react here -- telemetry-relay keeps its routing
+            # entry in step with whatever qlx_statsHubServerId the file
+            # actually carries, including when the operator set it by hand in
+            # the Plugins tab and never used the assisted flow.
+            # Ungated on purpose: "the config was applied" is a fact, and the
+            # addon decides whether it cares. Gating on the enable flag would
+            # miss exactly the hand-edited case this exists for.
+            _addon_contributions('instance.config_applied', instance)
 
             try:
                 from .access_permission_sync import sync_instance_access_permissions

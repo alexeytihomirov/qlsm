@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import TelemetryRelayModal from '../../hosts/TelemetryRelayModal';
+import TelemetryRelayModal from '../../../../../addons/telemetry-relay/ui/TelemetryRelayModal';
 import { addonRequest } from '../../../services/addons';
 
 // Its own module so ../bundledPanels can load it lazily. Importing it eagerly

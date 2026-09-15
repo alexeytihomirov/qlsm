@@ -106,7 +106,8 @@ def _scan(app):
 def _import_backend(addon):
     """Import the addon's backend.py and run register(ctx). Never raises."""
     backend_path = os.path.join(addon.root_dir, 'backend.py')
-    ctx = AddonContext(addon.id, addon.manifest, addon.root_dir)
+    module_name = f'qlsm_addon_{addon.id.replace("-", "_")}'
+    ctx = AddonContext(addon.id, addon.manifest, addon.root_dir, module_name=module_name)
     if not os.path.isfile(backend_path):
         # A UI-only addon is legitimate: declarative panels against another
         # addon's API, or a page that only reads core endpoints.
@@ -114,9 +115,16 @@ def _import_backend(addon):
         addon.loaded = True
         return
 
-    module_name = f'qlsm_addon_{addon.id.replace("-", "_")}'
     try:
-        spec = importlib.util.spec_from_file_location(module_name, backend_path)
+        # Loaded as a *package*, not a lone module: submodule_search_locations
+        # makes the addon's own directory importable, so backend.py can do
+        # `from . import settings` and an addon can be more than one file.
+        # Without it a multi-file addon is impossible -- its siblings are not
+        # on any search path and `import settings` would either fail or, worse,
+        # pick up an unrelated top-level module with the same common name.
+        spec = importlib.util.spec_from_file_location(
+            module_name, backend_path, submodule_search_locations=[addon.root_dir],
+        )
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)

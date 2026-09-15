@@ -88,7 +88,12 @@ def _run_ansible_playbook(instance, playbook_name, extravars=None):
         instance.status = InstanceStatus.ERROR
         return None, "Host details missing"
 
-    playbook_path = os.path.abspath(f'ansible/playbooks/{playbook_name}')
+    # An absolute path is taken as-is so an addon can run a playbook it
+    # ships in its own directory; a bare name still resolves under
+    # ansible/playbooks exactly as before, so no existing call site
+    # changes behaviour.
+    playbook_path = (playbook_name if os.path.isabs(playbook_name)
+                     else os.path.abspath(f'ansible/playbooks/{playbook_name}'))
     inventory_path = os.path.abspath('ansible/inventory/')
 
     base_extravars = {
@@ -151,7 +156,12 @@ def _run_host_ansible_playbook(host, playbook_name, extravars=None, capture_outp
         log.error(f"Host {host.id} is missing required details (IP, SSH key path, or user) for Ansible.")
         return None, "Host details missing (IP, SSH key, or user)."
 
-    playbook_path = os.path.abspath(f'ansible/playbooks/{playbook_name}')
+    # An absolute path is taken as-is so an addon can run a playbook it
+    # ships in its own directory; a bare name still resolves under
+    # ansible/playbooks exactly as before, so no existing call site
+    # changes behaviour.
+    playbook_path = (playbook_name if os.path.isabs(playbook_name)
+                     else os.path.abspath(f'ansible/playbooks/{playbook_name}'))
     inventory_path = os.path.abspath('ansible/inventory/')
 
     base_extravars = {

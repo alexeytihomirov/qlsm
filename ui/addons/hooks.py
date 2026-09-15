@@ -27,6 +27,11 @@ HOOK_SCOPES = {
     'instance.launch_args': 'instance',
     'instance.plugins': 'instance',
     'instance.ld_preload': 'instance',
+    # Fires after a successful instance config apply, with the instance id.
+    # Ungated: an addon may need to mirror state out of a server.cfg the
+    # operator edited by hand, which by definition happens without anyone
+    # flipping an enable switch.
+    'instance.config_applied': None,
     'instance.delete': None,   # cleanup must run even for a disabled addon
     # backup: one hook, not two -- backup_files.backup_file_trees() feeds both
     # the export and the restore, so a tree contributed once is handled in

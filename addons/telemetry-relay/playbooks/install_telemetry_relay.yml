@@ -40,7 +40,7 @@
 
     - name: Copy relay.py to the host
       copy:
-        src: "{{ playbook_dir }}/../../ql-assets/data/telemetry-relay/relay.py"
+        src: "{{ playbook_dir }}/../assets/relay.py"
         dest: "{{ telemetry_relay_dir }}/relay.py"
         owner: ql
         group: ql
@@ -63,7 +63,7 @@
 
     - name: Render ql-telemetry-relay systemd unit
       template:
-        src: ../templates/ql-telemetry-relay.service.j2
+        src: templates/ql-telemetry-relay.service.j2
         dest: /etc/systemd/system/ql-telemetry-relay.service
         owner: root
         group: root

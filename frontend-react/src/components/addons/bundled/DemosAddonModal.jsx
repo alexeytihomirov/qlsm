@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import ViewDemosModal from '../../instances/ViewDemosModal';
+import ViewDemosModal from '../../../../../addons/demo-management/ui/ViewDemosModal';
 import { addonDownload, addonRequest } from '../../../services/addons';
 
 // Own module, loaded lazily -- see TelemetryRelayAddonModal for why.

@@ -1,6 +1,13 @@
+"""The shared ql-stats-hub target settings.
+
+Was tests/test_telemetry_relay_settings.py. When telemetry-relay moved into an
+addon these settings deliberately stayed in core (ui/stats_hub.py) because the
+live demo stream needs them too -- see that module's docstring. The coverage
+is unchanged; only the import moved.
+"""
 from ui import db
 from ui.models import AppSetting
-from ui.telemetry_relay_settings import (
+from ui.stats_hub import (
     get_effective_stats_hub_ingest_token,
     get_effective_stats_hub_url,
     get_host_stats_hub_ingest_token,

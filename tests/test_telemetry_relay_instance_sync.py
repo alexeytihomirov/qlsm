@@ -1,14 +1,34 @@
+"""server.cfg -> relay routing sync, after telemetry-relay became an addon.
+
+The cvar reader stayed in core (ui/stats_hub.py, shared with the demo
+stream); the sync itself moved into the addon and now runs off the
+instance.config_applied hook instead of a direct call in
+apply_instance_config_logic.
+"""
 import os
 from unittest.mock import patch
 
 from ui import db
 from ui.database import create_host, create_instance
 from ui.models import HostStatus
-from ui.task_logic.telemetry_relay_instance import (
-    read_cvars_from_text,
-    sync_instance_server_id_from_config,
-)
-from ui.telemetry_relay_settings import get_instance_server_id
+from ui.stats_hub import get_instance_server_id, read_cvars_from_text
+
+
+def _instance_ops():
+    """The addon's module, importable only once an app has loaded the addon
+    registry -- hence the lazy lookup rather than a top-level import.
+
+    Returned as the module (not the function) so patch() targets resolve: its
+    string form would import the submodule itself, and nothing has yet,
+    because backend.py imports it lazily inside the hook handler.
+    """
+    import importlib
+
+    return importlib.import_module('qlsm_addon_telemetry_relay.instance_ops')
+
+
+def _sync():
+    return _instance_ops().sync_instance_server_id_from_config
 
 
 class TestReadCvarsFromText:
@@ -49,10 +69,11 @@ class TestSyncInstanceServerIdFromConfig:
 
             assert get_instance_server_id(instance.id) is None
 
+            _instance_ops()
             with patch(
-                'ui.task_logic.telemetry_relay_instance.push_relay_config_logic', return_value=True
+                'qlsm_addon_telemetry_relay.instance_ops.push_relay_config_logic', return_value=True
             ) as mock_push:
-                sync_instance_server_id_from_config(instance)
+                _sync()(instance)
 
             assert get_instance_server_id(instance.id) == 1
             mock_push.assert_called_once_with(host.id)
@@ -62,7 +83,7 @@ class TestSyncInstanceServerIdFromConfig:
         with app.app_context():
             host = create_host(name='germany', provider='vultr', status=HostStatus.ACTIVE)
             instance = create_instance(name='sD test server', host_id=host.id, port=27960, hostname='sD')
-            from ui.telemetry_relay_settings import set_instance_server_id
+            from ui.stats_hub import set_instance_server_id
             set_instance_server_id(instance.id, 7)
             db.session.commit()
 
@@ -71,10 +92,11 @@ class TestSyncInstanceServerIdFromConfig:
                 'set qlx_statsHubUnifiedEnabled "0"\nset qlx_statsHubServerId "7"\n',
             )
 
+            _instance_ops()
             with patch(
-                'ui.task_logic.telemetry_relay_instance.push_relay_config_logic', return_value=True
+                'qlsm_addon_telemetry_relay.instance_ops.push_relay_config_logic', return_value=True
             ) as mock_push:
-                sync_instance_server_id_from_config(instance)
+                _sync()(instance)
 
             assert get_instance_server_id(instance.id) is None
             mock_push.assert_called_once_with(host.id)
@@ -84,7 +106,7 @@ class TestSyncInstanceServerIdFromConfig:
         with app.app_context():
             host = create_host(name='germany', provider='vultr', status=HostStatus.ACTIVE)
             instance = create_instance(name='sD test server', host_id=host.id, port=27960, hostname='sD')
-            from ui.telemetry_relay_settings import set_instance_server_id
+            from ui.stats_hub import set_instance_server_id
             set_instance_server_id(instance.id, 1)
             db.session.commit()
 
@@ -93,10 +115,11 @@ class TestSyncInstanceServerIdFromConfig:
                 'set qlx_statsHubUnifiedEnabled "1"\nset qlx_statsHubServerId "1"\n',
             )
 
+            _instance_ops()
             with patch(
-                'ui.task_logic.telemetry_relay_instance.push_relay_config_logic', return_value=True
+                'qlsm_addon_telemetry_relay.instance_ops.push_relay_config_logic', return_value=True
             ) as mock_push:
-                sync_instance_server_id_from_config(instance)
+                _sync()(instance)
 
             mock_push.assert_not_called()
 
@@ -106,10 +129,11 @@ class TestSyncInstanceServerIdFromConfig:
             host = create_host(name='germany', provider='vultr', status=HostStatus.ACTIVE)
             instance = create_instance(name='sD test server', host_id=host.id, port=27960, hostname='sD')
 
+            _instance_ops()
             with patch(
-                'ui.task_logic.telemetry_relay_instance.push_relay_config_logic', return_value=True
+                'qlsm_addon_telemetry_relay.instance_ops.push_relay_config_logic', return_value=True
             ) as mock_push:
-                sync_instance_server_id_from_config(instance)
+                _sync()(instance)
 
             assert get_instance_server_id(instance.id) is None
             mock_push.assert_not_called()

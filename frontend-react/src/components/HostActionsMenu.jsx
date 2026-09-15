@@ -17,7 +17,6 @@ function HostActionsMenu({
   onOpenCheckForUpdates,
   onOpenAutoRestart,
   onOpenWatchdog,
-  onOpenTelemetryRelay,
   onOpenResize,
   onRerunSetup,
   onOpenViewLogs
@@ -184,22 +183,6 @@ function HostActionsMenu({
                     )}
                   </Menu.Item>
 
-                  <Menu.Item>
-                    {({ active }) => (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (typeof onOpenTelemetryRelay === 'function') onOpenTelemetryRelay(host);
-                          closeMenu();
-                        }}
-                        disabled={!isHostReady || isQlFilterBusy}
-                        className={`group flex rounded-md items-center w-full px-3 py-2 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-black/[0.04] dark:bg-white/[0.06] text-theme-primary' : 'text-theme-secondary'}`}
-                      >
-                        <Radio size={15} className="mr-3 flex-shrink-0 text-theme-muted" />
-                        Configure Telemetry Relay
-                      </button>
-                    )}
-                  </Menu.Item>
 
                   <Menu.Item>
                     {({ active }) => (
