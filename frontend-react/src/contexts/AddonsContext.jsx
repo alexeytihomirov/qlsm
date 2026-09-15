@@ -14,6 +14,41 @@ const AddonsContext = createContext({
   mounts: () => [],
 });
 
+/**
+ * Entries one addon mounts at one extension point.
+ *
+ * Split out of the `mounts()` callback below so a single addon's entries can
+ * be computed straight from its catalog entry (e.g. an addon card's own
+ * settings button) without iterating the whole addon list for one id.
+ *
+ * Only an addon that actually loaded and whose declared ui_api this core
+ * implements contributes. A broken or too-new addon stays visible on the
+ * Addons list with its reason, but must not inject half-working UI.
+ */
+export function mountEntriesForAddon(addon, point) {
+  const out = [];
+  if (!addon || !addon.loaded || !addon.ui_mountable) return out;
+  const declared = addon.ui?.[point];
+  if (!declared) return out;
+  const scope = MOUNT_SCOPES[point];
+  const entries = Array.isArray(declared) ? declared : [declared];
+  entries.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return;
+    const panel = entry.panel ? addon.ui?.panels?.[entry.panel] : null;
+    if (entry.panel && !panel) return;  // manifest validation should have caught this
+    out.push({
+      key: `${addon.id}:${point}:${entry.id || index}`,
+      addon,
+      entry,
+      panel,
+      scope,
+      label: entry.label || addon.name || addon.id,
+      icon: entry.icon,
+    });
+  });
+  return out;
+}
+
 export function AddonsProvider({ children }) {
   const [addons, setAddons] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -49,28 +84,8 @@ export function AddonsProvider({ children }) {
    * host's action menu.
    */
   const mounts = useCallback((point) => {
-    const scope = MOUNT_SCOPES[point];
     const out = [];
-    for (const addon of addons) {
-      if (!addon.loaded || !addon.ui_mountable) continue;
-      const declared = addon.ui?.[point];
-      if (!declared) continue;
-      const entries = Array.isArray(declared) ? declared : [declared];
-      entries.forEach((entry, index) => {
-        if (!entry || typeof entry !== 'object') return;
-        const panel = entry.panel ? addon.ui?.panels?.[entry.panel] : null;
-        if (entry.panel && !panel) return;  // manifest validation should have caught this
-        out.push({
-          key: `${addon.id}:${point}:${entry.id || index}`,
-          addon,
-          entry,
-          panel,
-          scope,
-          label: entry.label || addon.name || addon.id,
-          icon: entry.icon,
-        });
-      });
-    }
+    for (const addon of addons) out.push(...mountEntriesForAddon(addon, point));
     return out;
   }, [addons]);
 

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Clock, Loader2, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Clock, Loader2, RefreshCw, Settings, Trash2, Upload } from 'lucide-react';
 import AddonInstallModal from '../components/addons/AddonInstallModal';
+import AddonSettingsModal from '../components/addons/AddonSettingsModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useNotification } from '../components/NotificationProvider';
-import { useAddons } from '../contexts/AddonsContext';
+import { mountEntriesForAddon, useAddons } from '../contexts/AddonsContext';
 import { resolveAddonIcon } from '../components/addons/addonIcons';
 import { uninstallAddon } from '../services/addons';
 
@@ -15,11 +16,12 @@ import { uninstallAddon } from '../services/addons';
  * because its manifest has a typo is far harder to diagnose than one listed
  * with the reason attached -- the same principle the backend catalog follows.
  */
-function AddonCard({ addon, onUninstall, busy }) {
+function AddonCard({ addon, onUninstall, onOpenSettings, busy }) {
   const Icon = resolveAddonIcon(addon.ui?.icon);
   const hasPage = Boolean(addon.ui?.page);
   const broken = !addon.loaded && !addon.pending_restart;
   const tooNew = addon.loaded && !addon.ui_mountable;
+  const hasSettings = mountEntriesForAddon(addon, 'settings_section').length > 0;
 
   return (
     <div className="rounded-lg border p-4"
@@ -86,6 +88,13 @@ function AddonCard({ addon, onUninstall, busy }) {
             )}
           </div>
         </div>
+        {hasSettings && (
+          <button type="button" onClick={() => onOpenSettings(addon)} aria-label={`${addon.name} settings`}
+                  title="Addon settings"
+                  className="flex-shrink-0 rounded-md p-1.5 text-theme-muted hover:text-theme-primary hover:bg-black/[0.04] dark:hover:bg-white/[0.04]">
+            <Settings size={16} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -96,6 +105,7 @@ function AddonsPage() {
   const { showSuccess, showError } = useNotification();
   const [installOpen, setInstallOpen] = useState(false);
   const [pendingUninstall, setPendingUninstall] = useState(null);
+  const [settingsAddon, setSettingsAddon] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const anyPending = addons.some(a => a.pending_restart);
@@ -167,12 +177,15 @@ function AddonsPage() {
       <div className="flex flex-col gap-3">
         {addons.map(addon => (
           <AddonCard key={addon.id} addon={addon} busy={busy}
-                     onUninstall={setPendingUninstall} />
+                     onUninstall={setPendingUninstall} onOpenSettings={setSettingsAddon} />
         ))}
       </div>
 
       <AddonInstallModal isOpen={installOpen} onClose={() => setInstallOpen(false)}
                          onInstalled={handleInstalled} />
+
+      <AddonSettingsModal addon={settingsAddon} isOpen={Boolean(settingsAddon)}
+                          onClose={() => setSettingsAddon(null)} />
 
       <ConfirmationModal
         isOpen={Boolean(pendingUninstall)}
