@@ -2849,18 +2849,26 @@ class match_restore(minqlx.Plugin):
         return False
 
     def _restore_phase_items(self, cp, checkpoint_t_ms):
+        # One item failing to resolve a runtime entity (moved/despawned,
+        # stale spawn table, ...) must not cost every OTHER item in the
+        # list its restore - previously this bailed out on the first
+        # failure, so anything later in cp["items"] (e.g. mega) silently
+        # kept its default "available" state instead of being touched at
+        # all. Apply every item regardless, then report failure/detail.
         touch_cid = self._restore_touch_client_id(cp)
         n_items = 0
         pending = 0
         aliases = []
+        failed_aliases = []
         for item in cp.get("items") or []:
             ok, alias = self._apply_item_checkpoint(
                 item, checkpoint_t_ms, cp=cp, touch_cid=touch_cid,
             )
             if not ok:
-                return -1, 0, "item {} failed".format(
+                failed_aliases.append(
                     self._item_checkpoint_alias(item) or item.get("eid")
                 )
+                continue
             n_items += 1
             aliases.append(alias)
             if int(item.get("s", 1)) == 2:
@@ -2868,12 +2876,18 @@ class match_restore(minqlx.Plugin):
         detail = "{} items".format(n_items)
         if pending:
             detail += ", {} engine pending".format(pending)
+        if failed_aliases:
+            detail += ", {} failed ({})".format(
+                len(failed_aliases), ",".join(str(a) for a in failed_aliases[:12])
+            )
         self.logger.info(
             "match_restore restore phase=items t_ms=%s mode=touch_vanilla %s aliases=%s",
             checkpoint_t_ms,
             detail,
             ",".join(aliases[:12]),
         )
+        if failed_aliases:
+            return -1, pending, detail
         return n_items, pending, detail
 
     def _read_level_time_ms(self):
