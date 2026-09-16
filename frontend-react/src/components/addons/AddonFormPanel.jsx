@@ -207,8 +207,7 @@ function AddonFormPanel({ addon, panel, scope, scopeId }) {
 
       <div className="flex items-center gap-3 pt-3">
         <button type="submit" disabled={saving}
-                className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
-                style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent, #fff)' }}>
+                className="btn-primary inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50">
           {saving && <Loader2 size={14} className="animate-spin" />}
           Save
         </button>

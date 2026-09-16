@@ -256,8 +256,7 @@ function AddonTablePanel({ addon, panel, scope, scopeId }) {
           {bulkActions.map(action => (
             <button key={action.id} type="button" onClick={() => runAction(action, null)}
                     disabled={selected.size === 0 || busyAction !== null}
-                    className="rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-                    style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent, #fff)' }}>
+                    className="btn-primary rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40">
               {action.label}
             </button>
           ))}
