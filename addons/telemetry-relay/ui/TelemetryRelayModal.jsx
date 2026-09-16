@@ -1,20 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogBackdrop } from '@headlessui/react';
-import { Radio, X, RefreshCw, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
 // This component now lives inside the addon that owns it, so it has no
 // default data source: QLSM core no longer has telemetry endpoints to fall
 // back to. `api` is supplied by the addon's mount wrapper and is required.
+//
+// Its modal chrome, buttons, panel surfaces and fields come from
+// window.__qlsm.ui (see addons/UI-GUIDE.md) instead of hand-rolling a
+// Headless UI dialog -- that duplication is what left this screen out of
+// sync with the rest of QLSM (a one-off width fix, a plain-text token
+// field) the last time it was touched.
 
 function StatusBadge({ status, statusLoading }) {
     if (statusLoading) {
         return (
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <span className="inline-flex items-center gap-1.5 text-xs text-theme-muted">
                 <Loader2 size={13} className="animate-spin" /> Checking...
             </span>
         );
     }
     if (!status || !status.enabled) {
-        return <span className="text-xs text-[var(--text-muted)]">Sidecar disabled</span>;
+        return <span className="text-xs text-theme-muted">Sidecar disabled</span>;
     }
     if (status.reachable) {
         return (
@@ -31,6 +36,10 @@ function StatusBadge({ status, statusLoading }) {
 }
 
 function TelemetryRelayModal({ isOpen, onClose, onSubmit, host, api }) {
+    const {
+        Modal, Button, Panel: Card, AddonField, Icon, Stack, Row,
+    } = window.__qlsm.ui;
+
     const [enabled, setEnabled] = useState(false);
     const [urlOverride, setUrlOverride] = useState('');
     const [tokenOverride, setTokenOverride] = useState('');
@@ -74,145 +83,120 @@ function TelemetryRelayModal({ isOpen, onClose, onSubmit, host, api }) {
         return () => { cancelled = true; };
     }, [isOpen, host, refreshStatus]);
 
-    const handleClose = () => onClose();
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSave = () => {
         onSubmit(host?.id, enabled, urlOverride.trim(), tokenOverride.trim());
-        handleClose();
+        onClose();
     };
 
     const routedInstances = status?.routed_instances || [];
 
     return (
-        <Dialog open={isOpen} as="div" className="relative z-50" onClose={handleClose}>
-            <DialogBackdrop transition className="modal-backdrop fixed inset-0 transition data-[enter]:ease-out data-[enter]:duration-300 data-[leave]:ease-in data-[leave]:duration-200 data-[closed]:opacity-0" />
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Telemetry Relay"
+            icon={<Icon name="radio" size={18} style={{ color: 'var(--accent-primary)' }} />}
+            size="lg"
+            footer={(
+                <>
+                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button variant="primary" onClick={handleSave} disabled={!loaded}>Save</Button>
+                </>
+            )}
+        >
+            <Stack gap={5}>
+                <p className="text-sm text-theme-muted">
+                    ql-telemetry-relay sidecar on <strong>{host?.name}</strong> forwards instance
+                    telemetry to ql-stats-hub. Instances only talk to this local relay - the
+                    stats-hub URL/ingest token live here, not on any instance.
+                </p>
 
-            <div className="fixed inset-0 overflow-y-auto scrollbar-thick">
-                <div className="flex min-h-full items-center justify-center p-4">
-                    <Dialog.Panel transition className="modal-panel telemetry-relay-modal-panel w-full transform p-6 text-left align-middle transition-all transition data-[enter]:ease-out data-[enter]:duration-300 data-[leave]:ease-in data-[leave]:duration-200 data-[closed]:opacity-0 data-[closed]:translate-y-4 data-[closed]:scale-95">
-                        <div className="accent-line-top" />
-
-                        <Dialog.Title as="h3" className="relative z-10 flex items-center gap-3 mb-6">
-                            <span className="status-pulse status-pulse-active" />
-                            <Radio size={18} className="text-[var(--accent-primary)]" />
-                            <span className="font-display text-base font-semibold tracking-wider uppercase text-[var(--text-primary)]">
-                                Telemetry Relay
-                            </span>
-                            <button type="button" onClick={handleClose} className="ml-auto logs-modal-close-btn">
-                                <X size={18} />
+                <Card>
+                    <Stack gap={1}>
+                        <Row justify="between">
+                            <span className="text-sm font-medium text-theme-primary">Sidecar Enabled</span>
+                            <button
+                                type="button"
+                                onClick={() => setEnabled((v) => !v)}
+                                className="neu-toggle"
+                                aria-pressed={enabled}
+                            >
+                                <span className="sr-only">Toggle telemetry relay</span>
+                                <span className={`neu-toggle__track ${enabled ? 'neu-toggle__track--on' : 'neu-toggle__track--off'}`}>
+                                    <span className={`neu-toggle__knob ${enabled ? 'neu-toggle__knob--on' : 'neu-toggle__knob--off'}`} />
+                                </span>
                             </button>
-                        </Dialog.Title>
+                        </Row>
+                        <p className="text-xs text-theme-muted">
+                            Installs and runs the ql-telemetry-relay sidecar process on this host.
+                            Saving with this on (or off) installs (or removes) it and restarts the host's relay.
+                        </p>
+                    </Stack>
+                </Card>
 
-                        <form onSubmit={handleSubmit}>
-                            <div className="space-y-6">
-                                <p className="text-sm text-[var(--text-muted)]">
-                                    ql-telemetry-relay sidecar on <strong>{host?.name}</strong> forwards instance
-                                    telemetry to ql-stats-hub. Instances only talk to this local relay - the
-                                    stats-hub URL/ingest token live here, not on any instance.
-                                </p>
-
-                                <div className="p-3 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-raised)] space-y-1.5">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-[var(--text-primary)]">Sidecar Enabled</span>
-                                        <button
-                                            type="button"
-                                            onClick={() => setEnabled((v) => !v)}
-                                            className="neu-toggle"
-                                            aria-pressed={enabled}
-                                        >
-                                            <span className="sr-only">Toggle telemetry relay</span>
-                                            <span className={`neu-toggle__track ${enabled ? 'neu-toggle__track--on' : 'neu-toggle__track--off'}`}>
-                                                <span className={`neu-toggle__knob ${enabled ? 'neu-toggle__knob--on' : 'neu-toggle__knob--off'}`} />
-                                            </span>
-                                        </button>
-                                    </div>
-                                    <p className="text-xs text-[var(--text-muted)]">
-                                        Installs and runs the ql-telemetry-relay sidecar process on this host.
-                                        Saving with this on (or off) installs (or removes) it and restarts the host's relay.
-                                    </p>
-                                </div>
-
-                                <div className="p-3 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-raised)] space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-[var(--text-primary)]">Status</span>
-                                        <div className="flex items-center gap-3">
-                                            <StatusBadge status={status} statusLoading={statusLoading} />
-                                            <button
-                                                type="button"
-                                                onClick={() => host && refreshStatus(host.id)}
-                                                disabled={statusLoading}
-                                                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-40"
-                                                title="Refresh status"
-                                            >
-                                                <RefreshCw size={13} className={statusLoading ? 'animate-spin' : ''} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="text-xs text-[var(--text-muted)]">
-                                        {routedInstances.length === 0 && 'No instances routed through this relay yet.'}
-                                        {routedInstances.length > 0 && (
-                                            <ul className="space-y-0.5">
-                                                {routedInstances.map((inst) => (
-                                                    <li key={inst.id} className="flex items-center justify-between">
-                                                        <span>{inst.name}</span>
-                                                        <span className="font-mono">#{inst.server_id}</span>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4 border-t border-[var(--surface-border)] pt-5">
-                                    <div>
-                                        <label htmlFor="relay-url-override" className="label-tech mb-1.5 block">
-                                            Stats Hub URL Override
-                                        </label>
-                                        <input
-                                            type="text"
-                                            id="relay-url-override"
-                                            value={urlOverride}
-                                            onChange={(e) => setUrlOverride(e.target.value)}
-                                            placeholder={effectiveUrl ? `Inherits global: ${effectiveUrl}` : 'Not configured globally either'}
-                                            className="input-base w-full font-mono text-sm"
-                                            disabled={!loaded}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="relay-token-override" className="label-tech mb-1.5 block">
-                                            Ingest Token Override
-                                        </label>
-                                        <input
-                                            type="text"
-                                            id="relay-token-override"
-                                            value={tokenOverride}
-                                            onChange={(e) => setTokenOverride(e.target.value)}
-                                            placeholder="Blank = inherit the global ingest token"
-                                            className="input-base w-full font-mono text-sm"
-                                            disabled={!loaded}
-                                        />
-                                    </div>
-                                    <p className="text-xs text-[var(--text-muted)]">
-                                        Leave both blank to use the cluster-wide stats-hub target from Settings.
-                                        Set either to point this host at a different stats-hub instance.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end items-center gap-3 mt-8 pt-4 border-t border-[var(--surface-border)]">
-                                <button type="button" onClick={handleClose} className="btn btn-secondary">
-                                    Cancel
+                <Card>
+                    <Stack gap={2}>
+                        <Row justify="between">
+                            <span className="text-sm font-medium text-theme-primary">Status</span>
+                            <Row gap={3}>
+                                <StatusBadge status={status} statusLoading={statusLoading} />
+                                <button
+                                    type="button"
+                                    onClick={() => host && refreshStatus(host.id)}
+                                    disabled={statusLoading}
+                                    className="text-theme-muted hover:text-theme-primary disabled:opacity-40"
+                                    title="Refresh status"
+                                >
+                                    <RefreshCw size={13} className={statusLoading ? 'animate-spin' : ''} />
                                 </button>
-                                <button type="submit" className="btn btn-primary" disabled={!loaded}>
-                                    Save
-                                </button>
-                            </div>
-                        </form>
-                    </Dialog.Panel>
-                </div>
-            </div>
-        </Dialog>
+                            </Row>
+                        </Row>
+                        <div className="text-xs text-theme-muted">
+                            {routedInstances.length === 0 && 'No instances routed through this relay yet.'}
+                            {routedInstances.length > 0 && (
+                                <ul className="space-y-0.5">
+                                    {routedInstances.map((inst) => (
+                                        <li key={inst.id} className="flex items-center justify-between">
+                                            <span>{inst.name}</span>
+                                            <span className="font-mono">#{inst.server_id}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    </Stack>
+                </Card>
+
+                <Stack gap={4} className="border-t border-theme pt-5">
+                    <AddonField
+                        field={{
+                            key: 'url_override',
+                            type: 'string',
+                            label: 'Stats Hub URL Override',
+                            placeholder: effectiveUrl ? `Inherits global: ${effectiveUrl}` : 'Not configured globally either',
+                        }}
+                        value={urlOverride}
+                        disabled={!loaded}
+                        onChange={(_key, value) => setUrlOverride(value)}
+                    />
+                    <AddonField
+                        field={{
+                            key: 'token_override',
+                            type: 'secret',
+                            label: 'Ingest Token Override',
+                            placeholder: 'Blank = inherit the global ingest token',
+                        }}
+                        value={tokenOverride}
+                        disabled={!loaded}
+                        onChange={(_key, value) => setTokenOverride(value)}
+                    />
+                    <p className="text-xs text-theme-muted">
+                        Leave both blank to use the cluster-wide stats-hub target from Settings.
+                        Set either to point this host at a different stats-hub instance.
+                    </p>
+                </Stack>
+            </Stack>
+        </Modal>
     );
 }
 

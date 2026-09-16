@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import * as addonUi from './uiKit';
 import { addonAssetUrl, addonRequest } from '../../services/addons';
 import { ensureAddonCss } from './addonCss';
+import { publishAddonRuntime } from './publishAddonRuntime';
 
 /**
  * Tier-2: mounts an addon's own pre-built component (spec section 5.2).
@@ -18,21 +19,13 @@ import { ensureAddonCss } from './addonCss';
  * debug. Publishing happens here rather than in main.jsx so the globals only
  * exist once an addon actually needs them.
  */
-function publishRuntime() {
-  if (typeof window === 'undefined') return;
-  if (!window.__qlsm) window.__qlsm = {};
-  window.__qlsm.react = React;
-  window.__qlsm.ui = addonUi;
-  window.__qlsm.version = 1;
-}
-
 function AddonComponentHost({ addon, entry, scope, scopeId }) {
   const [Component, setComponent] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    publishRuntime();
+    publishAddonRuntime();
     ensureAddonCss(addon.id, entry.component);
     const url = addonAssetUrl(addon.id, entry.component);
 

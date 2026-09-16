@@ -1,12 +1,19 @@
 import React, { useCallback, useMemo } from 'react';
 import TelemetryRelayModal from '../../../../../addons/telemetry-relay/ui/TelemetryRelayModal';
 import { addonRequest } from '../../../services/addons';
+import { publishAddonRuntime } from '../publishAddonRuntime';
 
 // Its own module so ../bundledPanels can load it lazily. Importing it eagerly
 // there pulled TelemetryRelayModal -- and everything it imports from
 // services/api -- into the import chain of every action menu, which broke 37
 // unrelated tests whose services/api mock is partial. Same lesson as uiKit.
 function TelemetryRelayAddonModal({ isOpen, onClose, entity }) {
+  // TelemetryRelayModal itself is written like a real addon component -- it
+  // reads its UI primitives off window.__qlsm.ui rather than importing core
+  // internals -- so the runtime has to be published before it renders, not
+  // only when a tier-2 bundle loads through AddonComponentHost.
+  publishAddonRuntime();
+
   // Routed through the addon's own endpoints, so opening this from the addon
   // entry exercises the addon's backend, not core's.
   const api = useMemo(() => ({
