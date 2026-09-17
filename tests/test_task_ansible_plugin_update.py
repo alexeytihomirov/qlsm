@@ -113,6 +113,42 @@ def test_apply_instance_selected_plugin_copies_file_and_queues_restart(
         assert updated_inst.status == InstanceStatus.RESTARTING
 
 
+def test_apply_instance_selected_plugin_preserves_nested_subfolder(
+    app, mock_run_playbook, mock_get_current_job, mock_restart_instance_queue, temp_config_dir
+):
+    # discord_extensions/ is a real pool subfolder: a selected file living
+    # under it must be copied to the same subfolder under the instance's
+    # scripts/, not flattened or silently skipped.
+    pool_dir = os.path.abspath(MINQLX_PLUGINS_POOL_DIR)
+    nested_dir = os.path.join(pool_dir, 'discord_extensions')
+    os.makedirs(nested_dir, exist_ok=True)
+    with open(os.path.join(nested_dir, 'admin.py'), 'w') as f:
+        f.write('# pool nested version\n')
+
+    with app.app_context():
+        from ui.database import db
+        from ui.models import QLInstance
+
+        host = create_host(name='test-host-instance-nested', provider='vultr', status=HostStatus.ACTIVE)
+        inst = QLInstance(name='inst-1', port=27960, hostname='server1', host_id=host.id, status=InstanceStatus.RUNNING)
+        db.session.add(inst)
+        db.session.commit()
+
+        host_id = host.id
+        inst_id = inst.id
+
+        result = apply_plugin_updates_logic(host_id, False, {inst_id: ['discord_extensions/admin.py']}, [inst_id])
+
+        assert result is True
+        mock_run_playbook.assert_not_called()
+        mock_restart_instance_queue.assert_called_once_with(inst_id)
+
+        dest = os.path.join('configs', host.name, str(inst_id), 'scripts', 'discord_extensions', 'admin.py')
+        assert os.path.isfile(dest)
+        with open(dest) as f:
+            assert f.read() == '# pool nested version\n'
+
+
 def test_apply_skips_stopped_instances_for_restart(app, mock_run_playbook, mock_get_current_job, mock_restart_instance_queue, temp_config_dir):
     mock_run_playbook.return_value = (True, "mock stdout", "mock stderr")
 

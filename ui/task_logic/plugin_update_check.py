@@ -57,7 +57,7 @@ def check_common_pool(host):
     source = _pool_hashes(host)
     success, stdout, stderr = run_host_ansible_adhoc(
         host,
-        module_args=f"find {remote_dir} -maxdepth 1 -type f "
+        module_args=f"find {remote_dir} -type f "
                     f"\\( -name '*.py' -o -name '*.ql-plugin.json' \\) -exec sha256sum {{}} +",
     )
     if not success:

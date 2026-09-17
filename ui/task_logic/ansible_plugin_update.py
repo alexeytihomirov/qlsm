@@ -26,7 +26,7 @@ from flask import current_app
 
 from ui.models import HostStatus, InstanceStatus
 from ui.database import get_host, update_host, update_instance
-from ui.plugin_pool import resolve_pool_file
+from ui.plugin_pool import resolve_pool_relpath, safe_pool_relpath_parts
 from ui.runtime import host_runtime, runtime_extravars
 from .ansible_runner import _run_host_ansible_playbook
 
@@ -36,22 +36,26 @@ log = logging.getLogger(__name__)
 
 def _copy_selected_plugin_files(host, instance, filenames):
     """Copies filenames from the merged pool (operator copy wins) into this
-    instance's selected-scripts directory. Returns (applied, skipped)
-    filename lists. filenames are basenames only (os.path.basename applied
-    defensively — this list ultimately comes from a JSON request body)."""
+    instance's selected-scripts directory, preserving any subfolder
+    structure (e.g. "discord_extensions/admin.py" — the pool isn't
+    guaranteed flat, see ui.update_checks.hash_local_tree). Returns
+    (applied, skipped) lists, using the same relative-path form as the
+    input."""
     runtime = host_runtime(host)
     dest_dir = os.path.abspath(os.path.join('configs', host.name, str(instance.id), 'scripts'))
     os.makedirs(dest_dir, exist_ok=True)
 
     applied, skipped = [], []
     for raw_name in filenames:
-        name = os.path.basename(raw_name)
-        src = resolve_pool_file(runtime, name) if name else None
+        parts = safe_pool_relpath_parts(raw_name)
+        src = resolve_pool_relpath(runtime, raw_name) if parts else None
         if src is None:
             skipped.append(raw_name)
             continue
-        shutil.copy2(src, os.path.join(dest_dir, name))
-        applied.append(name)
+        dest = os.path.join(dest_dir, *parts)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copy2(src, dest)
+        applied.append('/'.join(parts))
     return applied, skipped
 
 

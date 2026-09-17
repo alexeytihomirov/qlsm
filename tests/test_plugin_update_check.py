@@ -48,6 +48,33 @@ def test_check_common_pool_reports_modified_and_added(mock_adhoc, app, temp_conf
 
 
 @patch('ui.task_logic.plugin_update_check.run_host_ansible_adhoc')
+def test_check_common_pool_reports_modified_in_nested_subfolder(mock_adhoc, app, temp_config_dir):
+    # discord_extensions/ and extras/ already ship as real subfolders under
+    # minqlx-plugins/ -- a file nested under the pool root must still be
+    # diffed, not silently invisible to Check for Updates.
+    pool_dir = os.path.abspath(MINQLX_PLUGINS_POOL_DIR)
+    nested_dir = os.path.join(pool_dir, 'discord_extensions')
+    os.makedirs(nested_dir, exist_ok=True)
+    with open(os.path.join(nested_dir, 'admin.py'), 'w') as f:
+        f.write('new content')
+
+    stale_hash = 'deadbeef' * 4
+    mock_adhoc.return_value = (
+        True,
+        f"{stale_hash}  /home/ql/assets/common/minqlx-plugins/discord_extensions/admin.py\n",
+        "",
+    )
+
+    with app.app_context():
+        host = create_host(name='check-pool-nested-host', provider='vultr', status=HostStatus.ACTIVE)
+        changes, error = check_common_pool(host)
+
+    assert error is None
+    names = {c["name"]: c["change"] for c in changes}
+    assert names.get("discord_extensions/admin.py") == "modified"
+
+
+@patch('ui.task_logic.plugin_update_check.run_host_ansible_adhoc')
 def test_check_common_pool_propagates_error(mock_adhoc, app, temp_config_dir):
     mock_adhoc.return_value = (False, "", "unreachable")
 
@@ -89,6 +116,33 @@ def test_check_instance_selected_plugins_reports_only_modified_files(app, temp_c
     # never_had.py (pool only) and highfps.py (instance only) aren't stale
     # copies, so neither is reported.
     assert changes == [{"name": "present.py", "change": "modified"}]
+
+
+def test_check_instance_selected_plugins_flags_modified_in_nested_subfolder(app, temp_config_dir):
+    pool_dir = os.path.abspath(MINQLX_PLUGINS_POOL_DIR)
+    nested_dir = os.path.join(pool_dir, 'discord_extensions')
+    os.makedirs(nested_dir, exist_ok=True)
+    with open(os.path.join(nested_dir, 'admin.py'), 'w') as f:
+        f.write('new version')
+
+    with app.app_context():
+        from ui.database import db
+        from ui.models import QLInstance
+
+        host = create_host(name='check-instance-nested-host', provider='vultr', status=HostStatus.ACTIVE)
+        inst = QLInstance(name='inst-1', port=27960, hostname='server1', host_id=host.id, status=InstanceStatus.RUNNING)
+        db.session.add(inst)
+        db.session.commit()
+
+        scripts_nested_dir = os.path.join('configs', host.name, str(inst.id), 'scripts', 'discord_extensions')
+        os.makedirs(scripts_nested_dir, exist_ok=True)
+        with open(os.path.join(scripts_nested_dir, 'admin.py'), 'w') as f:
+            f.write('stale local copy')
+
+        changes = check_instance_selected_plugins(host, inst)
+
+    names = {c["name"]: c["change"] for c in changes}
+    assert names.get("discord_extensions/admin.py") == "modified"
 
 
 @patch('ui.task_logic.plugin_update_check.run_host_ansible_adhoc')

@@ -56,6 +56,37 @@ def resolve_pool_file(runtime, filename):
     return None
 
 
+def safe_pool_relpath_parts(raw_path):
+    """Splits a pool-relative path like "discord_extensions/admin.py" into
+    path components, or None if it's not a plain relative path (this comes
+    from a JSON request body, so ".."/absolute components must not be
+    allowed to escape the pool root)."""
+    if not isinstance(raw_path, str):
+        return None
+    parts = [p for p in raw_path.replace('\\', '/').split('/') if p != '']
+    if not parts or any(p in ('.', '..') for p in parts):
+        return None
+    return parts
+
+
+def resolve_pool_relpath(runtime, raw_path):
+    """Like resolve_pool_file, but also resolves files nested under a pool
+    subfolder (e.g. "discord_extensions/admin.py") — those aren't
+    individually selectable plugins (see _root_files), but Check for
+    Updates diffs them as part of the pool tree, so applying a selected
+    update for one must still be able to find its source file."""
+    if not is_valid_runtime(runtime):
+        return None
+    parts = safe_pool_relpath_parts(raw_path)
+    if not parts:
+        return None
+    for root in pool_dirs(runtime):
+        path = os.path.join(root, *parts)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def _root_files(root, keep):
     """{name: path} for regular files directly under `root` that pass
     `keep(name)`. Subfolders are helper modules, not plugins, and are
@@ -86,8 +117,8 @@ def list_shared_plugins(runtime):
 
 
 def pool_file_hashes(runtime, extensions=None):
-    """{filename: sha256} of the merged view, for Check for Updates. Same
-    file rules as ui.update_checks.hash_local_tree (flat, filtered by
+    """{relpath: sha256} of the merged view, for Check for Updates. Same
+    file rules as ui.update_checks.hash_local_tree (recursive, filtered by
     `extensions`), applied per tier with the operator copy winning."""
     from ui.update_checks import hash_local_tree  # local: keeps this module free of the hashing deps at import
     if not is_valid_runtime(runtime):

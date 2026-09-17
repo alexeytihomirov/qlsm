@@ -28,18 +28,22 @@ def hash_file(path):
 
 
 def hash_local_tree(root_dir, extensions=None):
-    """Returns {relpath: sha256} for every file directly under root_dir
-    (non-recursive — matches how minqlx-plugins pools are laid out: flat,
-    no subfolders for the .py/.json pairs themselves)."""
+    """Returns {relpath: sha256} for every file under root_dir, recursive.
+    Plugin pools aren't guaranteed flat (e.g. discord_extensions/,
+    extras/ already ship as subfolders under minqlx-plugins/), so this
+    walks subdirectories too. relpath keys use forward slashes regardless
+    of OS, matching the remote find/sha256sum output parsed by
+    parse_sha256sum_output()."""
     result = {}
     if not os.path.isdir(root_dir):
         return result
-    for entry in os.scandir(root_dir):
-        if not entry.is_file():
-            continue
-        if extensions and not entry.name.endswith(extensions):
-            continue
-        result[entry.name] = hash_file(entry.path)
+    for dirpath, _dirnames, filenames in os.walk(root_dir):
+        for filename in filenames:
+            if extensions and not filename.endswith(extensions):
+                continue
+            full_path = os.path.join(dirpath, filename)
+            rel_path = os.path.relpath(full_path, root_dir).replace(os.sep, '/')
+            result[rel_path] = hash_file(full_path)
     return result
 
 

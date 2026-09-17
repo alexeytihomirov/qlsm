@@ -169,6 +169,28 @@ def test_list_shared_plugins_without_an_operator_tier_is_just_the_built_in_one(p
     assert set(list_shared_plugins('minqlxtended')) == {'hello_qlsm.py', 'balance.py'}
 
 
+def test_resolve_pool_relpath_finds_nested_files_and_rejects_traversal(pool, operator_pool):
+    # helpers/util.py is a helper submodule, not an individually-selectable
+    # plugin (resolve_pool_file rightly rejects it), but a "Check for
+    # Updates" apply for a file nested under a pool subfolder must still be
+    # able to resolve its source, and prefer the operator tier like the
+    # root-level lookup does.
+    from ui.plugin_pool import resolve_pool_relpath, safe_pool_relpath_parts
+
+    assert resolve_pool_relpath('minqlxtended', 'helpers/util.py') == str(pool / 'helpers' / 'util.py')
+    assert resolve_pool_relpath('minqlxtended', 'helpers/missing.py') is None
+    assert resolve_pool_relpath('minqlxtended', '../escape.py') is None
+    assert resolve_pool_relpath('minqlxtended', 'helpers/../../escape.py') is None
+
+    (operator_pool / 'helpers').mkdir()
+    (operator_pool / 'helpers' / 'util.py').write_text('# operator helper\n')
+    assert resolve_pool_relpath('minqlxtended', 'helpers/util.py') == str(operator_pool / 'helpers' / 'util.py')
+
+    assert safe_pool_relpath_parts('helpers/util.py') == ['helpers', 'util.py']
+    assert safe_pool_relpath_parts('../escape.py') is None
+    assert safe_pool_relpath_parts('') is None
+
+
 def test_pool_file_hashes_prefer_the_operator_copy(pool, operator_pool):
     from ui.plugin_pool import pool_file_hashes
     from ui.update_checks import hash_file, PLUGIN_EXTENSIONS

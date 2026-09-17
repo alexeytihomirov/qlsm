@@ -20,12 +20,13 @@ def test_hash_local_tree_missing_dir_returns_empty():
     assert hash_local_tree("/does/not/exist") == {}
 
 
-def test_hash_local_tree_is_non_recursive(tmp_path):
+def test_hash_local_tree_is_recursive(tmp_path):
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "nested.py").write_text("x")
     (tmp_path / "top.py").write_text("y")
     result = hash_local_tree(str(tmp_path), extensions=('.py',))
-    assert set(result.keys()) == {"top.py"}
+    assert set(result.keys()) == {"top.py", "sub/nested.py"}
+    assert result["sub/nested.py"] == hash_file(str(tmp_path / "sub" / "nested.py"))
 
 
 def test_parse_sha256sum_output_basic():
