@@ -8,14 +8,26 @@
 
 # ── Root files ────────────────────────────────────────────────────────────────
 !.gitignore
+!.gitattributes
 !.env.example
 !.dockerignore
+!.woodpecker.yml
 !setup-worktree.sh
 !qlsm-install.sh
 !qlsm-uninstall.sh
 !vultr-startup.sh
 !.github/
 !.github/**
+
+# ── Claude Code skills ────────────────────────────────────────────────────────
+!.claude/
+!.claude/skills/
+!.claude/skills/**
+
+# ── CI / home-docker deploy ──────────────────────────────────────────────────
+!deploy/
+!deploy/portainer-stack.home.yml
+!deploy/home-redeploy.sh
 !README.md
 !requirements.txt
 !VERSION
@@ -48,6 +60,7 @@ frontend-react/*
 !frontend-react/index.html
 !frontend-react/package.json
 !frontend-react/pnpm-lock.yaml
+!frontend-react/pnpm-workspace.yaml
 !frontend-react/eslint.config.js
 !frontend-react/postcss.config.js
 !frontend-react/tailwind.config.js
