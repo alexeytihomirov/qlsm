@@ -20,6 +20,7 @@ from ui.task_logic.ansible_host_restart import restart_host_ansible_logic
 from ui.task_logic.ansible_host_rename import rename_host_logic
 from ui.task_logic.ansible_host_auto_restart import configure_host_auto_restart_logic
 from ui.task_logic.ansible_watchdog import configure_host_watchdog_logic
+from ui.task_logic.demo_stream_instance import enable_instance_demo_stream_logic
 
 # Import Terraform task logic from new files
 from ui.task_logic.terraform_provision import provision_host_logic
@@ -281,6 +282,18 @@ def configure_host_watchdog_task(host_id, enabled, config=None, lock_token=None)
         if lock_token:
             from ui.task_lock import release_lock
             release_lock('host', host_id, lock_token)
+
+@rq.job(timeout=300)
+@with_app_context
+def enable_instance_demo_stream_task(instance_id, lock_token=None):
+    """RQ task entry point for wiring an instance's sv_demoStream* cvars at
+    the central demo-stream relay and registering its route with stats-hub."""
+    try:
+        return enable_instance_demo_stream_logic(instance_id)
+    finally:
+        if lock_token:
+            from ui.task_lock import release_lock
+            release_lock('instance', instance_id, lock_token)
 
 @rq.job(timeout=300)
 @with_app_context

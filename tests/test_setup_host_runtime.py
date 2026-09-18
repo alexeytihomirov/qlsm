@@ -7,7 +7,7 @@ import yaml
 
 from ui import db
 from ui.models import Host, HostStatus
-from ui.runtime import MINQLX, MINQLXTENDED
+from ui.runtime import MINQLX, MINQLXTENDED, MINQLXTENDED_PATCHED
 
 
 def _load_playbook(path):
@@ -31,21 +31,27 @@ def test_setup_playbook_derives_paths_from_runtime():
 
 
 def test_setup_playbook_gates_both_build_paths():
-    """Neither build block may run unconditionally, or a re-run would install
+    """No build block may run unconditionally, or a re-run would install
     the wrong engine over the right one."""
     play = _load_playbook("ansible/playbooks/setup_host.yml")[0]
     clones = [t for t in play["tasks"] if "git" in t]
-    assert len(clones) == 2, "expected one clone task per runtime"
+    assert len(clones) == 3, "expected one clone task per runtime"
     whens = " ".join(str(t.get("when", "")) for t in clones)
     assert "runtime == 'minqlx'" in whens
     assert "runtime == 'minqlxtended'" in whens
+    assert "runtime == 'minqlxtended-patched'" in whens
 
 
 def test_minqlx_patches_never_apply_to_minqlxtended():
     """Both local C patches are obsolete on minqlxtended -- damage is a native
     event and reset_acc becomes pure Python."""
     play = _load_playbook("ansible/playbooks/setup_host.yml")[0]
-    patch_tasks = [t for t in play["tasks"] if "patch" in t.get("name", "").lower()]
+    # Excludes the "minqlxtended-patched" runtime's own build/cleanup task
+    # names, which contain "patch" as part of the runtime name rather than
+    # referring to the local C-patch-application step this test is about.
+    patch_tasks = [t for t in play["tasks"]
+                   if "patch" in t.get("name", "").lower()
+                   and "minqlxtended-patched" not in t.get("name", "").lower()]
     assert patch_tasks
     for task in patch_tasks:
         assert "runtime == 'minqlx'" in str(task.get("when", "")), task["name"]

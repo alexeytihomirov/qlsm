@@ -397,3 +397,82 @@ class BinaryMetadata(db.Model):
             name='uq_bm_context_path',
         ),
     )
+
+
+class AddonScope(enum.Enum):
+    """The three layers an addon can be configured at.
+
+    Mirrors the model in docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md
+    (and, before it, ql-server-core's installed/enabled split): an addon is
+    active globally, installed on a host, and switched on per instance, with
+    each layer requiring the one above it.
+    """
+    GLOBAL = 'global'
+    HOST = 'host'
+    INSTANCE = 'instance'
+
+
+class AddonState(db.Model):
+    """Per-(addon, scope, scope_id) enable flag + settings blob.
+
+    One row per place an addon is configured. `scope_id` is the Host.id or
+    QLInstance.id the row belongs to, and is 0 for GLOBAL rows (SQLite treats
+    NULL as distinct in unique constraints, so a sentinel keeps the uniqueness
+    guarantee real for the global row).
+
+    `settings_json` holds the addon's own settings as a JSON object string.
+    It is deliberately opaque to core: the shape is declared by the addon's
+    manifest, validated by ui/addons/settings.py against that manifest, and
+    never interpreted here -- core must not grow knowledge of any specific
+    addon's fields.
+
+    No ForeignKey to host/instance on purpose: one column has to point at two
+    different tables depending on `scope`, which a FK cannot express. Cleanup
+    is therefore explicit, in ui/addons/registry.py's host/instance delete
+    handling, and covered by its own test so it cannot silently rot.
+    """
+    __tablename__ = 'addon_state'
+
+    id = db.Column(db.Integer, primary_key=True)
+    addon_id = db.Column(db.String(64), nullable=False, index=True)
+    scope = db.Column(db.String(16), nullable=False)
+    scope_id = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+    enabled = db.Column(db.Boolean, nullable=False, default=False, server_default='0')
+    settings_json = db.Column(db.Text, nullable=False, default='{}', server_default='{}')
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.datetime.utcnow,
+        onupdate=datetime.datetime.utcnow,
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            'addon_id',
+            'scope',
+            'scope_id',
+            name='uq_addon_state_scope',
+        ),
+    )
+
+    @property
+    def settings(self):
+        """Parsed settings dict. A corrupt blob reads as {} rather than raising --
+        one unreadable row must not break the whole addon catalog."""
+        try:
+            value = json.loads(self.settings_json or '{}')
+        except (TypeError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'addon_id': self.addon_id,
+            'scope': self.scope,
+            'scope_id': self.scope_id,
+            'enabled': bool(self.enabled),
+            'settings': self.settings,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }

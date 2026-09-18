@@ -13,8 +13,8 @@ describe('runtime constants', () => {
       .toBe('https://github.com/tjone270/minqlxtended');
   });
 
-  it('offers exactly the two runtimes, minqlx first', () => {
-    expect(RUNTIME_OPTIONS.map(o => o.id)).toEqual(['minqlx', 'minqlxtended']);
+  it('offers exactly the three runtimes, minqlx first', () => {
+    expect(RUNTIME_OPTIONS.map(o => o.id)).toEqual(['minqlx', 'minqlxtended', 'minqlxtended-patched']);
   });
 
   it('labels every option and warns that the choice is permanent', () => {

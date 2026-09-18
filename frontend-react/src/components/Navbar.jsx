@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import ThemeToggleButton from './ThemeToggleButton';
 import { useAuth } from '../contexts/AuthContext';
-import { Settings, Users, ChevronDown, Terminal, LogOut, Server, SlidersHorizontal, Menu as MenuIcon, BookOpen, Archive, ShieldCheck, FileText, PackagePlus } from 'lucide-react';
+import { Settings, Users, ChevronDown, Terminal, LogOut, Server, SlidersHorizontal, Menu as MenuIcon, BookOpen, Archive, ShieldCheck, FileText, PackagePlus, Puzzle } from 'lucide-react';
 
 function Navbar() {
   const navigate = useNavigate();
@@ -133,6 +133,17 @@ function Navbar() {
                     <Menu.Item>
                       {({ active }) => (
                         <Link
+                          to="/addons"
+                          className={`navbar-dropdown-item ${active || location.pathname.startsWith('/addons') ? 'navbar-dropdown-item-active' : ''}`}
+                        >
+                          <Puzzle size={16} strokeWidth={2} />
+                          <span>Addons</span>
+                        </Link>
+                      )}
+                    </Menu.Item>
+                    <Menu.Item>
+                      {({ active }) => (
+                        <Link
                           to="/settings"
                           className={`navbar-dropdown-item ${active ? 'navbar-dropdown-item-active' : ''}`}
                         >
@@ -253,6 +264,17 @@ function Navbar() {
                         >
                           <PackagePlus size={16} strokeWidth={2} />
                           <span>Plugin Repositories</span>
+                        </Link>
+                      )}
+                    </Menu.Item>
+                    <Menu.Item>
+                      {({ active }) => (
+                        <Link
+                          to="/addons"
+                          className={`navbar-dropdown-item ${active || location.pathname.startsWith('/addons') ? 'navbar-dropdown-item-active' : ''}`}
+                        >
+                          <Puzzle size={16} strokeWidth={2} />
+                          <span>Addons</span>
                         </Link>
                       )}
                     </Menu.Item>

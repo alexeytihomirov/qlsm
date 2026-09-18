@@ -55,6 +55,7 @@ SOURCE_LABELS = {
     'factories': "the game's own factory definitions",
     'naming': 'read off the cvar name - not verified on a live server',
     'qlsm': 'behaviour of this app',
+    'minqlxtended-source': "the minqlxtended fork's own C source on GitHub - not observed live",
     'listcvars': 'a listcvars dump only - no description',
 }
 
