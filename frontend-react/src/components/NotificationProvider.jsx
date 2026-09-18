@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import Notification from './Notification';
+import { acquireJobEventsSocket, releaseJobEventsSocket } from '../hooks/jobEventsSocket';
 
 // Create a context for notifications
 const NotificationContext = createContext();
@@ -56,6 +57,29 @@ export function NotificationProvider({ children }) {
     showError,
     showInfo
   };
+
+  // Live for as long as the app is mounted, independent of any single page's
+  // feature: a background job (e.g. qlmatch-packer's rebuild) can finish
+  // while the operator is looking at an unrelated screen, and the toast
+  // should still show up. See ui/job_events.py / ui/job_events_listener.py
+  // for the backend side of this channel.
+  useEffect(() => {
+    const socket = acquireJobEventsSocket();
+    const handleJobCompleted = (payload) => {
+      const message = payload?.message || 'Background job finished.';
+      if (payload?.status === 'error') {
+        showError(message);
+      } else {
+        showSuccess(message);
+      }
+    };
+    socket.on('job:completed', handleJobCompleted);
+    return () => {
+      socket.off('job:completed', handleJobCompleted);
+      releaseJobEventsSocket();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <NotificationContext.Provider value={value}>
