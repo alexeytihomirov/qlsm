@@ -10,8 +10,10 @@ vi.mock('../../NotificationProvider', () => ({
 }));
 
 const downloadPluginRepositoryPlugins = vi.fn();
+const installPluginRepositoryAddon = vi.fn();
 vi.mock('../../../services/api', () => ({
   downloadPluginRepositoryPlugins: (...args) => downloadPluginRepositoryPlugins(...args),
+  installPluginRepositoryAddon: (...args) => installPluginRepositoryAddon(...args),
 }));
 
 const repo = {
@@ -81,5 +83,62 @@ describe('PluginRepositoryCard manifest editor', () => {
 
     expect(screen.getByText(/Edit Manifest — Repo/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue('afkplus.py')).toBeInTheDocument();
+  });
+});
+
+const repoWithAddon = {
+  ...repo,
+  addons: [{
+    id: 'demo-addon', zip: 'demo-addon.zip', label: 'Demo Addon', description: null,
+    version: '1.2.0', sha256: null, requires_qlsm_version: null, version_risk: null,
+  }],
+};
+
+describe('PluginRepositoryCard addons', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('installs an addon and reports the backend message', async () => {
+    installPluginRepositoryAddon.mockResolvedValue({
+      data: { id: 'demo-addon', pending_restart: true },
+      message: '"Demo Addon" installed. Restart QLSM to activate it.',
+    });
+    const onDownloaded = vi.fn();
+    render(<PluginRepositoryCard
+      repo={repoWithAddon} onSync={vi.fn()} onDelete={vi.fn()} syncing={false}
+      onDownloaded={onDownloaded}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: /1 plugin.*1 addon/i }));
+    fireEvent.click(screen.getByRole('button', { name: /install/i }));
+
+    await waitFor(() => expect(installPluginRepositoryAddon).toHaveBeenCalledWith(7, 'demo-addon'));
+    await waitFor(() => expect(showSuccess).toHaveBeenCalledWith(expect.stringContaining('Restart QLSM')));
+    expect(onDownloaded).toHaveBeenCalled();
+  });
+
+  it('labels the button Update and shows badges when the repo has a newer version', () => {
+    const updates = {
+      plugins: { 'afkplus.py': 'up_to_date' },
+      addons: { 'demo-addon': { id: 'demo-addon', status: 'update_available', installed_version: '1.0.0', available_version: '1.2.0' } },
+    };
+    render(<PluginRepositoryCard
+      repo={repoWithAddon} updates={updates} onSync={vi.fn()} onDelete={vi.fn()} syncing={false}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: /1 plugin.*1 addon/i }));
+
+    expect(screen.getByRole('button', { name: /update/i })).toBeInTheDocument();
+    expect(screen.getByText('Update available')).toBeInTheDocument();
+    expect(screen.getByText('Up to date')).toBeInTheDocument();
+    expect(screen.getByText(/installed: 1\.0\.0/)).toBeInTheDocument();
+  });
+
+  it('shows the install error on failure', async () => {
+    installPluginRepositoryAddon.mockRejectedValue({ error: { message: 'sha256 mismatch' } });
+    render(<PluginRepositoryCard
+      repo={repoWithAddon} onSync={vi.fn()} onDelete={vi.fn()} syncing={false}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: /1 plugin.*1 addon/i }));
+    fireEvent.click(screen.getByRole('button', { name: /install/i }));
+
+    await waitFor(() => expect(showError).toHaveBeenCalledWith('sha256 mismatch'));
   });
 });

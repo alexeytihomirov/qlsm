@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   deletePluginRepository: vi.fn(),
   downloadPluginRepositoryPlugins: vi.fn(),
   getPluginRepositoryDiff: vi.fn(),
+  installPluginRepositoryAddon: vi.fn(),
+  getPluginRepositoryUpdates: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn(),
 }));
@@ -22,6 +24,8 @@ vi.mock('../../services/api', () => ({
   deletePluginRepository: mocks.deletePluginRepository,
   downloadPluginRepositoryPlugins: mocks.downloadPluginRepositoryPlugins,
   getPluginRepositoryDiff: mocks.getPluginRepositoryDiff,
+  installPluginRepositoryAddon: mocks.installPluginRepositoryAddon,
+  getPluginRepositoryUpdates: mocks.getPluginRepositoryUpdates,
 }));
 
 vi.mock('../../components/NotificationProvider', () => ({
@@ -53,6 +57,7 @@ describe('PluginRepositoriesPage downloads', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getPluginRepositories.mockResolvedValue([REPO]);
+    mocks.getPluginRepositoryUpdates.mockResolvedValue([]);
     // Default resolution so a future Diff-click test fails on its own
     // assertion rather than on an unhandled rejection from the modal's fetch.
     mocks.getPluginRepositoryDiff.mockResolvedValue({ local: '', remote: '' });

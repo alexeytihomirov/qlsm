@@ -12,12 +12,15 @@ from ui.plugin_push import push_pool_to_hosts
 from ui.plugin_repositories import (
     PLUGIN_FILE_MAX_SIZE,
     PluginRepositoryError,
+    addon_update_status,
     build_inline_manifest,
+    download_addon,
     download_plugin,
     fetch_manifest,
     fetch_plugin_source,
     github_raw_bases,
     is_safe_plugin_filename,
+    plugin_update_status,
     resolve_manifest_source,
     version_risk,
 )
@@ -80,17 +83,17 @@ def _sync(repo, resolve=False):
     """
     try:
         if resolve:
-            repo.url, plugins = resolve_manifest_source(repo.url, fetch_manifest)
+            repo.url, manifest = resolve_manifest_source(repo.url, fetch_manifest)
         else:
-            plugins = fetch_manifest(repo.url)
+            manifest = fetch_manifest(repo.url)
     except PluginRepositoryError as e:
         repo.last_sync_error = str(e)
         return False, str(e)
 
-    for entry in plugins:
+    for entry in manifest['plugins'] + manifest['addons']:
         entry['version_risk'] = version_risk(entry.get('requires_qlsm_version'))
 
-    repo.manifest_json = json.dumps(plugins)
+    repo.manifest_json = json.dumps(manifest)
     repo.last_synced_at = datetime.datetime.utcnow()
     repo.last_sync_error = None
     return True, None
@@ -245,7 +248,7 @@ def download_plugin_repository_plugins(repo_id):
     # list the UI showed and the operator acted on). Not persisted -- _sync()
     # stays the one writer of manifest_json.
     try:
-        fresh_by_filename = {fresh['filename']: fresh for fresh in fetch_manifest(repo.url)}
+        fresh_by_filename = {fresh['filename']: fresh for fresh in fetch_manifest(repo.url)['plugins']}
     except PluginRepositoryError:
         fresh_by_filename = {}
 
@@ -349,3 +352,67 @@ def diff_plugin_repository_plugin(repo_id):
         'local': local.decode('utf-8', errors='replace'),
         'remote': remote.decode('utf-8', errors='replace'),
     }}), 200
+
+
+@plugin_repository_api_bp.route('/<int:repo_id>/install-addon', methods=['POST'])
+@jwt_required()
+def install_plugin_repository_addon(repo_id):
+    """Download one addon .zip this repo's manifest declares and install it
+    via the standard installer -- installing over an existing copy is the
+    update path (atomic replace with rollback). Same restart contract as the
+    upload route: the addon is pending_restart, not live. Never 502: see the
+    Cloudflare note on the sync route."""
+    repo = db.session.get(PluginRepository, repo_id)
+    if not repo:
+        return jsonify({'error': {'message': 'Repository not found.'}}), 404
+
+    data = request.get_json()
+    addon_id = (data or {}).get('id')
+    if not isinstance(addon_id, str) or not addon_id.strip():
+        return jsonify({'error': {'message': 'id must be a non-empty string.'}}), 400
+
+    entry = next((a for a in repo.to_dict()['addons'] if a.get('id') == addon_id), None)
+    if entry is None:
+        return jsonify({'error': {'message': f'Addon "{addon_id}" is not in this repository\'s manifest.'}}), 404
+
+    packages_dir = current_app.config.get('ADDON_PACKAGES_DIR')
+    if not packages_dir:
+        return jsonify({'error': {'message': 'ADDON_PACKAGES_DIR is not configured.'}}), 500
+
+    try:
+        manifest = download_addon(repo.url, entry, packages_dir)
+    except PluginRepositoryError as e:
+        return jsonify({'error': {'message': str(e)}}), 422
+
+    # This route writes remote code onto the addon volume -- record what
+    # landed and from where, same as the plugin download route does.
+    current_app.logger.info(
+        f'Addon "{manifest["id"]}" v{manifest["version"]} installed from repository "{repo.name}" ({repo.url}).')
+    return jsonify({'data': {
+        'id': manifest['id'],
+        'name': manifest['name'],
+        'version': manifest['version'],
+        'pending_restart': True,
+    }, 'message': f'"{manifest["name"]}" installed. Restart QLSM to activate it.'}), 201
+
+
+@plugin_repository_api_bp.route('/updates', methods=['GET'])
+@jwt_required()
+def plugin_repository_updates():
+    """Update status of every synced manifest entry against what's installed
+    locally. Purely local (pool hashes, installed addon manifests) -- no
+    network; "Sync" is what refreshes the remote side of the comparison."""
+    packages_dir = current_app.config.get('ADDON_PACKAGES_DIR')
+    payload = []
+    for repo in PluginRepository.query.order_by(PluginRepository.name).all():
+        cached = repo.to_dict()
+        payload.append({
+            'repo_id': repo.id,
+            'plugins': [{
+                'filename': entry['filename'],
+                'runtime': entry.get('runtime'),
+                'status': plugin_update_status(entry),
+            } for entry in cached['plugins']],
+            'addons': [addon_update_status(entry, packages_dir) for entry in cached['addons']],
+        })
+    return jsonify({'data': payload}), 200

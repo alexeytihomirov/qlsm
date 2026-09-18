@@ -10,26 +10,38 @@ from ui.plugin_repositories import PluginRepositoryError
 
 PLUGIN_LIST = [
     {'filename': 'balance2.py', 'label': 'Balance', 'description': None,
-     'runtime': 'minqlx', 'requires_qlsm_version': None},
+     'runtime': 'minqlx', 'version': None, 'sha256': None,
+     'requires_qlsm_version': None},
+]
+
+ADDON_LIST = [
+    {'id': 'demo-addon', 'zip': 'demo-addon.zip', 'label': 'Demo', 'description': None,
+     'version': '1.2.0', 'sha256': None, 'requires_qlsm_version': None},
 ]
 
 
-def _patch_fetch(monkeypatch, plugins=None, error=None):
+def _patch_fetch(monkeypatch, plugins=None, addons=None, error=None):
     def fake_fetch_manifest(url):
         if error:
             raise PluginRepositoryError(error)
-        return plugins if plugins is not None else list(PLUGIN_LIST)
+        return {
+            'plugins': plugins if plugins is not None else list(PLUGIN_LIST),
+            'addons': addons if addons is not None else [],
+        }
     monkeypatch.setattr(plugin_repository_routes, 'fetch_manifest', fake_fetch_manifest)
 
 
-def _seeded_repo(name, url, plugins=None):
+def _seeded_repo(name, url, plugins=None, addons=None):
     """A PluginRepository as it looks right after a real sync -- unlike a bare
     db.session.add(), this populates manifest_json, which to_dict()['plugins']
     (and the download route's lookup) reads from. Creating a repo without this
     and then asserting on its plugin list is the bug three of these tests
     originally had (caught by CI, not locally -- see commit history)."""
     repo = PluginRepository(name=name, url=url)
-    repo.manifest_json = json.dumps(plugins if plugins is not None else list(PLUGIN_LIST))
+    repo.manifest_json = json.dumps({
+        'plugins': plugins if plugins is not None else list(PLUGIN_LIST),
+        'addons': addons if addons is not None else [],
+    })
     db.session.add(repo)
     db.session.commit()
     return repo
@@ -912,3 +924,113 @@ def test_download_still_succeeds_when_the_push_cannot_take_the_host_lock(client,
     assert body['push']['skipped'] == [
         {'id': host_id, 'name': 'redis-down', 'reason': 'lock unavailable'}
     ]
+
+
+# --- POST /api/plugin-repositories/<id>/install-addon ---
+
+def test_install_addon_passes_the_manifest_entry(client, app, monkeypatch, tmp_path):
+    make_user(app, 'addoninstall', 'password123')
+    headers = auth_headers(app, 'addoninstall')
+    # The test app fixture's from_mapping() config has no ADDON_PACKAGES_DIR.
+    app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+    with app.app_context():
+        repo = _seeded_repo('Repo AI', 'https://example.com/ai', addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    calls = []
+
+    def fake_download_addon(base_url, entry, packages_dir):
+        calls.append((base_url, entry['id'], entry['zip']))
+        return {'id': entry['id'], 'name': 'Demo Addon', 'version': '1.2.0'}
+
+    monkeypatch.setattr(plugin_repository_routes, 'download_addon', fake_download_addon)
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/install-addon', headers=headers,
+        json={'id': 'demo-addon'},
+    )
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data['id'] == 'demo-addon'
+    assert data['pending_restart'] is True
+    assert calls == [('https://example.com/ai', 'demo-addon', 'demo-addon.zip')]
+
+
+def test_install_addon_unknown_id_404(client, app, monkeypatch):
+    make_user(app, 'addonunknown', 'password123')
+    headers = auth_headers(app, 'addonunknown')
+    with app.app_context():
+        repo = _seeded_repo('Repo AK', 'https://example.com/ak', addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/install-addon', headers=headers,
+        json={'id': 'not-in-manifest'},
+    )
+    assert response.status_code == 404
+
+
+def test_install_addon_download_failure_422(client, app, monkeypatch, tmp_path):
+    make_user(app, 'addonfail', 'password123')
+    headers = auth_headers(app, 'addonfail')
+    app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+    with app.app_context():
+        repo = _seeded_repo('Repo AL', 'https://example.com/al', addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    def fake_download_addon(base_url, entry, packages_dir):
+        raise PluginRepositoryError('sha256 mismatch')
+
+    monkeypatch.setattr(plugin_repository_routes, 'download_addon', fake_download_addon)
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/install-addon', headers=headers,
+        json={'id': 'demo-addon'},
+    )
+    assert response.status_code == 422
+    assert 'sha256 mismatch' in response.get_json()['error']['message']
+
+
+# --- GET /api/plugin-repositories/updates ---
+
+def test_updates_reports_both_kinds(client, app, tmp_path):
+    make_user(app, 'updatesuser', 'password123')
+    headers = auth_headers(app, 'updatesuser')
+    with app.app_context():
+        app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+        repo = _seeded_repo(
+            'Repo AM', 'https://example.com/am',
+            plugins=[
+                # No declared runtime -> nothing to compare against.
+                {'filename': 'no_runtime.py', 'label': None, 'description': None,
+                 'runtime': None, 'version': None, 'sha256': 'a' * 64,
+                 'requires_qlsm_version': None},
+            ],
+            addons=list(ADDON_LIST),
+        )
+        repo_id = repo.id
+
+    response = client.get('/api/plugin-repositories/updates', headers=headers)
+    assert response.status_code == 200
+    data = response.get_json()['data']
+    entry = next(r for r in data if r['repo_id'] == repo_id)
+    assert entry['plugins'] == [{'filename': 'no_runtime.py', 'runtime': None, 'status': 'unknown'}]
+    assert entry['addons'][0]['id'] == 'demo-addon'
+    assert entry['addons'][0]['status'] == 'not_installed'
+
+
+def test_updates_sees_an_installed_addon_version(client, app, tmp_path):
+    make_user(app, 'updatesuser2', 'password123')
+    headers = auth_headers(app, 'updatesuser2')
+    target = tmp_path / 'demo-addon'
+    target.mkdir()
+    (target / 'qlsm-addon.json').write_text(json.dumps({'id': 'demo-addon', 'version': '1.0.0'}))
+    with app.app_context():
+        app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+        repo = _seeded_repo('Repo AN', 'https://example.com/an', plugins=[], addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    response = client.get('/api/plugin-repositories/updates', headers=headers)
+    assert response.status_code == 200
+    entry = next(r for r in response.get_json()['data'] if r['repo_id'] == repo_id)
+    assert entry['addons'][0]['status'] == 'update_available'
+    assert entry['addons'][0]['installed_version'] == '1.0.0'
+    assert entry['addons'][0]['available_version'] == '1.2.0'

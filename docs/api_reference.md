@@ -1204,18 +1204,20 @@ All entries are lists of `{"steam_id64": "76561198...", "level": 0-5}`, de-dupli
 
 A failed write (SSH or Redis unreachable) appends a warning to the instance log; the deploy or apply itself still succeeds. The write also deletes any `minqlx:qlsm:managed_admins*` keys left behind by older QLSM versions.
 
-## Plugin Repositories
+## Repositories
 
-External sources of plugins, fetched over HTTP and downloaded into the operator tier of the shared plugin pool (`data/shared-plugins/<runtime>/`, a bind-mounted folder every container sees). A download never modifies the built-in tier in `ql-assets/`; with `overwrite: true` it writes an operator copy that shadows a bundled plugin of the same name. See `ui/plugin_repositories.py` and `ui/plugin_pool.py`.
+External sources of plugins and addons, fetched over HTTP. Plugins are downloaded into the operator tier of the shared plugin pool (`data/shared-plugins/<runtime>/`, a bind-mounted folder every container sees); a download never modifies the built-in tier in `ql-assets/`; with `overwrite: true` it writes an operator copy that shadows a bundled plugin of the same name. Addon `.zip` packages install into `ADDON_PACKAGES_DIR` through the same installer as an upload. See `ui/plugin_repositories.py` and `ui/plugin_pool.py`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/plugin-repositories/` | GET | List repositories with their last-synced plugin list |
+| `/plugin-repositories/` | GET | List repositories with their last-synced plugin and addon lists |
 | `/plugin-repositories/` | POST | Add a repository (`name`, `url`) and sync it immediately |
-| `/plugin-repositories/<id>/sync` | POST | Re-fetch `<url>/qlsm-plugins.json` |
-| `/plugin-repositories/<id>` | DELETE | Remove the repository (downloaded files stay) |
+| `/plugin-repositories/<id>/sync` | POST | Re-fetch `<url>/qlsm-repository.json` (falling back to the legacy `<url>/qlsm-plugins.json`) |
+| `/plugin-repositories/<id>` | DELETE | Remove the repository (downloaded files and installed addons stay) |
 | `/plugin-repositories/<id>/download` | POST | Download `filenames` into the pool; optional `runtimes` ({filename: runtime}) fills in entries that declare none, and `overwrite: true` replaces existing pool files. Each downloaded file's runtime gets a common-pool refresh queued on every Active host of that runtime. |
 | `/plugin-repositories/<id>/diff` | GET | `filename` (and `runtime` when the entry declares none): `{data: {filename, runtime, local, remote}}`, the pool copy and the repository copy as text |
+| `/plugin-repositories/<id>/install-addon` | POST | Download and install the addon `id` from the repo's manifest (verifying its declared `sha256`, when present) into `ADDON_PACKAGES_DIR`, same as a zip upload; the addon is `pending_restart` until QLSM restarts. 422 on any fetch/verify/install failure |
+| `/plugin-repositories/updates` | GET | Local-only update status per synced entry: plugins by pool-file hash vs the manifest's `sha256` (LF-normalized), addons by installed `qlsm-addon.json` version vs the manifest's `version`. Statuses: `update_available`, `up_to_date`, `not_installed`, `unknown` |
 
 - A `github.com` repository URL is resolved to its `raw.githubusercontent.com` base on add (trying `main`, then `master`, unless the URL names a branch). `url` in responses is what the operator typed; `fetch_url` is what QLSM fetches.
 - Names are unique ignoring case, and a URL cannot be added twice in either form.
