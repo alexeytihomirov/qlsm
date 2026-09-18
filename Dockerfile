@@ -15,6 +15,18 @@ COPY VERSION /VERSION
 COPY frontend-react/ .
 # Resolve the public/docs symlink (-> ../../docs/user) at its expected absolute path
 COPY docs/user/ /docs/user/
+# Bundled addons own their UI components now (see addons/README.md), and the
+# bundled-component registry imports them by relative path from /build/src/...
+# up to /addons. Without this the frontend build fails to resolve them.
+COPY addons/ /addons/
+# Some addon UI files import shared frontend-react components back the other
+# way (e.g. ViewDemosModal.jsx -> ../../../frontend-react/src/components/Modal),
+# a path that only resolves if frontend-react/ exists as a real sibling of
+# addons/ at repo root -- true in the actual checkout, but not in this stage,
+# where frontend-react/'s contents are flattened straight into /build (see
+# COPY above). Mirror it at /frontend-react/ too so that relative path
+# resolves the same way here as it does outside Docker.
+COPY frontend-react/ /frontend-react/
 RUN pnpm build
 
 # ── Stage 2: Application ───────────────────────────────────────────────────────
