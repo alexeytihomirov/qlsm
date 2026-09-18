@@ -5,9 +5,9 @@ docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md in the monorepo).
 One row per (addon_id, scope, scope_id) holding the enable flag and the
 addon's own settings blob.
 
-Revision ID: 20260918030000
-Revises: 20260915120000
-Create Date: 2026-09-18 03:00:00.000000
+Revision ID: 20260914130000
+Revises: 20260914120000
+Create Date: 2026-09-14 13:00:00.000000
 
 """
 from alembic import op
@@ -15,17 +15,13 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20260918030000'
-down_revision = '20260915120000'
+revision = '20260914130000'
+down_revision = '20260914120000'  # add_plugin_repository_table, landed the same day
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
-    # Idempotent: DBs that already ran the pre-upstream-restore revision
-    # 20260914130000 already have this table with the same schema. Fresh
-    # installs create it here (or via 20260914130000 if they walk the
-    # restored linear history).
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     if 'addon_state' in inspector.get_table_names():
