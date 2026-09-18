@@ -72,6 +72,15 @@ Settings → Addons → **Install**, and upload a `.zip`. The archive may have
 folder" produces). The install directory is named after the manifest's `id`,
 not the folder in the archive.
 
+Or from a repository: Settings → Repositories. A repository that publishes
+`qlsm-repository.json` with an `addons` section (see
+`ui/plugin_repositories.py` for the format) lists its addon packages there
+with one-click **Install** / **Update** — the downloaded `.zip` goes through
+exactly the same installer and checks as an upload, including the optional
+`sha256` the repo manifest declares for the archive. Update detection
+compares the repo entry's `version` against the installed package's own
+`qlsm-addon.json`.
+
 **The addon is not live until QLSM restarts.** Flask cannot hot-add or drop a
 blueprint on a running app, so a freshly installed addon is listed as
 *pending restart* rather than pretended to be active — the alternative is an

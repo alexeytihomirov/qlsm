@@ -126,7 +126,7 @@ function Navbar() {
                           className={`navbar-dropdown-item ${active ? 'navbar-dropdown-item-active' : ''}`}
                         >
                           <PackagePlus size={16} strokeWidth={2} />
-                          <span>Plugin Repositories</span>
+                          <span>Repositories</span>
                         </Link>
                       )}
                     </Menu.Item>
@@ -263,7 +263,7 @@ function Navbar() {
                           className={`navbar-dropdown-item ${active || location.pathname === '/settings/plugin-repositories' ? 'navbar-dropdown-item-active' : ''}`}
                         >
                           <PackagePlus size={16} strokeWidth={2} />
-                          <span>Plugin Repositories</span>
+                          <span>Repositories</span>
                         </Link>
                       )}
                     </Menu.Item>

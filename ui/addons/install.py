@@ -111,6 +111,20 @@ def read_manifest_from_zip(zf, manifest_path):
     return manifest
 
 
+def read_manifest_from_blob(blob):
+    """Validate the archive's shape and return its parsed manifest without
+    installing anything -- the same member checks _inspect applies during a
+    real install. Lets a caller (e.g. a repository install) verify what the
+    package claims to be before the packages dir is touched."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile:
+        raise AddonInstallError('The file is not a valid .zip archive.')
+    with zf:
+        _root_prefix, _members, manifest_path = _inspect(zf)
+        return read_manifest_from_zip(zf, manifest_path)
+
+
 def install_addon_zip(blob, packages_dir):
     """Validate and install an addon package.
 
