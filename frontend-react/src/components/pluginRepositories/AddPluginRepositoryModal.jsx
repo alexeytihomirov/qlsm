@@ -65,7 +65,7 @@ function AddPluginRepositoryModal({ isOpen, onClose, onSubmit }) {
               <Dialog.Title as="h3" className="flex items-center gap-3">
                 <span className="status-pulse status-pulse-active" />
                 <span className="font-display text-xl font-semibold tracking-wider uppercase text-theme-primary">
-                  Add Plugin Repository
+                  Add Repository
                 </span>
               </Dialog.Title>
               <button
@@ -106,7 +106,9 @@ function AddPluginRepositoryModal({ isOpen, onClose, onSubmit }) {
                   placeholder="https://example.com/plugins"
                 />
                 <p className="text-xs text-[var(--text-muted)] mt-1.5">
-                  Must serve <code>qlsm-plugins.json</code> at this URL's root.
+                  Must serve <code>qlsm-repository.json</code> (or the legacy{' '}
+                  <code>qlsm-plugins.json</code>) at this URL's root.
+                  A github.com repository URL works too.
                 </p>
               </div>
 

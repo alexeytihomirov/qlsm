@@ -330,14 +330,17 @@ class Operator(db.Model):
 
 
 class PluginRepository(db.Model):
-    """An external source of minqlx plugins the operator can browse and pull
-    individual files from into the local pool (data/shared-plugins/<runtime>/).
+    """An external source of minqlx plugins and qlsm addons the operator can
+    browse and install from -- plugin files into the local pool
+    (data/shared-plugins/<runtime>/), addon .zip packages into
+    ADDON_PACKAGES_DIR.
 
-    The manifest is fetched over plain HTTP from `<url>/qlsm-plugins.json`
-    (see ui/plugin_repositories.py) and cached here as-fetched, so browsing
-    the plugin list doesn't need a live request every time -- only "Sync"
-    does. This is a source list, not the pool itself: nothing here is ever
-    read at instance-deploy time.
+    The manifest is fetched over plain HTTP from `<url>/qlsm-repository.json`
+    (falling back to the original `<url>/qlsm-plugins.json`, see
+    ui/plugin_repositories.py) and cached here as-fetched, so browsing
+    doesn't need a live request every time -- only "Sync" does. This is a
+    source list, not the pool itself: nothing here is ever read at
+    instance-deploy time.
     """
     __tablename__ = 'plugin_repository'
 
@@ -355,18 +358,27 @@ class PluginRepository(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     def to_dict(self):
-        plugins = []
+        # manifest_json is either the original bare plugin list (rows synced
+        # before addons existed) or {'plugins': [...], 'addons': [...]} --
+        # normalized here so no reader ever sees the difference.
+        plugins, addons = [], []
         if self.manifest_json:
             try:
-                plugins = json.loads(self.manifest_json)
+                cached = json.loads(self.manifest_json)
             except ValueError:
-                plugins = []
+                cached = []
+            if isinstance(cached, dict):
+                plugins = cached.get('plugins') or []
+                addons = cached.get('addons') or []
+            elif isinstance(cached, list):
+                plugins = cached
         return {
             'id': self.id,
             'name': self.name,
             'url': self.display_url or self.url,
             'fetch_url': self.url,
             'plugins': plugins,
+            'addons': addons,
             'last_synced_at': self.last_synced_at.isoformat() if self.last_synced_at else None,
             'last_sync_error': self.last_sync_error,
             'created_at': self.created_at.isoformat() if self.created_at else None,
