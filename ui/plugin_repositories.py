@@ -27,6 +27,7 @@ Two manifest filenames, tried in this order:
              "sha256": "<hex of the LF-normalized .py>",
              "runtime": "minqlx" | "minqlxtended" | "minqlxtended-patched",
              "requires_qlsm_version": "1.30.0",
+             "depends_on": ["some_helper.py"],
              "cvars": [...], "commands": [...]},
         ]}
 
@@ -37,9 +38,18 @@ isEnableablePluginPath). `requires_qlsm_version` is the author's own claim,
 compared against this qlsm's own VERSION file by version_risk() below -- see
 that function's docstring for what "risk" does and does not mean here
 (operator decision, 2026-09-14).
-`cvars`/`commands` use the `.ql-plugin.json` shape; on download they (with
-label/description) become the plugin's pool sidecar unless the repo also
-ships a separate `<plugin>.ql-plugin.json`, which wins.
+`cvars`/`commands`/`depends_on` use the `.ql-plugin.json` shape; on download
+they (with label/description) become the plugin's pool sidecar unless the repo
+also ships a separate `<plugin>.ql-plugin.json`, which wins.
+
+`depends_on` names other entries in this same manifest that the plugin needs
+on disk but that are not loadable plugins themselves (a shared helper module
+-- e.g. chat_rcon.py needs chat_rcon_acl.py). A named entry gets no row of its
+own in the UI and is downloaded automatically together with whatever depends
+on it (see dependency_filenames / expand_with_dependencies below) -- the
+repository list offers plugins, not the files they happen to be made of. It
+also lands in the downloaded sidecar, which is what makes the Plugins tab
+hide the same helper from its own checkbox list (pluginSelection.js).
 
 A declared `sha256` is what update detection runs on (plugin_update_status /
 addon_update_status): no hash in the manifest means qlsm cannot tell whether
@@ -95,7 +105,7 @@ def is_safe_plugin_filename(filename):
 # The part of a repo manifest entry that becomes the plugin's pool sidecar
 # (<plugin>.ql-plugin.json). Everything else on an entry (filename, runtime,
 # requires_qlsm_version) only matters for listing/downloading.
-_SIDECAR_FIELDS = ('label', 'description', 'cvars', 'commands')
+_SIDECAR_FIELDS = ('label', 'description', 'cvars', 'commands', 'depends_on')
 _INLINE_LIST_FIELDS = ('cvars', 'commands')
 
 
@@ -213,6 +223,23 @@ def _optional_sha256(entry):
     return value if _SHA256_RE.match(value) else None
 
 
+def _optional_filename_list(entry, key):
+    """A list of bare plugin filenames, or []. Same filename constraint as an
+    entry's own `filename`: anything else is dropped rather than failing the
+    manifest, matching the "one bad field never breaks the fetch" rule."""
+    value = entry.get(key)
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        name = item.strip()
+        if is_safe_plugin_filename(name) and name not in out:
+            out.append(name)
+    return out
+
+
 def _zip_path(entry):
     """The addon entry's `zip` as a safe relative path, or None. Same
     reject-don't-sanitize stance as addons/install.py's _safe_member_path."""
@@ -244,6 +271,7 @@ def _normalize_plugins(entries):
             'version': _optional_str(entry, 'version'),
             'sha256': _optional_sha256(entry),
             'requires_qlsm_version': _optional_str(entry, 'requires_qlsm_version'),
+            'depends_on': _optional_filename_list(entry, 'depends_on'),
         }
         # Inline sidecar metadata: kept only when well-formed, and only added
         # when present so plain entries keep their existing shape.
@@ -252,6 +280,59 @@ def _normalize_plugins(entries):
                 plugin[field] = entry[field]
         plugins.append(plugin)
     return plugins
+
+
+def dependency_filenames(plugins):
+    """Filenames some *other* entry in the same manifest declares in its
+    `depends_on` -- the helper modules that get no row of their own.
+
+    Only names that are themselves entries count: a `depends_on` pointing at
+    something this repository does not publish cannot be downloaded, and
+    hiding a row that does not exist would be a no-op anyway. A self-reference
+    is ignored so a malformed entry cannot hide itself.
+    """
+    known = {e['filename'] for e in plugins}
+    deps = set()
+    for entry in plugins:
+        for name in entry.get('depends_on') or []:
+            if name in known and name != entry['filename']:
+                deps.add(name)
+    return deps
+
+
+def expand_with_dependencies(plugins, selected):
+    """`selected` filenames plus every dependency they need, transitively.
+
+    Returns (ordered, pulled_by). `ordered` puts dependencies before the
+    entries that need them, so a batch that fails partway never leaves a
+    plugin in the pool whose helper is missing. `pulled_by` maps each
+    auto-added helper to the entry that declared it -- the caller needs that
+    both for the operator-facing message and to give a helper with no runtime
+    of its own the runtime of whatever dragged it in. Only dependencies this
+    manifest actually publishes are followed (see dependency_filenames); a
+    cycle terminates rather than recursing forever. Names not in the manifest
+    at all are kept in place -- the route still has to report them, and
+    dropping them here would hide the reason.
+    """
+    by_name = {e['filename']: e for e in plugins}
+    ordered, pulled_by, visiting = [], {}, set()
+
+    def visit(name):
+        if name in ordered or name in visiting:
+            return
+        visiting.add(name)
+        for dep in (by_name.get(name) or {}).get('depends_on') or []:
+            if dep in by_name and dep != name:
+                pulled_by.setdefault(dep, name)
+                visit(dep)
+        visiting.discard(name)
+        ordered.append(name)
+
+    for name in selected:
+        visit(name)
+    for name in selected:
+        pulled_by.pop(name, None)
+    return ordered, pulled_by
 
 
 def _normalize_addons(entries):
@@ -539,6 +620,29 @@ def plugin_update_status(entry):
     return (STATUS_UP_TO_DATE
             if hashlib.sha256(_normalize_eol(content)).hexdigest() == declared
             else STATUS_UPDATE_AVAILABLE)
+
+
+def plugin_update_status_with_dependencies(plugins, entry):
+    """plugin_update_status() for one entry, folding in its `depends_on`
+    closure.
+
+    A hidden helper has no row of its own to carry a badge, so a plugin whose
+    helper is missing or stale must not read "Up to date" -- clicking Download
+    on it genuinely has something to fetch. The plugin's own verdict still
+    wins when it is `not_installed`: the helper is beside the point until the
+    plugin itself is there.
+    """
+    own = plugin_update_status(entry)
+    if own == STATUS_NOT_INSTALLED:
+        return own
+    by_name = {e['filename']: e for e in plugins}
+    closure, _pulled_by = expand_with_dependencies(plugins, [entry['filename']])
+    for name in closure:
+        if name == entry['filename'] or name not in by_name:
+            continue
+        if plugin_update_status(by_name[name]) in (STATUS_NOT_INSTALLED, STATUS_UPDATE_AVAILABLE):
+            return STATUS_UPDATE_AVAILABLE
+    return own
 
 
 def addon_update_status(entry, packages_dir):

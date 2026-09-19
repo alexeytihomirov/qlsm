@@ -12,12 +12,15 @@ from ui.plugin_repositories import (
     PluginRepositoryError,
     addon_update_status,
     build_inline_manifest,
+    dependency_filenames,
     download_addon,
     download_plugin,
+    expand_with_dependencies,
     fetch_manifest,
     fetch_plugin_source,
     is_safe_plugin_filename,
     plugin_update_status,
+    plugin_update_status_with_dependencies,
     version_risk,
 )
 
@@ -61,6 +64,7 @@ def test_fetch_manifest_parses_valid_entries(monkeypatch):
         'version': None,
         'sha256': None,
         'requires_qlsm_version': '1.0.0',
+        'depends_on': [],
     }]
 
 
@@ -614,7 +618,7 @@ def test_download_addon_installing_over_an_existing_copy_is_the_update(tmp_path,
 def _plugin_entry(**overrides):
     entry = {'filename': 'demo_plugin.py', 'label': None, 'description': None,
              'runtime': 'minqlx', 'version': None, 'sha256': None,
-             'requires_qlsm_version': None}
+             'requires_qlsm_version': None, 'depends_on': []}
     entry.update(overrides)
     return entry
 
@@ -633,6 +637,102 @@ def test_plugin_update_status_by_pool_hash(tmp_path, monkeypatch):
     assert plugin_update_status(_plugin_entry(sha256=None)) == 'unknown'
     assert plugin_update_status(_plugin_entry(filename='absent.py', sha256=matching)) == 'not_installed'
     assert plugin_update_status(_plugin_entry(runtime=None, sha256=matching)) == 'unknown'
+
+
+# --- depends_on: hiding helpers and pulling them in ---
+
+def test_fetch_manifest_normalizes_depends_on(monkeypatch):
+    manifest = {'plugins': [
+        {'filename': 'chat_rcon.py',
+         'depends_on': ['chat_rcon_acl.py', ' chat_rcon_acl.py ', 'has/slash.py', 42, None]},
+        {'filename': 'chat_rcon_acl.py'},
+        {'filename': 'plain.py', 'depends_on': 'not-a-list'},
+    ]}
+    monkeypatch.setattr(
+        plugin_repositories.requests, 'get',
+        lambda url, timeout: FakeResponse(200, json.dumps(manifest).encode()),
+    )
+    plugins = fetch_manifest('https://example.com/repo')['plugins']
+    # Whitespace trimmed, duplicate collapsed, unsafe/non-string entries dropped.
+    assert plugins[0]['depends_on'] == ['chat_rcon_acl.py']
+    assert plugins[1]['depends_on'] == []
+    assert plugins[2]['depends_on'] == []
+
+
+def test_build_inline_manifest_carries_depends_on_into_the_sidecar():
+    # The pool sidecar is what makes the Plugins tab hide the same helper from
+    # its own checkbox list, so it has to travel with the download.
+    entry = {'filename': 'chat_rcon.py', 'label': 'Chat RCON',
+             'depends_on': ['chat_rcon_acl.py']}
+    assert build_inline_manifest(entry) == {
+        'label': 'Chat RCON', 'depends_on': ['chat_rcon_acl.py'],
+    }
+    assert build_inline_manifest({'filename': 'plain.py', 'depends_on': []}) is None
+
+
+def test_dependency_filenames_only_counts_published_entries():
+    plugins = [
+        _plugin_entry(filename='chat_rcon.py', depends_on=['chat_rcon_acl.py', 'absent.py']),
+        _plugin_entry(filename='chat_rcon_acl.py'),
+        _plugin_entry(filename='self_ref.py', depends_on=['self_ref.py']),
+    ]
+    # 'absent.py' isn't in the repo, so there's no row to hide and nothing to
+    # download; a self-reference must not hide its own row.
+    assert dependency_filenames(plugins) == {'chat_rcon_acl.py'}
+
+
+def test_expand_with_dependencies_is_transitive_and_dependency_first():
+    plugins = [
+        _plugin_entry(filename='top.py', depends_on=['mid.py']),
+        _plugin_entry(filename='mid.py', depends_on=['leaf.py']),
+        _plugin_entry(filename='leaf.py'),
+        _plugin_entry(filename='unrelated.py'),
+    ]
+    ordered, pulled_by = expand_with_dependencies(plugins, ['top.py'])
+    assert ordered == ['leaf.py', 'mid.py', 'top.py']
+    # Each helper remembers who dragged it in -- the route needs that to give
+    # a runtime-less helper the runtime of its puller.
+    assert pulled_by == {'mid.py': 'top.py', 'leaf.py': 'mid.py'}
+
+
+def test_expand_with_dependencies_does_not_mark_an_explicit_pick_as_auto():
+    plugins = [
+        _plugin_entry(filename='top.py', depends_on=['helper.py']),
+        _plugin_entry(filename='helper.py'),
+    ]
+    ordered, pulled_by = expand_with_dependencies(plugins, ['top.py', 'helper.py'])
+    assert sorted(ordered) == ['helper.py', 'top.py']
+    assert pulled_by == {}
+
+
+def test_expand_with_dependencies_survives_a_cycle_and_unknown_names():
+    plugins = [
+        _plugin_entry(filename='a.py', depends_on=['b.py']),
+        _plugin_entry(filename='b.py', depends_on=['a.py']),
+    ]
+    ordered, pulled_by = expand_with_dependencies(plugins, ['a.py', 'nowhere.py'])
+    assert set(ordered) == {'a.py', 'b.py', 'nowhere.py'}
+    assert pulled_by == {'b.py': 'a.py'}
+
+
+def test_plugin_update_status_with_dependencies_folds_in_a_stale_helper(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pool = tmp_path / 'data' / 'shared-plugins' / 'minqlx'
+    pool.mkdir(parents=True)
+    (pool / 'top.py').write_bytes(b'top')
+    (pool / 'helper.py').write_bytes(b'old helper')
+    top = _plugin_entry(filename='top.py', depends_on=['helper.py'],
+                        sha256=hashlib.sha256(b'top').hexdigest())
+    fresh_helper = _plugin_entry(filename='helper.py',
+                                 sha256=hashlib.sha256(b'old helper').hexdigest())
+    stale_helper = _plugin_entry(filename='helper.py', sha256='d' * 64)
+
+    assert plugin_update_status_with_dependencies([top, fresh_helper], top) == 'up_to_date'
+    assert plugin_update_status_with_dependencies([top, stale_helper], top) == 'update_available'
+    # The plugin's own absence outranks anything its helper is doing.
+    missing_top = _plugin_entry(filename='absent.py', depends_on=['helper.py'], sha256='e' * 64)
+    assert plugin_update_status_with_dependencies(
+        [missing_top, stale_helper], missing_top) == 'not_installed'
 
 
 # --- addon_update_status ---

@@ -4,6 +4,7 @@ import pytest
 from tests.helpers import make_user, auth_headers
 from ui.models import PluginRepository
 from ui import db
+import ui.plugin_repositories as plugin_repositories
 import ui.routes.plugin_repository_routes as plugin_repository_routes
 from ui.plugin_repositories import PluginRepositoryError
 
@@ -429,6 +430,189 @@ def test_download_mixed_exists_and_other_failure_returns_422(client, app, monkey
     assert response.status_code == 422
     codes = {e['filename']: e.get('code') for e in response.get_json()['errors']}
     assert codes == {'dup.py': 'exists', 'bad.py': None}
+
+
+HELPER_PLUGIN_LIST = [
+    {'filename': 'chat_rcon.py', 'label': 'Chat RCON', 'description': None,
+     'runtime': 'minqlx', 'version': None, 'sha256': None,
+     'requires_qlsm_version': None, 'depends_on': ['chat_rcon_acl.py']},
+    {'filename': 'chat_rcon_acl.py', 'label': 'helper', 'description': None,
+     'runtime': 'minqlx', 'version': None, 'sha256': None,
+     'requires_qlsm_version': None, 'depends_on': []},
+]
+
+
+def test_download_pulls_in_a_declared_helper(client, app, monkeypatch):
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldeps', 'password123')
+    headers = auth_headers(app, 'dldeps')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps', 'https://example.com/deps', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append(filename),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status', lambda entry: 'not_installed')
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon.py']},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    # Helper written first, so the pool never holds a plugin without it.
+    assert calls == ['chat_rcon_acl.py', 'chat_rcon.py']
+    assert body['downloaded'] == ['chat_rcon_acl.py', 'chat_rcon.py']
+    assert body['auto_added'] == ['chat_rcon_acl.py']
+
+
+def test_download_gives_a_runtimeless_helper_its_pullers_runtime(client, app, monkeypatch):
+    """A helper has to land in the same pool as the plugin importing it, so an
+    entry with no runtime of its own inherits the puller's instead of being
+    rejected for a runtime the operator was never shown a picker for."""
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepsruntime', 'password123')
+    headers = auth_headers(app, 'dldepsruntime')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps5', 'https://example.com/deps5', plugins=[
+            {'filename': 'top.py', 'label': None, 'description': None,
+             'runtime': None, 'version': None, 'sha256': None,
+             'requires_qlsm_version': None, 'depends_on': ['helper.py']},
+            {'filename': 'helper.py', 'label': None, 'description': None,
+             'runtime': None, 'version': None, 'sha256': None,
+             'requires_qlsm_version': None, 'depends_on': []},
+        ])
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append((filename, runtime)),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status', lambda entry: 'not_installed')
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['top.py'], 'runtimes': {'top.py': 'minqlxtended'}},
+    )
+    assert response.status_code == 200
+    assert calls == [('helper.py', 'minqlxtended'), ('top.py', 'minqlxtended')]
+
+
+def test_download_skips_an_auto_added_helper_already_up_to_date(client, app, monkeypatch):
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepsuptodate', 'password123')
+    headers = auth_headers(app, 'dldepsuptodate')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps2', 'https://example.com/deps2', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append(filename),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status',
+        lambda entry: 'up_to_date' if entry['filename'] == 'chat_rcon_acl.py' else 'not_installed',
+    )
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon.py']},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    # No overwrite prompt for a helper the operator never picked and that
+    # already matches this repository's copy.
+    assert calls == ['chat_rcon.py']
+    assert body['downloaded'] == ['chat_rcon.py']
+    assert body['skipped'] == ['chat_rcon_acl.py']
+
+
+def test_download_a_skipped_helper_does_not_turn_an_exists_error_into_success(client, app, monkeypatch):
+    """The picked plugin already being in the pool is still an overwrite
+    prompt, even though its helper was silently skipped as already current."""
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepsexists', 'password123')
+    headers = auth_headers(app, 'dldepsexists')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps6', 'https://example.com/deps6', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+        raise PluginRepositoryError(f'{filename} already exists in the local pool.', code='exists')
+
+    monkeypatch.setattr(plugin_repository_routes, 'download_plugin', fake_download)
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status',
+        lambda entry: 'up_to_date' if entry['filename'] == 'chat_rcon_acl.py' else 'update_available',
+    )
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon.py']},
+    )
+    assert response.status_code == 409
+    body = response.get_json()
+    assert [e['filename'] for e in body['errors']] == ['chat_rcon.py']
+    assert body['skipped'] == ['chat_rcon_acl.py']
+
+
+def test_download_an_explicitly_picked_helper_is_not_skipped(client, app, monkeypatch):
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepspicked', 'password123')
+    headers = auth_headers(app, 'dldepspicked')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps3', 'https://example.com/deps3', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append(filename),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status', lambda entry: 'up_to_date')
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon_acl.py'], 'overwrite': True},
+    )
+    assert response.status_code == 200
+    assert calls == ['chat_rcon_acl.py']
+    assert response.get_json()['skipped'] == []
+
+
+def test_updates_folds_a_stale_helper_into_the_plugins_status(client, app, monkeypatch):
+    make_user(app, 'updatesdeps', 'password123')
+    headers = auth_headers(app, 'updatesdeps')
+    with app.app_context():
+        _seeded_repo('Repo Deps4', 'https://example.com/deps4', plugins=HELPER_PLUGIN_LIST)
+
+    # plugin_update_status_with_dependencies() resolves this by module
+    # attribute, so patch it where it lives rather than on the route module.
+    monkeypatch.setattr(
+        plugin_repositories, 'plugin_update_status',
+        lambda entry: 'update_available' if entry['filename'] == 'chat_rcon_acl.py' else 'up_to_date',
+    )
+    response = client.get('/api/plugin-repositories/updates', headers=headers)
+    assert response.status_code == 200
+    statuses = {p['filename']: p['status'] for p in response.get_json()['data'][0]['plugins']}
+    assert statuses['chat_rcon.py'] == 'update_available'
 
 
 def test_download_uses_freshly_fetched_entry_for_inline_manifest(client, app, monkeypatch):

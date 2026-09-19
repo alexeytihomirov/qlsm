@@ -11,16 +11,19 @@ from ui.plugin_pool import resolve_pool_file
 from ui.plugin_push import push_pool_to_hosts
 from ui.plugin_repositories import (
     PLUGIN_FILE_MAX_SIZE,
+    STATUS_UP_TO_DATE,
     PluginRepositoryError,
     addon_update_status,
     build_inline_manifest,
     download_addon,
     download_plugin,
+    expand_with_dependencies,
     fetch_manifest,
     fetch_plugin_source,
     github_raw_bases,
     is_safe_plugin_filename,
     plugin_update_status,
+    plugin_update_status_with_dependencies,
     resolve_manifest_source,
     version_risk,
 )
@@ -215,12 +218,23 @@ def download_plugin_repository_plugins(repo_id):
     that fresh list feeds metadata only, and a plugin missing from it (or a
     failed fetch) falls back to the last-synced entry.
 
+    A selected plugin brings its declared `depends_on` helpers along
+    automatically (transitively, dependencies written first), because those
+    are files a plugin is made of rather than things to pick: the UI does not
+    even list them. A helper with no runtime of its own inherits the runtime
+    of whatever pulled it in -- it has to land in the same pool to be
+    importable at all. An auto-added helper already in the pool at this
+    repository's own version is skipped rather than raised as an overwrite
+    conflict: nothing would change, and making the operator confirm an
+    overwrite for a file they never picked is noise.
+
     `overwrite: true` in the body is required to replace a pool file that
     already exists -- see download_plugin().
 
     When at least one file landed, every ACTIVE host of that file's runtime
     gets a common-pool refresh job queued (`push` in the response lists
-    queued and skipped hosts)."""
+    queued and skipped hosts). `auto_added` and `skipped` in the response say
+    which helpers came along and which needed nothing."""
     repo = db.session.get(PluginRepository, repo_id)
     if not repo:
         return jsonify({'error': {'message': 'Repository not found.'}}), 404
@@ -238,9 +252,8 @@ def download_plugin_repository_plugins(repo_id):
 
     overwrite = bool(data.get('overwrite'))
 
-    known_by_filename = {}
-    for entry in repo.to_dict()['plugins']:
-        known_by_filename[entry['filename']] = entry
+    plugins = repo.to_dict()['plugins']
+    known_by_filename = {entry['filename']: entry for entry in plugins}
 
     # Re-read the repo manifest so the cvars written next to each .py match
     # the .py being downloaded right now, not whatever the last sync saw.
@@ -252,19 +265,41 @@ def download_plugin_repository_plugins(repo_id):
     except PluginRepositoryError:
         fresh_by_filename = {}
 
-    downloaded, errors = [], []
+    downloaded, errors, skipped = [], [], []
     downloaded_runtimes = set()
+    selected = []
     for filename in data['filenames']:
-        if not isinstance(filename, str):
+        if isinstance(filename, str):
+            selected.append(filename)
+        else:
             errors.append({'filename': filename, 'error': 'Not a string.'})
-            continue
+
+    ordered, pulled_by = expand_with_dependencies(plugins, selected)
+
+    def runtime_for(filename):
+        """A file's own runtime, else the one its puller resolved to -- a
+        helper has to land in the same pool as the plugin importing it."""
+        seen = set()
+        while filename and filename not in seen:
+            seen.add(filename)
+            runtime = _resolve_runtime(known_by_filename.get(filename),
+                                      picked_runtimes.get(filename))
+            if runtime is not None:
+                return runtime
+            filename = pulled_by.get(filename)
+        return None
+
+    for filename in ordered:
         entry = known_by_filename.get(filename)
-        runtime = _resolve_runtime(entry, picked_runtimes.get(filename))
+        runtime = runtime_for(filename)
         if runtime is None:
             errors.append({
                 'filename': filename,
                 'error': 'No runtime declared for this plugin. Pick one for it before downloading.',
             })
+            continue
+        if filename in pulled_by and plugin_update_status(entry) == STATUS_UP_TO_DATE:
+            skipped.append(filename)
             continue
         try:
             download_plugin(
@@ -285,7 +320,12 @@ def download_plugin_repository_plugins(repo_id):
             f"into the local pool (overwrite={overwrite}): {', '.join(downloaded)}"
         )
 
-    body = {'downloaded': downloaded, 'errors': errors}
+    body = {
+        'downloaded': downloaded,
+        'errors': errors,
+        'auto_added': sorted(pulled_by),
+        'skipped': skipped,
+    }
     if downloaded:
         # A file in the pool is invisible to a host until its common pool is
         # refreshed, so push right away to every ACTIVE host of that runtime.
@@ -293,6 +333,11 @@ def download_plugin_repository_plugins(repo_id):
         # tells the operator to run Check for Updates on those later.
         body['push'] = push_pool_to_hosts(downloaded_runtimes)
         status = 207 if errors else 200
+    elif not errors:
+        # Guard, not a real path: a picked file is never skipped, so something
+        # always downloads or errors. Without this, `all([])` below would turn
+        # an empty error list into a 409 overwrite prompt with nothing in it.
+        status = 200
     elif all(e.get('code') == 'exists' for e in errors):
         status = 409  # the UI turns this body into an overwrite prompt
     else:
@@ -401,7 +446,11 @@ def install_plugin_repository_addon(repo_id):
 def plugin_repository_updates():
     """Update status of every synced manifest entry against what's installed
     locally. Purely local (pool hashes, installed addon manifests) -- no
-    network; "Sync" is what refreshes the remote side of the comparison."""
+    network; "Sync" is what refreshes the remote side of the comparison.
+
+    A plugin's status folds in its `depends_on` helpers, which have no row of
+    their own to show a badge on -- see
+    plugin_update_status_with_dependencies()."""
     packages_dir = current_app.config.get('ADDON_PACKAGES_DIR')
     payload = []
     for repo in PluginRepository.query.order_by(PluginRepository.name).all():
@@ -411,7 +460,7 @@ def plugin_repository_updates():
             'plugins': [{
                 'filename': entry['filename'],
                 'runtime': entry.get('runtime'),
-                'status': plugin_update_status(entry),
+                'status': plugin_update_status_with_dependencies(cached['plugins'], entry),
             } for entry in cached['plugins']],
             'addons': [addon_update_status(entry, packages_dir) for entry in cached['addons']],
         })
