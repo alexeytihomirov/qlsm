@@ -18,7 +18,9 @@ from ui.plugin_repositories import (
     expand_with_dependencies,
     fetch_manifest,
     fetch_plugin_source,
+    is_safe_package_relpath,
     is_safe_plugin_filename,
+    package_update_status,
     plugin_update_status,
     plugin_update_status_with_dependencies,
     version_risk,
@@ -65,6 +67,7 @@ def test_fetch_manifest_parses_valid_entries(monkeypatch):
         'sha256': None,
         'requires_qlsm_version': '1.0.0',
         'depends_on': [],
+        'package_files': {},
     }]
 
 
@@ -733,6 +736,196 @@ def test_plugin_update_status_with_dependencies_folds_in_a_stale_helper(tmp_path
     missing_top = _plugin_entry(filename='absent.py', depends_on=['helper.py'], sha256='e' * 64)
     assert plugin_update_status_with_dependencies(
         [missing_top, stale_helper], missing_top) == 'not_installed'
+
+
+# --- package_files: folder-style plugin entries ---
+
+def test_fetch_manifest_normalizes_package_files(monkeypatch):
+    good_sha = 'a' * 64
+    manifest = {'plugins': [
+        {'filename': 'match_restore.py', 'package_files': {
+            'restore/__init__.py': good_sha.upper(),
+            'restore/codec.py': good_sha,
+            'no_subdir.py': good_sha,        # rejected: not under a subdirectory
+            'restore/../evil.py': good_sha,  # rejected: escapes via ..
+            'restore/bad.py': 'not-a-hash',  # rejected: not a valid sha256
+        }},
+    ]}
+    monkeypatch.setattr(
+        plugin_repositories.requests, 'get',
+        lambda url, timeout: FakeResponse(200, json.dumps(manifest).encode()),
+    )
+    plugins = fetch_manifest('https://example.com/repo')['plugins']
+    assert plugins[0]['package_files'] == {
+        'restore/__init__.py': good_sha,
+        'restore/codec.py': good_sha,
+    }
+
+
+def test_fetch_manifest_drops_oversized_package_files_entirely(monkeypatch):
+    huge = {f'restore/f{i}.py': 'a' * 64 for i in range(plugin_repositories.PACKAGE_MAX_FILES + 1)}
+    manifest = {'plugins': [{'filename': 'match_restore.py', 'package_files': huge}]}
+    monkeypatch.setattr(
+        plugin_repositories.requests, 'get',
+        lambda url, timeout: FakeResponse(200, json.dumps(manifest).encode()),
+    )
+    plugins = fetch_manifest('https://example.com/repo')['plugins']
+    # A partial member list would ship a broken package, so the whole field
+    # is dropped rather than truncated.
+    assert plugins[0]['package_files'] == {}
+
+
+@pytest.mark.parametrize('path, expected', [
+    ('restore/codec.py', True),
+    ('restore/sub/deep.py', True),
+    ('bare.py', False),
+    ('../evil.py', False),
+    ('restore/../evil.py', False),
+    ('/etc/passwd', False),
+    ('restore/.hidden.py', False),
+    ('C:/restore/codec.py', False),
+    ('restore/bad name.py', False),
+    ('', False),
+    (None, False),
+])
+def test_is_safe_package_relpath(path, expected):
+    assert is_safe_package_relpath(path) is expected
+
+
+def test_download_plugin_writes_package_files_alongside_the_main_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    def fake_get(url, timeout):
+        if url.endswith('.ql-plugin.json'):
+            return FakeResponse(404, b'')
+        if url.endswith('restore/__init__.py'):
+            return FakeResponse(200, b'')
+        if url.endswith('restore/codec.py'):
+            return FakeResponse(200, b'def encode(): pass')
+        return FakeResponse(200, b'import restore')
+
+    monkeypatch.setattr(plugin_repositories.requests, 'get', fake_get)
+    download_plugin(
+        'https://example.com/repo', 'match_restore.py', 'minqlx',
+        package_files={'restore/__init__.py': 'x', 'restore/codec.py': 'y'},
+    )
+
+    pool = tmp_path / 'data' / 'shared-plugins' / 'minqlx'
+    assert (pool / 'match_restore.py').read_bytes() == b'import restore'
+    assert (pool / 'restore' / '__init__.py').read_bytes() == b''
+    assert (pool / 'restore' / 'codec.py').read_bytes() == b'def encode(): pass'
+
+
+def test_download_plugin_rejects_unsafe_package_paths(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        plugin_repositories.requests, 'get',
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError('must not fetch anything')),
+    )
+    for bad in ('../evil.py', 'bare.py', '/abs/path.py', 'restore/../evil.py'):
+        with pytest.raises(PluginRepositoryError):
+            download_plugin('https://example.com/repo', 'match_restore.py', 'minqlx',
+                            package_files={bad: 'x'})
+
+
+def test_download_plugin_package_conflict_names_every_conflicting_path_and_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    restore = tmp_path / 'data' / 'shared-plugins' / 'minqlx' / 'restore'
+    restore.mkdir(parents=True)
+    (restore / 'codec.py').write_text('old codec')
+    # match_restore.py itself was never downloaded -- only this one member exists.
+
+    def fake_get(url, timeout):
+        if url.endswith('.ql-plugin.json'):
+            return FakeResponse(404, b'')
+        if url.endswith('restore/codec.py'):
+            return FakeResponse(200, b'new codec')
+        if url.endswith('restore/__init__.py'):
+            return FakeResponse(200, b'')
+        return FakeResponse(200, b'import restore')
+
+    monkeypatch.setattr(plugin_repositories.requests, 'get', fake_get)
+    with pytest.raises(PluginRepositoryError) as excinfo:
+        download_plugin(
+            'https://example.com/repo', 'match_restore.py', 'minqlx',
+            package_files={'restore/__init__.py': 'x', 'restore/codec.py': 'y'},
+        )
+    assert excinfo.value.code == 'exists'
+    assert 'restore/codec.py' in str(excinfo.value)
+    # All-or-nothing: the member that WOULD have been new is not written either.
+    assert not (tmp_path / 'data' / 'shared-plugins' / 'minqlx' / 'match_restore.py').exists()
+    assert not (restore / '__init__.py').exists()
+    assert (restore / 'codec.py').read_text() == 'old codec'
+
+
+def test_download_plugin_package_overwrite_true_replaces_changed_members(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    restore = tmp_path / 'data' / 'shared-plugins' / 'minqlx' / 'restore'
+    restore.mkdir(parents=True)
+    (restore / 'codec.py').write_text('old codec')
+
+    def fake_get(url, timeout):
+        if url.endswith('.ql-plugin.json'):
+            return FakeResponse(404, b'')
+        if url.endswith('restore/codec.py'):
+            return FakeResponse(200, b'new codec')
+        if url.endswith('restore/__init__.py'):
+            return FakeResponse(200, b'')
+        return FakeResponse(200, b'import restore')
+
+    monkeypatch.setattr(plugin_repositories.requests, 'get', fake_get)
+    download_plugin(
+        'https://example.com/repo', 'match_restore.py', 'minqlx', overwrite=True,
+        package_files={'restore/__init__.py': 'x', 'restore/codec.py': 'y'},
+    )
+    assert (restore / 'codec.py').read_text() == 'new codec'
+    assert (restore / '__init__.py').read_bytes() == b''
+    assert (tmp_path / 'data' / 'shared-plugins' / 'minqlx' / 'match_restore.py').read_bytes() == b'import restore'
+
+
+def test_package_update_status_is_crlf_insensitive(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    restore = tmp_path / 'data' / 'shared-plugins' / 'minqlx' / 'restore'
+    restore.mkdir(parents=True)
+    (restore / 'codec.py').write_bytes(b'def encode(): pass\r\n')
+    declared = hashlib.sha256(b'def encode(): pass\n').hexdigest()
+    assert package_update_status('minqlx', {'restore/codec.py': declared}) == 'up_to_date'
+
+
+def test_package_update_status_missing_or_stale_member_is_an_update():
+    assert package_update_status('minqlx', {}) == 'up_to_date'
+    assert package_update_status('minqlx', {'restore/codec.py': 'a' * 64}) == 'update_available'
+
+
+def test_plugin_update_status_folds_in_package_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pool = tmp_path / 'data' / 'shared-plugins' / 'minqlx'
+    restore = pool / 'restore'
+    restore.mkdir(parents=True)
+    (pool / 'match_restore.py').write_bytes(b'import restore\n')
+    (restore / 'codec.py').write_bytes(b'def encode(): pass\n')
+
+    main_sha = hashlib.sha256(b'import restore\n').hexdigest()
+    codec_sha = hashlib.sha256(b'def encode(): pass\n').hexdigest()
+
+    up_to_date = _plugin_entry(filename='match_restore.py', sha256=main_sha,
+                               package_files={'restore/codec.py': codec_sha})
+    assert plugin_update_status(up_to_date) == 'up_to_date'
+
+    stale_member = _plugin_entry(filename='match_restore.py', sha256=main_sha,
+                                 package_files={'restore/codec.py': 'c' * 64})
+    assert plugin_update_status(stale_member) == 'update_available'
+
+    missing_member = _plugin_entry(filename='match_restore.py', sha256=main_sha,
+                                   package_files={'restore/codec.py': codec_sha,
+                                                  'restore/draft.py': 'd' * 64})
+    assert plugin_update_status(missing_member) == 'update_available'
+
+    # The main file itself missing still outranks package_files -- there is
+    # nothing installed to be "up to date" at all.
+    absent_main = _plugin_entry(filename='absent.py', sha256=main_sha,
+                                package_files={'restore/codec.py': codec_sha})
+    assert plugin_update_status(absent_main) == 'not_installed'
 
 
 # --- addon_update_status ---

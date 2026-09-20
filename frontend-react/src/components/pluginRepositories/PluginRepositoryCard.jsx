@@ -302,6 +302,18 @@ function PluginRepositoryCard({ repo, updates, onSync, onDelete, onDownloaded, s
                             <span className="font-mono">{helpersFor.get(plugin.filename).join(', ')}</span>
                           </div>
                         )}
+                        {/* A package-style entry (e.g. match_restore.py + its restore/
+                            folder) brings extra files that aren't plugins of their own
+                            either -- named here for the same reason helpers are. */}
+                        {Object.keys(plugin.package_files || {}).length > 0 && (
+                          <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                            Includes {Object.keys(plugin.package_files).length} file
+                            {Object.keys(plugin.package_files).length === 1 ? '' : 's'} in{' '}
+                            <span className="font-mono">
+                              {Object.keys(plugin.package_files)[0].split('/')[0]}/
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="users-td">
                         {plugin.runtime ? (
