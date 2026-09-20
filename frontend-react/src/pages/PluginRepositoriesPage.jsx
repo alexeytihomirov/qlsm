@@ -13,6 +13,7 @@ import { useNotification } from '../components/NotificationProvider';
 import ConfirmationModal from '../components/ConfirmationModal';
 import AddPluginRepositoryModal from '../components/pluginRepositories/AddPluginRepositoryModal';
 import PluginRepositoryCard from '../components/pluginRepositories/PluginRepositoryCard';
+import RestartQlsmBanner from '../components/system/RestartQlsmBanner';
 
 function PluginRepositoriesPage() {
   const [repos, setRepos] = useState([]);
@@ -23,6 +24,9 @@ function PluginRepositoriesPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState(null);
   const [syncingId, setSyncingId] = useState(null);
+  // An addon installed from here is inert until qlsm restarts, same as one
+  // uploaded on the Addons page.
+  const [addonNeedsRestart, setAddonNeedsRestart] = useState(false);
 
   const { showSuccess, showError } = useNotification();
 
@@ -145,6 +149,10 @@ function PluginRepositoriesPage() {
         </p>
       </div>
 
+      {addonNeedsRestart && (
+        <RestartQlsmBanner message="An addon was installed. QLSM needs a restart before it takes effect." />
+      )}
+
       {loading ? (
         <div className="users-loading-state">
           <Loader2 className="users-loading-spinner" strokeWidth={2} />
@@ -166,6 +174,7 @@ function PluginRepositoriesPage() {
               onSync={handleSync}
               onDelete={openDeleteModal}
               onDownloaded={() => fetchRepos({ silent: true })}
+              onAddonInstalled={() => setAddonNeedsRestart(true)}
             />
           ))}
         </div>

@@ -1238,6 +1238,20 @@ The engine cvars and console commands the config editor's autocomplete is built 
 - `qlx_*` plugin cvars are deliberately **not** in this catalog — those come from the plugin manifests of the server being edited (`ui/plugin_manifest.py`).
 - A missing or unreadable catalog file returns an empty catalog (`version: 0`, `etag: "empty"`) rather than an error, so autocomplete degrades to plugin cvars instead of breaking the editor.
 
+## System
+
+qlsm's own process, not the servers it manages. Used to activate addons: they register during `create_app()`, and Flask cannot hot-add a blueprint to a live app, so an addon installed at runtime stays `pending_restart` until the process builds the app again.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/system/info` | GET | `{data: {restart_supported}}` — whether this deployment can be restarted from the UI |
+| `/system/restart` | POST | Ask every qlsm app process to come back on freshly loaded code (`202`) |
+
+- **How it works.** The endpoint only touches a stamp file (`QLSM_RESTART_STAMP`, default `/app/data/.restart-stamp`). `restart-watcher.sh`, started in the background by `entrypoint.sh`, polls it in every app container and signals its own PID 1: `SIGHUP` for web (gunicorn replaces its worker, the container keeps running), `SIGTERM` for worker and poller (warm shutdown, then `restart: unless-stopped` brings them back). `./data` is bind-mounted into all app containers, so one stamp reaches all of them — no control channel, no subscriber code per service, and no `docker.sock` in the web container (see `addons/TRUST.md`).
+- **Not everywhere.** `restart_supported` is false unless `entrypoint.sh` set `QLSM_SUPERVISED=1`, i.e. unless something will actually restart the process. Under `run-dev.sh` the endpoint answers `409` and the UI hides the button, because a restart there would just end qlsm.
+- **No watcher for rcon**: `python -m rcon_service` never calls `create_app()`, so addons do not live there.
+- Equivalent by hand on the Docker host: `touch data/.restart-stamp`.
+
 ## Settings
 
 | Endpoint | Method | Description |
