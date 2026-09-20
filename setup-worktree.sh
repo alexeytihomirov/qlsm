@@ -169,4 +169,7 @@ if [[ "$first_run" -eq 1 ]]; then
     warn "Default credentials are $default_admin_user/admin; change the password after first login."
 fi
 
+log "Installing git hooks (unpushed-commit reminder)."
+bash scripts/git-hooks/install.sh || warn "Could not install git hooks."
+
 log "Worktree setup complete. Run ./run-dev.sh to start development services."

@@ -8,6 +8,26 @@ This document outlines the version control strategy and coding practices for the
 *   **Repository:** Central repository recommended (e.g., named `qlds-ui`).
 *   **Branching:** Feature branching workflow (e.g., `feature/list-instances`, `feature/edit-config`, `fix/auth-bug`).
 
+### Unpushed commits are invisible to the deploy
+
+The deploy pipeline builds from `origin/main`. A commit that only exists in the
+local clone produces no error anywhere - the build runs green on the previous
+code, and "qlsm was updated" silently means nothing changed. Merging a feature
+branch into `main` and stopping there is the usual way this happens, because a
+fast-forward merge doesn't feel like "I made a commit".
+
+Two guards against it, both warn-only (nothing is ever blocked):
+
+*   `scripts/check-unpushed.sh` - run it before calling a qlsm change done.
+    It prints the unpushed commits and exits `1` when `main` is ahead of
+    `origin/main`, so it can be used as a gate. On a feature branch it is a
+    no-op, since a branch is supposed to be local until it is merged.
+*   `scripts/git-hooks/post-commit` and `post-merge` - the same report, printed
+    automatically right after a commit or a merge on `main`. Enable them once
+    per clone with `scripts/git-hooks/install.sh` (it sets `core.hooksPath`,
+    which every worktree of the clone then shares); `setup-worktree.sh` runs it
+    for you.
+
 ## Coding Practices & Principles
 
 *   **Descriptive Naming:** Clear, purpose-indicating names for files, variables, functions.
