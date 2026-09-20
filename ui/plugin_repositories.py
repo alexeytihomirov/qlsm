@@ -51,6 +51,20 @@ repository list offers plugins, not the files they happen to be made of. It
 also lands in the downloaded sidecar, which is what makes the Plugins tab
 hide the same helper from its own checkbox list (pluginSelection.js).
 
+`package_files` is for a plugin that needs more than loadable .py modules --
+a helper *folder* sitting next to `filename` that its imports reach into
+directly (e.g. match_restore.py does `from restore import codec`, so it
+needs a whole restore/ package on disk beside it, not just another root-level
+.py `depends_on` could name). Shape: {"<relative/path>": "<sha256 of the
+LF-normalized file>", ...}, one entry per file under the package folder,
+always at least one directory deep -- a root-level helper module belongs in
+`depends_on` instead, not here. Every declared path is fetched from
+`<base_url>/<relative/path>` and written into the operator pool at that same
+relative path alongside `filename` (see download_plugin). Update detection
+for these files is a tree diff (dependency_filenames/expand_with_dependencies
+don't apply here -- they're not separate manifest entries) -- see
+package_update_status.
+
 A declared `sha256` is what update detection runs on (plugin_update_status /
 addon_update_status): no hash in the manifest means qlsm cannot tell whether
 the repo's copy changed without downloading it, so the entry reports status
@@ -79,8 +93,9 @@ from ui.addons.manifest import (
     read_manifest as read_addon_manifest,
 )
 from ui.plugin_manifest import PLUGIN_MANIFEST_MAX_SIZE
-from ui.plugin_pool import operator_pool_dir, resolve_pool_file
+from ui.plugin_pool import operator_pool_dir, resolve_pool_file, resolve_pool_path
 from ui.runtime import is_valid_runtime, normalize_runtime
+from ui.update_checks import diff_trees
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +103,11 @@ MANIFEST_FILENAME = 'qlsm-plugins.json'           # legacy, plugins only
 REPO_MANIFEST_FILENAME = 'qlsm-repository.json'   # current, plugins + addons
 MANIFEST_MAX_SIZE = 256 * 1024
 PLUGIN_FILE_MAX_SIZE = 512 * 1024
+# A package-style entry's declared file count (see `package_files` in the
+# module docstring). Generous for a helper folder like match_restore.py's
+# restore/ (five files); a manifest entry needing more than this is most
+# likely an addon .zip mistakenly listed as a plugin.
+PACKAGE_MAX_FILES = 64
 FETCH_TIMEOUT_SECONDS = 10
 
 _SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
@@ -96,11 +116,41 @@ _SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 # separators, nothing but what a valid module name and this pool allow.
 _FILENAME_RE = re.compile(r'^[A-Za-z0-9_\-]+\.py$')
 
+# One path segment of a package_files relative path -- same charset as a
+# plugin filename's own stem, but without forcing a .py extension (a package
+# can carry non-Python members, e.g. data files).
+_PACKAGE_SEGMENT_RE = re.compile(r'^[A-Za-z0-9_.\-]+$')
+
 
 def is_safe_plugin_filename(filename):
     """A bare `<name>.py` -- no path separators, no dots besides the
     extension. Anything else never reaches a pool path."""
     return isinstance(filename, str) and bool(_FILENAME_RE.match(filename))
+
+
+def is_safe_package_relpath(path):
+    """A forward-slash relative path for one member of a package_files entry
+    (see module docstring), or False.
+
+    Same reject-don't-sanitize stance as ui.addons.install._safe_member_path:
+    no absolute path, no drive-qualified segment, no `..` or empty segment,
+    no hidden (dot-prefixed) segment. Also requires at least one subdirectory
+    -- a root-level helper module is what `depends_on` is for, and allowing
+    both to name the same kind of file here would just duplicate it.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    parts = path.replace('\\', '/').split('/')
+    if len(parts) < 2:
+        return False
+    for part in parts:
+        if not part or part in ('.', '..') or part.startswith('.'):
+            return False
+        if len(part) == 2 and part[1] == ':':
+            return False  # drive-qualified segment, e.g. "C:"
+        if not _PACKAGE_SEGMENT_RE.match(part):
+            return False
+    return True
 
 # The part of a repo manifest entry that becomes the plugin's pool sidecar
 # (<plugin>.ql-plugin.json). Everything else on an entry (filename, runtime,
@@ -240,6 +290,39 @@ def _optional_filename_list(entry, key):
     return out
 
 
+def _optional_package_files(entry):
+    """{relpath: sha256} for a package-style entry's extra members (see
+    `package_files` in the module docstring), or {} when the field is absent,
+    malformed, or oversized.
+
+    Same "one bad field is dropped, not the whole entry" rule as everywhere
+    else in this module: an individual member with an unsafe path or an
+    unparseable hash is skipped rather than failing the entry. An entry
+    declaring more members than PACKAGE_MAX_FILES drops the whole field
+    instead of truncating it -- a partial member list would silently ship an
+    incomplete package.
+    """
+    value = entry.get('package_files')
+    if not isinstance(value, dict):
+        return {}
+    if len(value) > PACKAGE_MAX_FILES:
+        logger.warning(
+            f"package_files for {entry.get('filename')!r} has more than "
+            f"{PACKAGE_MAX_FILES} entries -- dropping the whole package tree"
+        )
+        return {}
+    out = {}
+    for relpath, sha in value.items():
+        if not is_safe_package_relpath(relpath):
+            continue
+        if not isinstance(sha, str):
+            continue
+        sha = sha.strip().lower()
+        if _SHA256_RE.match(sha):
+            out[relpath] = sha
+    return out
+
+
 def _zip_path(entry):
     """The addon entry's `zip` as a safe relative path, or None. Same
     reject-don't-sanitize stance as addons/install.py's _safe_member_path."""
@@ -272,6 +355,7 @@ def _normalize_plugins(entries):
             'sha256': _optional_sha256(entry),
             'requires_qlsm_version': _optional_str(entry, 'requires_qlsm_version'),
             'depends_on': _optional_filename_list(entry, 'depends_on'),
+            'package_files': _optional_package_files(entry),
         }
         # Inline sidecar metadata: kept only when well-formed, and only added
         # when present so plain entries keep their existing shape.
@@ -465,7 +549,7 @@ def version_risk(requires_qlsm_version, current_qlsm_version=None):
     }
 
 
-def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
     """Fetch <base_url>/<filename> over HTTP and write it into the local pool
     for `runtime`, together with its `.ql-plugin.json` sidecar: the repo's own
     separate sidecar file when it ships a parseable one, else
@@ -477,6 +561,16 @@ def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifes
     PluginRepositoryError if the plugin source itself can't be fetched; a
     missing, malformed or non-object separate sidecar is not an error.
 
+    `package_files` is a package-style entry's declared {relpath: sha256}
+    (see module docstring) -- every relpath is fetched from
+    `<base_url>/<relpath>` and written into the operator pool at that same
+    relative path, landing next to `filename` the way match_restore.py needs
+    its restore/ package to. The whole download is all-or-nothing: `filename`
+    and every package member are checked against the merged pool up front,
+    and if ANY of them differs from what's already there, nothing is written
+    and PluginRepositoryError(code='exists') names every conflicting path --
+    a package is never left with some members updated and others stale.
+
     Writes always land in the operator tier (data/shared-plugins/<runtime>/);
     the built-in tier inside the image is never modified. Refuses to shadow a
     file already in the merged pool -- an earlier download, or a bundled
@@ -485,39 +579,77 @@ def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifes
     then wins over the bundled one on every host and breaks the manifest.json
     sha256 baseline, so it has to be a deliberate choice. The caller (the
     route) is the one that turns this into an operator-facing
-    confirm-and-retry. Sidecar handling is scoped to the operator tier: a
-    bundled plugin's own sidecar stays where it is, and read_plugin_manifest()
+    confirm-and-retry. Sidecar handling is scoped to the operator tier and to
+    `filename` alone -- package members have no sidecar of their own -- and
+    a bundled plugin's own sidecar stays where it is, and read_plugin_manifest()
     still falls back to it when the download brings none of its own.
     """
     if not is_safe_plugin_filename(filename):
         raise PluginRepositoryError(f"Refusing to download unsafe filename: {filename!r}")
+    package_files = package_files or {}
+    for relpath in package_files:
+        if not is_safe_package_relpath(relpath):
+            raise PluginRepositoryError(f"Refusing to download unsafe package path: {relpath!r}")
 
     pool_dir = operator_pool_dir(runtime)
     dest_path = os.path.join(pool_dir, filename)
 
-    source = fetch_plugin_source(base_url, filename)
-    existing_path = resolve_pool_file(runtime, filename)
-    if existing_path and not overwrite:
-        # Same code already in the pool (ignoring CRLF/LF) is "up to date",
-        # not a collision: keep the local copy as is. Otherwise the operator
-        # decides via the prompt.
-        with open(existing_path, 'rb') as f:
-            existing = f.read()
-        if _normalize_eol(existing) != _normalize_eol(source):
-            raise PluginRepositoryError(
-                f"{filename} already exists in the local pool.", code='exists',
-            )
-        if existing_path != dest_path:
-            # The match is the built-in copy. Writing a sidecar next to a
-            # .py that isn't there would leave an orphan in the operator
-            # tier that shadows the bundled sidecar for every later release.
-            # An earlier operator download, by contrast, still gets its
-            # sidecar synced below.
-            return
+    # (name, dest path, merged-pool path if already present) for the main
+    # file plus every declared package member, so both can be validated and
+    # written by the same loop below.
+    members = [(filename, dest_path, resolve_pool_file(runtime, filename))]
+    for relpath in package_files:
+        members.append((
+            relpath,
+            os.path.join(pool_dir, *relpath.split('/')),
+            resolve_pool_path(runtime, relpath),
+        ))
+
+    fetched = {}
+    conflicts = []
+    for name, member_dest, existing_path in members:
+        blob = fetch_plugin_source(base_url, name)
+        fetched[name] = blob
+        if existing_path and not overwrite:
+            # Same code already in the pool (ignoring CRLF/LF) is "up to
+            # date", not a collision: keep the local copy as is. Otherwise
+            # the operator decides via the prompt.
+            with open(existing_path, 'rb') as f:
+                existing = f.read()
+            if _normalize_eol(existing) != _normalize_eol(blob):
+                conflicts.append(name)
+
+    if conflicts:
+        raise PluginRepositoryError(
+            f"{', '.join(conflicts)} already exist{'s' if len(conflicts) == 1 else ''} "
+            f"in the local pool.", code='exists',
+        )
+
+    main_existing = members[0][2]
+    if not overwrite and main_existing and main_existing != dest_path:
+        # The main file matched the built-in copy. Writing a sidecar next to
+        # a .py that isn't there would leave an orphan in the operator tier
+        # that shadows the bundled sidecar for every later release. An
+        # earlier operator download, by contrast, still gets its sidecar
+        # synced below. Package members (if any) are still written normally
+        # below -- they have no sidecar to skip.
+        skip_sidecar = True
     else:
-        os.makedirs(pool_dir, exist_ok=True)
-        with open(dest_path, 'wb') as f:
-            f.write(source)
+        skip_sidecar = False
+
+    for name, member_dest, existing_path in members:
+        blob = fetched[name]
+        if existing_path:
+            with open(existing_path, 'rb') as f:
+                existing = f.read()
+            if _normalize_eol(existing) == _normalize_eol(blob):
+                continue  # already current somewhere in the merged pool
+        os.makedirs(os.path.dirname(member_dest), exist_ok=True)
+        with open(member_dest, 'wb') as f:
+            f.write(blob)
+
+    if skip_sidecar:
+        return
 
     manifest_filename = filename[:-len('.py')] + '.ql-plugin.json'
     manifest_path = os.path.join(pool_dir, manifest_filename)
@@ -590,6 +722,49 @@ STATUS_UPDATE_AVAILABLE = 'update_available'
 STATUS_UNKNOWN = 'unknown'
 
 
+def _hash_pool_relpath(runtime, relpath):
+    """LF-normalized sha256 of one package member's merged-pool copy, or None
+    if it isn't there in either tier. Same normalization plugin_update_status
+    applies to the main file, generalized to a path that may sit under a
+    subdirectory (see resolve_pool_path)."""
+    path = resolve_pool_path(runtime, relpath)
+    if path is None:
+        return None
+    try:
+        with open(path, 'rb') as f:
+            content = f.read()
+    except OSError:
+        return None
+    return hashlib.sha256(_normalize_eol(content)).hexdigest()
+
+
+def package_update_status(runtime, package_files):
+    """STATUS_UP_TO_DATE / STATUS_UPDATE_AVAILABLE for a package-style
+    entry's declared members (see `package_files` in the module docstring)
+    against the merged local pool.
+
+    Built as a tree diff (ui.update_checks.diff_trees) between the manifest's
+    declared {relpath: sha256} and the same shape computed locally, LF
+    normalized the same way a single file's own sha256 comparison is --
+    ui.update_checks.hash_local_tree() itself has no such normalization knob
+    (it hashes raw bytes, which is fine for its own local-vs-local instance
+    callers but not for comparing against a hash the repository computed from
+    a possibly-CRLF source), so the local side is hashed here instead of
+    through that function. A relpath missing from the local pool entirely
+    reads the same as one with different content -- both mean "not current".
+    An empty `package_files` is trivially up to date -- nothing declared, so
+    nothing to be behind on.
+    """
+    if not package_files:
+        return STATUS_UP_TO_DATE
+    local = {}
+    for relpath in package_files:
+        digest = _hash_pool_relpath(runtime, relpath)
+        if digest is not None:
+            local[relpath] = digest
+    return STATUS_UP_TO_DATE if not diff_trees(package_files, local) else STATUS_UPDATE_AVAILABLE
+
+
 def plugin_update_status(entry):
     """One normalized repo plugin entry vs the local pool, by content hash.
 
@@ -602,24 +777,33 @@ def plugin_update_status(entry):
     there is nothing to compare against. Note this is name-based: a
     same-named file the operator authored themselves will honestly show as
     differing from the repository's copy.
+
+    A package-style entry (see `package_files`) is also only "up to date"
+    when every declared member matches too -- package_update_status() does
+    that half of the comparison as a tree diff.
     """
     runtime = entry.get('runtime')
     if not is_valid_runtime(runtime):
         return STATUS_UNKNOWN
-    path = resolve_pool_file(normalize_runtime(runtime), entry['filename'])
+    runtime = normalize_runtime(runtime)
+    path = resolve_pool_file(runtime, entry['filename'])
     if path is None:
         return STATUS_NOT_INSTALLED
     declared = entry.get('sha256')
-    if not declared:
+    package_files = entry.get('package_files') or {}
+    if not declared and not package_files:
         return STATUS_UNKNOWN
-    try:
-        with open(path, 'rb') as f:
-            content = f.read()
-    except OSError:
-        return STATUS_NOT_INSTALLED
-    return (STATUS_UP_TO_DATE
-            if hashlib.sha256(_normalize_eol(content)).hexdigest() == declared
-            else STATUS_UPDATE_AVAILABLE)
+    if declared:
+        try:
+            with open(path, 'rb') as f:
+                content = f.read()
+        except OSError:
+            return STATUS_NOT_INSTALLED
+        if hashlib.sha256(_normalize_eol(content)).hexdigest() != declared:
+            return STATUS_UPDATE_AVAILABLE
+    if package_update_status(runtime, package_files) != STATUS_UP_TO_DATE:
+        return STATUS_UPDATE_AVAILABLE
+    return STATUS_UP_TO_DATE
 
 
 def plugin_update_status_with_dependencies(plugins, entry):
