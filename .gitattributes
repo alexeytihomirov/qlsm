@@ -20,3 +20,8 @@ ql-assets/data/minqlx-plugins/**/*.py text eol=lf
 ql-assets/data/minqlx-plugins/**/*.ql-plugin.json text eol=lf
 configs/presets/_builtin/default/scripts/**/*.py text eol=lf
 configs/presets/_builtin/default/scripts/**/*.ql-plugin.json text eol=lf
+
+# Git hooks are extensionless, so *.sh above doesn't match them. A CRLF
+# shebang makes them silently not run (or fail) on Linux checkouts.
+scripts/git-hooks/post-commit text eol=lf
+scripts/git-hooks/post-merge text eol=lf

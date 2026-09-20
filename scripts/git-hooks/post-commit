@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Remind (never block) that main has commits the deploy pipeline cannot see.
+# Installed by scripts/git-hooks/install.sh via core.hooksPath.
+set -uo pipefail
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[[ -x "$top/scripts/check-unpushed.sh" ]] || exit 0
+"$top/scripts/check-unpushed.sh" --hook || true
+exit 0
