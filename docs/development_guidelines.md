@@ -16,17 +16,26 @@ code, and "qlsm was updated" silently means nothing changed. Merging a feature
 branch into `main` and stopping there is the usual way this happens, because a
 fast-forward merge doesn't feel like "I made a commit".
 
-Two guards against it, both warn-only (nothing is ever blocked):
+Do not trust `git status` for this. The monorepo's `ql-local/git-push.sh`
+pushes to a tokenised URL rather than to the named remote, and git only updates
+`refs/remotes/origin/main` when you push to the remote *by name*. After a
+perfectly successful push `git status` therefore keeps reporting "ahead of
+origin/main by N" until something fetches - so the local ref produces phantom
+unpushed commits, and a real missed push is indistinguishable from the noise.
 
-*   `scripts/check-unpushed.sh` - run it before calling a qlsm change done.
-    It prints the unpushed commits and exits `1` when `main` is ahead of
-    `origin/main`, so it can be used as a gate. On a feature branch it is a
-    no-op, since a branch is supposed to be local until it is merged.
-*   `scripts/git-hooks/post-commit` and `post-merge` - the same report, printed
-    automatically right after a commit or a merge on `main`. Enable them once
-    per clone with `scripts/git-hooks/install.sh` (it sets `core.hooksPath`,
-    which every worktree of the clone then shares); `setup-worktree.sh` runs it
-    for you.
+`scripts/check-unpushed.sh` asks the remote instead (a read-only `ls-remote`,
+no token needed) and only falls back to the local ref when the network is
+unavailable:
+
+*   Run it before calling a qlsm change done. It lists the genuinely unpushed
+    commits and exits `1` when `main` is ahead of the remote, so it works as a
+    gate. On a feature branch it is a no-op, since a branch is supposed to be
+    local until it is merged. `--offline` skips the network.
+*   `scripts/git-hooks/post-commit` and `post-merge` print the same report
+    automatically after a commit or a merge on `main`, and never block.
+    Enable them once per clone with `scripts/git-hooks/install.sh` (it sets
+    `core.hooksPath`, which every worktree of the clone then shares);
+    `setup-worktree.sh` runs it for you.
 
 ## Coding Practices & Principles
 
