@@ -276,6 +276,9 @@ def create_app(test_config=None):
     from ui.routes.addon_routes import addon_api_bp
     api_bp.register_blueprint(addon_api_bp, url_prefix='/addons')
 
+    from ui.routes.system_routes import system_api_bp
+    api_bp.register_blueprint(system_api_bp, url_prefix='/system')
+
     app.register_blueprint(api_bp)
     app.register_blueprint(index_bp) # Register index_bp
 

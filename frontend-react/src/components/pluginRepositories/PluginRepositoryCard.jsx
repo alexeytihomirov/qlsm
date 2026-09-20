@@ -58,7 +58,7 @@ function resolveRepoDependencies(plugins = []) {
 // One repository's contents: expand/collapse, per-plugin checkboxes (and a
 // per-plugin runtime pick for selected entries that declare no runtime), plus
 // the addon packages the repository offers for one-click install/update.
-function PluginRepositoryCard({ repo, updates, onSync, onDelete, onDownloaded, syncing }) {
+function PluginRepositoryCard({ repo, updates, onSync, onDelete, onDownloaded, onAddonInstalled, syncing }) {
   const [expanded, setExpanded] = useState(false);
   const [checked, setChecked] = useState(new Set());
   const [downloading, setDownloading] = useState(false);
@@ -184,6 +184,9 @@ function PluginRepositoryCard({ repo, updates, onSync, onDelete, onDownloaded, s
       const result = await installPluginRepositoryAddon(repo.id, addon.id);
       showSuccess(result.message || `"${addon.id}" installed. Restart QLSM to activate it.`);
       onDownloaded?.();
+      // A toast cannot carry the restart button, so the page shows the same
+      // banner the Addons page uses once anything here needs one.
+      onAddonInstalled?.();
     } catch (err) {
       showError(err.error?.message || err.message || `Failed to install "${addon.id}".`);
     } finally {

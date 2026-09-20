@@ -102,7 +102,7 @@ ENV FLASK_APP="ui:create_app()" \
     PYTHONUNBUFFERED=1
 
 # Entrypoint handles: secret generation, DB init, migrations
-RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh /app/restart-watcher.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 

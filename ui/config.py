@@ -33,6 +33,11 @@ class Config:
     # does not mean rebuilding. An id present in both resolves here.
     ADDON_PACKAGES_DIR = os.environ.get('ADDON_PACKAGES_DIR', './addon-packages')
 
+    # Restart stamp: POST /api/system/restart touches this file, restart-watcher.sh
+    # (started by entrypoint.sh) polls it in every app container. Both sides read
+    # the same env var so the two halves cannot drift apart.
+    RESTART_STAMP_FILE = os.environ.get('QLSM_RESTART_STAMP', '/app/data/.restart-stamp')
+
     # Logging
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
     LOG_FILE = os.environ.get('LOG_FILE', None)
