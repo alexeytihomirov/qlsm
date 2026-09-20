@@ -4,6 +4,7 @@ import { AlertTriangle, Clock, Loader2, RefreshCw, Settings, Trash2, Upload } fr
 import AddonInstallModal from '../components/addons/AddonInstallModal';
 import AddonSettingsModal from '../components/addons/AddonSettingsModal';
 import ConfirmationModal from '../components/ConfirmationModal';
+import RestartQlsmBanner from '../components/system/RestartQlsmBanner';
 import { useNotification } from '../components/NotificationProvider';
 import { mountEntriesForAddon, useAddons } from '../contexts/AddonsContext';
 import { resolveAddonIcon } from '../components/addons/addonIcons';
@@ -225,10 +226,7 @@ function AddonsPage() {
       </div>
 
       {anyPending && (
-        <div className="mb-4 rounded-md border p-3 text-sm"
-             style={{ borderColor: 'var(--accent-warning, #d97706)' }}>
-          Some changes need a QLSM restart before they take effect.
-        </div>
+        <RestartQlsmBanner message="Some changes need a QLSM restart before they take effect." />
       )}
 
       {loading && addons.length === 0 && (

@@ -117,4 +117,37 @@ print(count)
     fi
 fi
 
+# ── Coordinated restart watcher ────────────────────────────────────────────────
+# Addons only register during create_app(), so a runtime install stays inert
+# until the process runs it again. restart-watcher.sh watches a stamp file on
+# the shared ./data mount and signals PID 1 when the UI asks for a restart.
+#
+# Only the long-running services that actually build an app get a watcher:
+# rcon (python -m rcon_service) never calls create_app(), and one-off commands
+# (docker compose run/exec) must not be killed by someone else's restart.
+#
+# QLSM_SUPERVISED is what /api/system/restart checks before accepting: it is
+# set here and only here, so it is present exactly when the process was
+# started by this entrypoint under Docker's restart policy -- and absent under
+# run-dev.sh, where nothing would bring a killed process back.
+case "$*" in
+    gunicorn*)
+        # gunicorn reloads on SIGHUP: fresh worker, create_app() re-runs, the
+        # container is not restarted.
+        restart_signal=HUP
+        ;;
+    "flask rq worker"*|"flask run-status-poller"*)
+        # No reload mechanism; warm SIGTERM and let the restart policy re-run it.
+        restart_signal=TERM
+        ;;
+    *)
+        restart_signal=""
+        ;;
+esac
+
+if [ -n "$restart_signal" ]; then
+    export QLSM_SUPERVISED=1
+    QLSM_RESTART_SIGNAL="$restart_signal" /app/restart-watcher.sh &
+fi
+
 exec "$@"

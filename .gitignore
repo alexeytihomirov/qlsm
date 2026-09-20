@@ -26,6 +26,7 @@
 !host-init/**
 !Dockerfile
 !entrypoint.sh
+!restart-watcher.sh
 !gunicorn.conf.py
 !run-dev.sh
 !run_dev.py
