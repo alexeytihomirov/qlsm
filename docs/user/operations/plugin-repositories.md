@@ -57,6 +57,8 @@ Inline `cvars`/`commands` need QLSM 1.36.0 or newer. Older versions ignore them.
 
 **`sha256` powers the update badges.** For each listed plugin (hash of the `.py` with line endings normalized to LF) and addon (hash of the `.zip` as served), QLSM compares the declared hash/version against what's installed locally and shows **Update available** / **Up to date** / **Not installed** in the list. Entries without a `sha256` (or, for addons, without a `version`) simply show no status.
 
+**A plugin that needs a whole folder, not just its own `.py`,** declares `package_files`: a map of `"<relative/path>": "<sha256 of that file, LF-normalized>"` for every extra file, each one at least one directory deep (e.g. a plugin that does `from restore import codec` needs `{"restore/__init__.py": "…", "restore/codec.py": "…"}`). Downloading the plugin fetches every listed path from the repository and writes it next to the `.py` file, in the same shared plugin folder. The update badge and the overwrite prompt cover the whole set: if any file in it is missing or has changed, the plugin shows **Update available**, and downloading again asks about every file that would change, not just the main one. A root-level helper `.py` that has no folder of its own still belongs in `depends_on`, not here.
+
 ## Download Plugins
 
 ![A plugin repository expanded, showing its plugin list](../images/plugin-repositories.png)

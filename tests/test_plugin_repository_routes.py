@@ -266,7 +266,7 @@ def test_download_uses_the_manifests_own_runtime(client, app, monkeypatch):
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append((base_url, filename, runtime)),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append((base_url, filename, runtime)),
     )
     response = client.post(
         f'/api/plugin-repositories/{repo_id}/download', headers=headers,
@@ -315,7 +315,7 @@ def test_download_picked_runtime_does_not_override_declared_runtime(client, app,
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append((base_url, filename, runtime)),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append((base_url, filename, runtime)),
     )
     response = client.post(
         f'/api/plugin-repositories/{repo_id}/download', headers=headers,
@@ -358,7 +358,7 @@ def test_download_partial_failure_returns_207(client, app, monkeypatch):
         ])
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         if filename == 'bad.py':
             raise PluginRepositoryError('download failed')
 
@@ -381,7 +381,7 @@ def test_download_surfaces_the_exists_code_and_overwrite_retries(client, app, mo
         repo = _seeded_repo('Repo I', 'https://example.com/i')
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         if not overwrite:
             raise PluginRepositoryError(f'{filename} already exists in the local pool.', code='exists')
 
@@ -417,7 +417,7 @@ def test_download_mixed_exists_and_other_failure_returns_422(client, app, monkey
         ])
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         if filename == 'dup.py':
             raise PluginRepositoryError('dup.py already exists in the local pool.', code='exists')
         raise PluginRepositoryError('download failed')
@@ -453,7 +453,7 @@ def test_download_pulls_in_a_declared_helper(client, app, monkeypatch):
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append(filename),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append(filename),
     )
     monkeypatch.setattr(
         plugin_repository_routes, 'plugin_update_status', lambda entry: 'not_installed')
@@ -493,7 +493,7 @@ def test_download_gives_a_runtimeless_helper_its_pullers_runtime(client, app, mo
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append((filename, runtime)),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append((filename, runtime)),
     )
     monkeypatch.setattr(
         plugin_repository_routes, 'plugin_update_status', lambda entry: 'not_installed')
@@ -519,7 +519,7 @@ def test_download_skips_an_auto_added_helper_already_up_to_date(client, app, mon
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append(filename),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append(filename),
     )
     monkeypatch.setattr(
         plugin_repository_routes, 'plugin_update_status',
@@ -551,7 +551,7 @@ def test_download_a_skipped_helper_does_not_turn_an_exists_error_into_success(cl
         repo = _seeded_repo('Repo Deps6', 'https://example.com/deps6', plugins=HELPER_PLUGIN_LIST)
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         raise PluginRepositoryError(f'{filename} already exists in the local pool.', code='exists')
 
     monkeypatch.setattr(plugin_repository_routes, 'download_plugin', fake_download)
@@ -581,7 +581,7 @@ def test_download_an_explicitly_picked_helper_is_not_skipped(client, app, monkey
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append(filename),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append(filename),
     )
     monkeypatch.setattr(
         plugin_repository_routes, 'plugin_update_status', lambda entry: 'up_to_date')
@@ -630,7 +630,7 @@ def test_download_uses_freshly_fetched_entry_for_inline_manifest(client, app, mo
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, runtime, inline_manifest)),
     )
     response = client.post(
@@ -656,7 +656,7 @@ def test_download_falls_back_to_stored_entries_when_fresh_fetch_fails(client, ap
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, inline_manifest)),
     )
     response = client.post(
@@ -689,7 +689,7 @@ def test_download_uses_the_stored_entry_when_the_fresh_manifest_lacks_the_filena
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, runtime, inline_manifest)),
     )
     response = client.post(
@@ -719,7 +719,7 @@ def test_download_keeps_the_stored_runtime_when_the_fresh_entry_declares_another
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, runtime, inline_manifest)),
     )
     response = client.post(
@@ -1029,7 +1029,7 @@ def test_download_pushes_pool_to_hosts_of_the_downloaded_runtime(client, app, mo
 
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: None,
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: None,
     )
     pushed = []
     fake_result = {'queued': [{'id': 1, 'name': 'alpha'}], 'skipped': [{'id': 2, 'name': 'beta', 'reason': 'busy'}]}
@@ -1056,7 +1056,7 @@ def test_download_does_not_push_when_nothing_was_downloaded(client, app, monkeyp
         repo = _seeded_repo('Repo Q', 'https://example.com/q')
         repo_id = repo.id
 
-    def failing_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def failing_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         raise PluginRepositoryError('boom', code='fetch')
     monkeypatch.setattr(plugin_repository_routes, 'download_plugin', failing_download)
     called = []
@@ -1089,7 +1089,7 @@ def test_download_still_succeeds_when_the_push_cannot_take_the_host_lock(client,
 
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: None,
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: None,
     )
     import ui.plugin_push as plugin_push
 
