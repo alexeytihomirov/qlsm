@@ -56,6 +56,32 @@ def resolve_pool_file(runtime, filename):
     return None
 
 
+def resolve_pool_path(runtime, relpath):
+    """Absolute path of a possibly-nested `relpath` in the merged view
+    (operator copy wins), or None when neither tier has it.
+
+    Unlike resolve_pool_file, `relpath` may contain forward-slash
+    subdirectories -- for a package-style plugin that ships a helper folder
+    alongside its root .py (e.g. match_restore.py's restore/ package, see
+    ui/plugin_repositories.py's `package_files`). The caller is responsible
+    for rejecting unsafe segments (`..`, absolute, drive-qualified) before
+    calling this; this only joins and checks existence, rejecting the
+    obviously-wrong shapes defensively.
+    """
+    if not is_valid_runtime(runtime):
+        return None
+    if not isinstance(relpath, str) or not relpath:
+        return None
+    parts = relpath.split('/')
+    if any(not p or p in ('.', '..') for p in parts):
+        return None
+    for root in pool_dirs(runtime):
+        path = os.path.join(root, *parts)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def _root_files(root, keep):
     """{name: path} for regular files directly under `root` that pass
     `keep(name)`. Subfolders are helper modules, not plugins, and are

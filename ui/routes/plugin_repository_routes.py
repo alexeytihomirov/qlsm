@@ -301,10 +301,12 @@ def download_plugin_repository_plugins(repo_id):
         if filename in pulled_by and plugin_update_status(entry) == STATUS_UP_TO_DATE:
             skipped.append(filename)
             continue
+        source_entry = fresh_by_filename.get(filename) or entry
         try:
             download_plugin(
                 repo.url, filename, runtime, overwrite=overwrite,
-                inline_manifest=build_inline_manifest(fresh_by_filename.get(filename) or entry),
+                inline_manifest=build_inline_manifest(source_entry),
+                package_files=(source_entry or {}).get('package_files') or {},
             )
             downloaded.append(filename)
             downloaded_runtimes.add(runtime)
