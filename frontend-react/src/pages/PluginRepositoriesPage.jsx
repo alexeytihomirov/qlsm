@@ -14,6 +14,7 @@ import ConfirmationModal from '../components/ConfirmationModal';
 import AddPluginRepositoryModal from '../components/pluginRepositories/AddPluginRepositoryModal';
 import PluginRepositoryCard from '../components/pluginRepositories/PluginRepositoryCard';
 import RestartQlsmBanner from '../components/system/RestartQlsmBanner';
+import { useAddons } from '../contexts/AddonsContext';
 
 function PluginRepositoriesPage() {
   const [repos, setRepos] = useState([]);
@@ -25,8 +26,11 @@ function PluginRepositoriesPage() {
   const [selectedForDelete, setSelectedForDelete] = useState(null);
   const [syncingId, setSyncingId] = useState(null);
   // An addon installed from here is inert until qlsm restarts, same as one
-  // uploaded on the Addons page.
-  const [addonNeedsRestart, setAddonNeedsRestart] = useState(false);
+  // uploaded on the Addons page. Read from the shared catalog (same source
+  // as the Addons page) rather than local state, so the banner survives a
+  // page reload instead of resetting the moment the install toast fades.
+  const { addons, reload: reloadAddons } = useAddons();
+  const addonNeedsRestart = addons.some(a => a.pending_restart);
 
   const { showSuccess, showError } = useNotification();
 
@@ -174,7 +178,7 @@ function PluginRepositoriesPage() {
               onSync={handleSync}
               onDelete={openDeleteModal}
               onDownloaded={() => fetchRepos({ silent: true })}
-              onAddonInstalled={() => setAddonNeedsRestart(true)}
+              onAddonInstalled={reloadAddons}
             />
           ))}
         </div>
