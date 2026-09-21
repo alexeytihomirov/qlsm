@@ -38,6 +38,13 @@
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-card-hover: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
   --shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.1), 0 2px 8px rgba(15, 23, 42, 0.04);
+
+  /* Light Theme Resize Pill (splitter drag handle) */
+  --resize-pill-bg: #DCE1E8;
+  --resize-pill-bg-hover: #CBD2DC;
+  --resize-pill-border: #B0BAC6;
+  --resize-pill-icon: #3E4C5E;
+  --shadow-resize-pill: 0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
 /* ============================================
@@ -69,6 +76,13 @@
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.3);
   --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  /* Dark Theme Resize Pill (splitter drag handle) */
+  --resize-pill-bg: #2a2b30;
+  --resize-pill-bg-hover: #3a3b42;
+  --resize-pill-border: #3c4453;
+  --resize-pill-icon: #e2e8f0;
+  --shadow-resize-pill: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* ============================================
