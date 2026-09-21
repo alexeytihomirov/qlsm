@@ -47,5 +47,5 @@ For **Current**, Last N Lines and Time Range query the live systemd journal, whi
 
 - [Chat Logs](chat-logs.md)
 - [MinQLX Logs](minqlx-logs.md)
-- [Use Logs And Chat Logs](logs-and-chat.md)
+- [Host Logs](host-logs.md)
 - [Instance Actions Menu](instance-actions-menu.md)

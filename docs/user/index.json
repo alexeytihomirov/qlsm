@@ -48,6 +48,11 @@
         "path": "/docs/operations/check-for-updates.md"
       },
       {
+        "id": "plugin-repositories",
+        "title": "Plugin Repositories",
+        "path": "/docs/operations/plugin-repositories.md"
+      },
+      {
         "id": "watchdog",
         "title": "Configure Watchdog",
         "path": "/docs/operations/watchdog.md"

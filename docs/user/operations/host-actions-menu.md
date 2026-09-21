@@ -71,5 +71,4 @@ After the playbook completes, the host returns to **Active** status.
 - [Check For Plugin Updates](check-for-updates.md)
 - [Configure Watchdog](watchdog.md)
 - [Host Logs](host-logs.md)
-- [Use Logs And Chat Logs](logs-and-chat.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)

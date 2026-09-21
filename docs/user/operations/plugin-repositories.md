@@ -41,6 +41,24 @@ A plugin can still ship its own `<name>.ql-plugin.json` file next to its `.py` f
 
 Inline `cvars`/`commands` need QLSM 1.36.0 or newer. Older versions ignore them.
 
+## Edit The Manifest
+
+The **Edit & Export Manifest** button on a repository card opens its plugin list in an editor. This is for people who *publish* a repository: it writes a new `qlsm-plugins.json` for you to commit to the repository itself.
+
+![The manifest editor, with a plugin selected and its cvars listed](../images/plugin-manifest-editor.png)
+
+It does not change anything QLSM has stored. QLSM keeps a copy of whatever the repository's URL last returned, and every sync replaces that copy, so an edit QLSM remembered would look undone the next time you synced.
+
+1. Pick a plugin on the left, or click **Add Plugin** for a new one. Drag the handles to reorder, or click **Sort A–Z**.
+2. Edit its filename, label, description, runtime and required QLSM version, and add or remove **cvars** and **commands**.
+3. Click **Download** to save the file. The box next to it sets the filename.
+
+![The editor flagging a filename qlsm would drop](../images/plugin-manifest-editor-issues.png)
+
+The list under the editor names every problem found, worst first; click one to jump to the plugin it belongs to. A red dot on a plugin means QLSM would drop something from that entry on its next sync — a filename that isn't a bare `name.py`, or a filename used twice. An amber dot is cosmetic: a missing label or description, or a cvar type the settings form doesn't recognize.
+
+Only the plugins QLSM could read at the last sync appear here. If the repository's file has entries QLSM skipped, they are not in the editor and will not be in the downloaded file either, so check the result before committing it over the original.
+
 ## Download Plugins
 
 ![A plugin repository expanded, showing its plugin list](../images/plugin-repositories.png)

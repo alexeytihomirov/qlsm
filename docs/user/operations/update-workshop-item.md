@@ -41,5 +41,5 @@ Use this when a Steam Workshop item was updated and you want QLSM to pull the la
 
 - [Host Actions Menu](host-actions-menu.md)
 - [Configure Auto-Restart](auto-restart.md)
-- [Use Logs And Chat Logs](logs-and-chat.md)
+- [Server Logs](server-logs.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)

@@ -50,5 +50,5 @@ The viewer colors MinQLX log structure to make lines easy to scan:
 
 - [Server Logs](server-logs.md)
 - [Chat Logs](chat-logs.md)
-- [Use Logs And Chat Logs](logs-and-chat.md)
+- [Host Logs](host-logs.md)
 - [Instance Actions Menu](instance-actions-menu.md)

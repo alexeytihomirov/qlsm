@@ -46,5 +46,5 @@ The console has a **Show real-time game events** checkbox enabled by default. Wh
 ## Related Pages
 
 - [Global RCON](global-rcon.md) — send one command to many instances.
-- [Use Logs And Chat Logs](logs-and-chat.md)
+- [Server Logs](server-logs.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)

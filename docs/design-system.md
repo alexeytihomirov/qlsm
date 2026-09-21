@@ -108,6 +108,8 @@ input styles — check `index.css` for the full variant before adding a new one.
 | `SidebarResizeHandle` | `components/fileManager/SidebarResizeHandle.jsx` | Drag handle between the file list and the editor pane; doubles as the 1px divider. Pointer-capture drag, double-click or `Home` resets, arrow keys nudge 16px. Width lives in the `useSidebarWidth` store (module-level + `localStorage`, clamped 200-560, default 320) so all three mounted FileManager tabs resize together |
 | `OverwritePluginsModal` | `pluginRepositories/OverwritePluginsModal.jsx` | Per-file overwrite prompt (checkbox + Diff per file); `files: [{filename, runtime}]`, `onConfirm(filenames)` |
 | `PluginDiffModal` | `pluginRepositories/PluginDiffModal.jsx` | 95vw×95vh read-only `@codemirror/merge` two-pane diff; z-[80] so it stacks above other modals |
+| `PluginManifestEditorModal` | `pluginRepositories/PluginManifestEditorModal.jsx` | max-w-5xl × 85vh two-pane `qlsm-plugins.json` authoring modal (list ⟷ selected plugin). Owns the draft; the panes are `PluginManifestPluginList` (@dnd-kit reorder + Sort A–Z), `PluginManifestCvarRows`, `PluginManifestCommandRows` and `PluginManifestIssues`. Local only — nothing is saved back to the repository row |
+| `PluginManifestIssues` | `pluginRepositories/PluginManifestIssues.jsx` | Scrolling validator-message list under an editor pane; errors first, a message carrying an `index` is a button that selects that row |
 
 Feature-scoped directories (`components/hosts`, `instances`, `presetManager`,
 `fileManager`, `addInstance`, `users`, `rcon`) contain additional modals and
