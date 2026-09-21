@@ -98,7 +98,7 @@ export default function SidebarResizeHandle() {
       <span className="absolute inset-y-0 -left-1.5 -right-1.5" aria-hidden="true" />
       <span
         aria-hidden="true"
-        className={`pointer-events-none absolute top-1/2 left-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-colors ${
+        className={`pointer-events-none absolute top-1/2 left-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-[var(--shadow-resize-pill)] transition-colors ${
           dragging
             ? 'border-[var(--accent-primary)] bg-[var(--resize-pill-bg-hover)]'
             : 'border-[var(--resize-pill-border)] bg-[var(--resize-pill-bg)] group-hover:border-[var(--accent-primary)] group-hover:bg-[var(--resize-pill-bg-hover)]'
