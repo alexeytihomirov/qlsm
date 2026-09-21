@@ -113,6 +113,8 @@ function AddonCard({ addon, onUninstall, onOpenSettings, onToggled, busy }) {
               <Clock size={13} />
               {addon.pending_action === 'uninstall'
                 ? 'Removed from disk. Restart QLSM to unload it.'
+                : addon.pending_action === 'update'
+                ? 'Updated on disk. Restart QLSM to run the new version.'
                 : 'Installed. Restart QLSM to activate it.'}
             </p>
           )}

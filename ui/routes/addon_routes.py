@@ -60,20 +60,37 @@ def list_addons_api():
     shown with its error attached.
 
     The list is what this *process* loaded at startup, reconciled against
-    what is on the volume right now. An addon installed or removed since then
-    shows up as `pending_restart` rather than silently looking active -- the
-    alternative is an entry whose endpoints 404 with no explanation.
+    what is on the volume right now. An addon installed, removed, or updated
+    in place since then shows up as `pending_restart` rather than silently
+    looking active -- the alternative is an entry whose endpoints 404, or
+    whose code the operator wrongly believes is already live, with no
+    explanation either way.
     """
-    from ui.addons.install import scan_installed_ids
+    from ui.addons.install import scan_installed_ids, scan_installed_versions
 
     entries = catalog()
     loaded_ids = {entry['id'] for entry in entries}
-    on_disk = scan_installed_ids(current_app.config.get('ADDON_PACKAGES_DIR'))
+    packages_dir = current_app.config.get('ADDON_PACKAGES_DIR')
+    on_disk = scan_installed_ids(packages_dir)
+    on_disk_versions = scan_installed_versions(packages_dir)
 
     for entry in entries:
+        installed = entry['source'] == 'installed'
         # Loaded, but its package is gone from the volume -> uninstalled since boot.
-        entry['pending_restart'] = (entry['source'] == 'installed' and entry['id'] not in on_disk)
-        entry['pending_action'] = 'uninstall' if entry['pending_restart'] else None
+        removed = installed and entry['id'] not in on_disk
+        # Present both before and after, but the on-disk bytes moved on -> an
+        # in-place update the process hasn't picked up yet.
+        updated = (
+            installed and not removed
+            and on_disk_versions.get(entry['id']) != entry['version']
+        )
+        entry['pending_restart'] = removed or updated
+        if removed:
+            entry['pending_action'] = 'uninstall'
+        elif updated:
+            entry['pending_action'] = 'update'
+        else:
+            entry['pending_action'] = None
 
     for addon_id in sorted(on_disk - loaded_ids):
         entries.append({

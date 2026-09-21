@@ -143,6 +143,55 @@ def test_a_loaded_addon_is_not_pending(ctx):
     assert entry['loaded'] is True
 
 
+def test_an_addon_updated_in_place_is_pending_restart(tmp_path):
+    """Same id present on the volume before and after, just newer bytes --
+    scan_installed_ids() alone can't tell that apart from a no-op, only a
+    version comparison can. Regression for the update reminder silently
+    disappearing right after install-addon writes the new version."""
+    packages = tmp_path / 'addon-packages'
+    packages.mkdir()
+    (packages / 'installed-addon').mkdir()
+    (packages / 'installed-addon' / 'qlsm-addon.json').write_text(
+        json.dumps({'id': 'installed-addon', 'version': '1.0.0'}), encoding='utf-8')
+
+    db_fd, db_path = tempfile.mkstemp()
+    app = create_app({
+        'TESTING': True, 'SECRET_KEY': 'x', 'JWT_SECRET_KEY': 'x',
+        'JWT_COOKIE_CSRF_PROTECT': False, 'JWT_TOKEN_LOCATION': ['headers', 'cookies'],
+        'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
+        'SERVER_NAME': 'test.server', 'RCON_ENABLED': False,
+        'ADDON_PACKAGES_DIR': str(packages),
+    })
+    with app.app_context():
+        db.create_all()
+    make_user(app, 'installer', 'pw')
+    headers = auth_headers(app, 'installer')
+    client = app.test_client()
+
+    try:
+        addons = client.get('/api/addons', headers=headers).get_json()['data']['addons']
+        entry = next(a for a in addons if a['id'] == 'installed-addon')
+        assert entry['pending_restart'] is False
+        assert entry['loaded'] is True
+
+        (packages / 'installed-addon' / 'qlsm-addon.json').write_text(
+            json.dumps({'id': 'installed-addon', 'version': '2.0.0'}), encoding='utf-8')
+
+        addons = client.get('/api/addons', headers=headers).get_json()['data']['addons']
+        entry = next(a for a in addons if a['id'] == 'installed-addon')
+        assert entry['pending_restart'] is True
+        assert entry['pending_action'] == 'update'
+        assert entry['loaded'] is True  # still running the old code, just flagged
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.engine.dispose()
+        os.close(db_fd)
+        for path in (db_path, f'{db_path}-wal', f'{db_path}-shm'):
+            if os.path.exists(path):
+                os.unlink(path)
+
+
 def test_install_then_uninstall_returns_the_catalog_to_normal(ctx):
     _, client, headers, _ = ctx
     upload(client, headers, zip_bytes())
