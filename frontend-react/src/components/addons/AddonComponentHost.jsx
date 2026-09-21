@@ -20,8 +20,15 @@ import { publishAddonRuntime } from './publishAddonRuntime';
  * two React copies on one page break hooks in ways that are miserable to
  * debug. Publishing happens here rather than in main.jsx so the globals only
  * exist once an addon actually needs them.
+ *
+ * `modal` is set when the entry declared `renders: "modal"` and the component
+ * therefore *is* the whole dialog -- core's modal shell is skipped and the
+ * open/close state reaches the addon through `ctx.modal` instead. That is what
+ * lets an addon replace a purpose-built screen without losing its chrome
+ * (title, width, header actions), which the generic shell cannot express.
+ * Undefined for every other mount point.
  */
-function AddonComponentHost({ addon, entry, scope, scopeId }) {
+function AddonComponentHost({ addon, entry, scope, scopeId, modal }) {
   const [Component, setComponent] = useState(null);
   const [error, setError] = useState(null);
 
