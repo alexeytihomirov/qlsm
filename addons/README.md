@@ -199,8 +199,12 @@ cannot express. Then `ctx.modal` is set:
 
 ```json
 { "id": "demos", "label": "Demos", "icon": "film",
-  "component": "ui/Panel.js", "renders": "modal" }
+  "component": "Panel.js", "renders": "modal" }
 ```
+
+`"component"` is a path relative to the addon's own `ui/` directory (core
+serves it from `/api/addons/<id>/ui/<component>`) — not prefixed with `ui/`
+itself, or the asset URL doubles up as `.../ui/ui/Panel.js` and 404s.
 
 ```js
 // ctx.modal = { isOpen, onClose, entity, subtitle }
