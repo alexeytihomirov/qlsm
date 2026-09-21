@@ -8,7 +8,7 @@ import { ensureAddonCss } from './addonCss';
 import { publishAddonRuntime } from './publishAddonRuntime';
 
 /**
- * Tier-2: mounts an addon's own pre-built component (spec section 5.2).
+ * Tier-2: mounts an addon's own pre-built component.
  *
  * The bundle is built by the addon's author, shipped inside the addon
  * package, and served by core from /api/addons/<id>/ui/. It is loaded with a
@@ -58,8 +58,7 @@ function AddonComponentHost({ addon, entry, scope, scopeId, modal }) {
 
   // An own-modal mount has no panel body to put a message in -- whatever it
   // renders lands loose on the page behind the (absent) dialog. So it reports
-  // a failed load to the console and shows nothing, the same way the bundled
-  // tier used to show nothing while its lazy chunk loaded.
+  // a failed load to the console and shows nothing.
   if (error) {
     if (modal) {
       console.error(`Addon ${addon.id}: could not load ${entry.component}: ${error}`);

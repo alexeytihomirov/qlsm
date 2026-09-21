@@ -1,10 +1,9 @@
 """Every declared lifecycle hook must actually be dispatched somewhere real.
 
-This exists because of a real miss: the whole hook set was declared in phase
-1 and core never called any of it until phase 6. Addons could subscribe to
-`instance.launch_args` and be silently ignored -- including the repo's own
-reference addon. A hook nobody calls is worse than no hook, because it reads
-like a working contract.
+A hook declared but never dispatched reads like a working contract: an addon
+subscribes to `instance.launch_args` and is silently ignored. That is worse
+than no hook at all, so the declaration and the call site are pinned together
+here.
 
 The check is deliberately crude (a text scan for the hook name under `ui/`
 plus `addons/`, excluding `ui/addons` itself -- where HOOK_SCOPES is
@@ -15,10 +14,9 @@ suite.
 
 Hooks core dispatches itself are checked that way. Addon-owned extension
 points (see hooks.py) are dispatched by the addon whose surface they extend,
-and every addon now lives outside this repo -- so their call site is
-unreachable from here and they are listed in OUT_OF_TREE instead. That list
-is itself pinned by a test, so it cannot quietly absorb a core hook nobody
-wired.
+so no call site for them exists in this repo and they are listed in
+OUT_OF_TREE instead. That list is itself pinned by a test, so it cannot
+quietly absorb a core hook nobody wired.
 """
 import os
 
@@ -71,10 +69,9 @@ INDIRECT = {
 
 # Addon-owned extension points: declared here because core owns the registry
 # of valid hook names (ctx.on() rejects anything not in HOOK_SCOPES at addon
-# load time), but dispatched from the addon that consumes the contribution --
-# demo-management, which lives in the qlsm-extra repo. There is no call site
-# in this repo to find, and adding a fake one would be worse than an explicit
-# exemption.
+# load time), but dispatched from the addon that consumes the contribution.
+# There is no call site in this repo to find, and adding a fake one would be
+# worse than an explicit exemption.
 OUT_OF_TREE = {
     'demo_management.file_kinds',
     'demo_management.match_groups',

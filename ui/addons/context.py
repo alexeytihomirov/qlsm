@@ -7,8 +7,7 @@ addon *can* do stays readable in one file.
 
 Addons run in-process with qlsm's full authority (DB, SSH keys, cloud API
 key). This context is an ergonomics and consistency boundary, not a security
-one -- see section 8.3 of the design spec. Nothing here should be mistaken for
-a sandbox.
+one -- see addons/TRUST.md. Nothing here should be mistaken for a sandbox.
 """
 import logging
 import os
@@ -75,8 +74,8 @@ class AddonContext:
         against a host, e.g. ctx.run_playbook(host, 'sync_thing.yml').
 
         Delegates to core's own host-playbook runner, which already accepts
-        an absolute path for exactly this purpose (see relay_ops.py, the
-        first caller of that convention). Returns (success, stdout, stderr).
+        an absolute path for exactly this purpose. Returns
+        (success, stdout, stderr).
         """
         from ui.task_logic.ansible_runner import _run_host_ansible_playbook
 

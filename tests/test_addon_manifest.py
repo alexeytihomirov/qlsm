@@ -158,8 +158,8 @@ def test_read_manifest_round_trip(tmp_path):
 # ---- bundled components + render mode ---------------------------------
 
 def test_a_bundled_component_reference_is_accepted():
-    """A migration addon names a component core already builds, so it can
-    mount the exact screen the built-in menu mounts rather than a look-alike."""
+    """The prefix is a valid manifest shape; whether this QLSM provides such
+    a component is the frontend's problem, not the validator's."""
     manifest, errors = validate_manifest(_minimal(ui={
         'host_menu': [{'id': 'relay', 'component': 'bundled:relay-modal', 'renders': 'modal'}],
     }))

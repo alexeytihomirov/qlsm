@@ -1,9 +1,8 @@
 """`addons/` must reach the Docker image.
 
-This exists because of a real miss on 2026-09-14: `addons/` was un-ignored in
-.gitignore but not in .dockerignore, so the addon system deployed without any
-addons in it. Everything looked healthy -- the routes answered, the migration
-ran -- and the only symptom was that no addon appeared. Cheap test, expensive
+Un-ignoring a directory in .gitignore but not in .dockerignore is silent: the
+files are committed and pushed, the routes still answer, the migration still
+runs, and the only symptom is that nothing appears. Cheap test, expensive
 failure mode.
 
 .dockerignore here is a strict allowlist (`*` first, then `!` lines), and this
@@ -39,13 +38,10 @@ def test_addons_directory_is_unignored_for_git():
 def test_the_allowlist_is_not_stale():
     """Guards the other direction: the allowlist entries still cover something.
 
-    No feature addon ships in the image any more -- telemetry-relay,
-    demo-management, demo-stream and qlmatch-packer all live in the separate
-    qlsm-extra repo and are installed by the operator onto the
-    ADDON_PACKAGES_DIR volume (see qlsm-extra/README.md). What addons/ still
-    has to reach the image is its documentation and the reference examples an
-    operator copies onto that volume to try them, so the allowlist entries are
-    still doing work."""
+    No feature addon ships in the image; an operator installs one onto the
+    ADDON_PACKAGES_DIR volume. What addons/ still has to reach the image is
+    its documentation and the reference examples an operator copies onto that
+    volume to try them, so the allowlist entries are still doing work."""
     addons_dir = os.path.join(REPO_ROOT, 'addons')
     assert os.path.isdir(addons_dir)
     assert os.path.isfile(os.path.join(addons_dir, 'README.md'))

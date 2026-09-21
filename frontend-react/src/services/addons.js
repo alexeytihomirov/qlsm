@@ -3,8 +3,6 @@
 // Kept out of services/api.js on purpose: everything here talks to a single
 // URL prefix (/api/addons/...) that core owns and no addon can escape, and
 // api.js is already ~1200 lines of per-resource functions.
-//
-// Design: docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md (monorepo).
 import apiClient from './api';
 
 export const listAddons = async () => {

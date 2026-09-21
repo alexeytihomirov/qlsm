@@ -301,26 +301,24 @@ def test_a_raising_hook_cannot_abort_the_operation(addon_app):
         assert registry.dispatch('backup.export') == ['addon-packages/calm']
 
 
-def test_demo_management_file_kinds_is_flattened_not_nested(addon_app):
+def test_an_addon_owned_list_hook_is_flattened_not_nested(addon_app):
     """demo_management.file_kinds is a contribution hook: a handler returning
     a list of extensions must come back out of dispatch() as those same
-    extensions, not as a one-element list wrapping the list. Regression for
-    a real bug where the hook was declared in HOOK_SCOPES but left out of
-    LIST_HOOKS, so ansible_instance_demos._demo_filename_re()'s per-string
-    isinstance() check silently dropped every contributed extension and
-    qlmatch files never showed up in Demos no matter what the operator
-    enabled."""
+    extensions, not as a one-element list wrapping the list. A hook declared
+    in HOOK_SCOPES but left out of LIST_HOOKS fails exactly that way, and a
+    consumer iterating the result per string then drops every contribution
+    without an error anywhere."""
     build, packages, _ = addon_app
     write_addon(packages, 'packer', manifest={'id': 'packer', 'version': '1.0.0'}, backend='''
         def register(ctx):
             @ctx.on('demo_management.file_kinds')
             def kinds():
-                return ['qlmatch', 'packer.log']
+                return ['pack', 'packer.log']
     ''')
     app = build()
     with app.app_context():
         registry.get_addon('packer').ctx.settings.set_enabled('global', 0, True)
-        assert registry.dispatch('demo_management.file_kinds', 0) == ['qlmatch', 'packer.log']
+        assert registry.dispatch('demo_management.file_kinds', 0) == ['pack', 'packer.log']
 
 
 def test_unknown_hook_name_raises_at_registration(addon_app):

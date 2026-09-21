@@ -1,8 +1,7 @@
-// Pre-built ESM component (spec section 5.2). In a real addon this would come
-// out of `vite build --lib` in the addon author's own project; written by
-// hand here since the point of this addon is only to prove Panel.css next to
-// this file gets loaded by AddonComponentHost -- see qlsm-addon-css-loading
-// in docs/superpowers/specs for the decision this addon demonstrates.
+// Pre-built ESM component. In a real addon this would come out of
+// `vite build --lib` in the addon author's own project; written by hand here
+// since the point of this addon is only to prove Panel.css next to this file
+// gets loaded by AddonComponentHost.
 export default function Panel({ ctx }) {
   const React = window.__qlsm.react;
   return React.createElement(

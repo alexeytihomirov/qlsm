@@ -7,10 +7,9 @@ import { mountEntriesForAddon } from '../../contexts/AddonsContext';
 
 /**
  * One addon's own settings, opened from the gear icon on its Addons-page
- * card. Renders the addon's declared `settings_section` mounts -- previously
- * appended to the qlsm Settings page, which is meant for qlsm's own settings,
- * not an addon's. Living on the Addons card instead means an addon's
- * configuration is where the addon itself is.
+ * card. Renders the addon's declared `settings_section` mounts. They live
+ * here rather than on the QLSM Settings page, which is for QLSM's own
+ * settings: an addon's configuration belongs where the addon itself is.
  */
 function AddonSettingsModal({ addon, isOpen, onClose }) {
   const mounts = useMemo(

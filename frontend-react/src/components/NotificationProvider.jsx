@@ -59,8 +59,8 @@ export function NotificationProvider({ children }) {
   };
 
   // Live for as long as the app is mounted, independent of any single page's
-  // feature: a background job (e.g. qlmatch-packer's rebuild) can finish
-  // while the operator is looking at an unrelated screen, and the toast
+  // feature: a background job an addon queued can finish while the operator
+  // is looking at an unrelated screen, and the toast
   // should still show up. See ui/job_events.py / ui/job_events_listener.py
   // for the backend side of this channel.
   useEffect(() => {

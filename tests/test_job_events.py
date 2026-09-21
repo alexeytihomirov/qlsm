@@ -9,8 +9,8 @@ def test_publish_job_event_serializes_payload(monkeypatch):
     monkeypatch.setattr(job_events, "get_redis_client", lambda: fake)
 
     job_events.publish_job_event(
-        "qlmatch-packer.rebuild-sidecar", "success", "Rebuilt sidecar for demo1.qlmatch",
-        instance_id=5, filename="demo1.qlmatch",
+        "sample-addon.rebuild", "success", "Rebuilt sidecar for demo1.pack",
+        instance_id=5, filename="demo1.pack",
     )
 
     fake.publish.assert_called_once()
@@ -18,11 +18,11 @@ def test_publish_job_event_serializes_payload(monkeypatch):
     assert channel == job_events.JOB_EVENTS_CHANNEL
     payload = json.loads(raw)
     assert payload == {
-        "source": "qlmatch-packer.rebuild-sidecar",
+        "source": "sample-addon.rebuild",
         "status": "success",
-        "message": "Rebuilt sidecar for demo1.qlmatch",
+        "message": "Rebuilt sidecar for demo1.pack",
         "instance_id": 5,
-        "filename": "demo1.qlmatch",
+        "filename": "demo1.pack",
     }
 
 

@@ -402,10 +402,8 @@ class BinaryMetadata(db.Model):
 class AddonScope(enum.Enum):
     """The three layers an addon can be configured at.
 
-    Mirrors the model in docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md
-    (and, before it, ql-server-core's installed/enabled split): an addon is
-    active globally, installed on a host, and switched on per instance, with
-    each layer requiring the one above it.
+    An addon is active globally, installed on a host, and switched on per
+    instance, with each layer requiring the one above it.
     """
     GLOBAL = 'global'
     HOST = 'host'

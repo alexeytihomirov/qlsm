@@ -25,7 +25,7 @@ JOB_EVENTS_CHANNEL = 'qlsm:job_events'
 def publish_job_event(source, status, message, **extra):
     """Publish one job-completion event.
 
-    `source` identifies what finished (e.g. "qlmatch-packer.rebuild-sidecar"),
+    `source` identifies what finished (e.g. "<addon-id>.<job-name>"),
     `status` is "success" or "error", `message` is the human-readable text a
     toast should show. Extra keyword args (e.g. instance_id, filename) ride
     along for a listener that wants to filter/label further; the frontend

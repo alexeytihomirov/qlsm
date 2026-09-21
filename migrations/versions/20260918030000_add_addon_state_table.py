@@ -1,7 +1,5 @@
 """add addon_state table
 
-Phase 1 of the addon system (see
-docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md in the monorepo).
 One row per (addon_id, scope, scope_id) holding the enable flag and the
 addon's own settings blob.
 
@@ -22,14 +20,6 @@ depends_on = None
 
 
 def upgrade():
-    # Idempotent: DBs that already ran the pre-upstream-restore revision
-    # 20260914130000 already have this table with the same schema. Fresh
-    # installs create it here (or via 20260914130000 if they walk the
-    # restored linear history).
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    if 'addon_state' in inspector.get_table_names():
-        return
     op.create_table(
         'addon_state',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -48,10 +38,6 @@ def upgrade():
 
 
 def downgrade():
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    if 'addon_state' not in inspector.get_table_names():
-        return
     with op.batch_alter_table('addon_state', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_addon_state_addon_id'))
     op.drop_table('addon_state')

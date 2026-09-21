@@ -14,9 +14,9 @@ function AddonPanel({ addon, entry, panel, scope, scopeId }) {
   let body;
 
   if (entry?.component?.startsWith(BUNDLED_PREFIX)) {
-    // Named a component compiled into QLSM's own build. Nothing does that any
-    // more -- QLSM ships no feature addon in its image, so there is no such
-    // component to borrow. Say so instead of rendering an empty panel.
+    // Named a component compiled into QLSM's own build. QLSM provides none,
+    // so there is no such component to borrow. Say so instead of rendering an
+    // empty panel.
     body = (
       <p className="py-4 text-sm text-theme-muted">
         This addon asks for a built-in component ({entry.component}) that this QLSM does not

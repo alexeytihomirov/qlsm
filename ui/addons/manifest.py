@@ -1,7 +1,5 @@
 """Parse + validate an addon's `qlsm-addon.json` manifest.
 
-Design: docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md (monorepo).
-
 Validation never raises. A malformed manifest yields a list of human-readable
 errors and the addon is reported as `broken` in the catalog instead of loading
 -- same principle as ui/plugin_manifest.load_manifest_file(), one level up: a
@@ -23,15 +21,15 @@ PANEL_KINDS = ('form', 'table', 'logs')
 MOUNT_POINTS = ('host_menu', 'instance_menu', 'instance_tabs', 'settings_section', 'page')
 
 # `panel` = core renders its shell and the addon fills the body.
-# `modal`  = the addon's component *is* the whole dialog. Needed so a
-# migration addon can mount a purpose-built screen unchanged rather than a
-# generic panel that loses half its controls.
+# `modal`  = the addon's component *is* the whole dialog, so an addon can
+# mount a purpose-built screen (its own width, header actions, subtitle)
+# rather than a generic panel that loses half its controls.
 RENDER_MODES = ('panel', 'modal')
 
-# A component core already builds, referenced by name instead of shipped as a
-# file. Only ever meaningful for an addon bundled in the image, and none is
-# any more -- kept recognised so a manifest still carrying one fails with an
-# explanation instead of rendering an empty panel.
+# Reserved prefix for a component QLSM itself would provide, named in the
+# manifest instead of shipped as a file. QLSM provides none, so an entry using
+# it is reported as unsupported -- recognised here only so the manifest fails
+# with an explanation instead of rendering an empty panel.
 BUNDLED_COMPONENT_PREFIX = 'bundled:'
 
 # Bumped when the contract a mounted component sees (ctx shape, ui kit) changes
@@ -151,12 +149,11 @@ def _validate_ui(ui, errors):
             if has_component:
                 comp = item['component']
                 if comp.startswith(BUNDLED_COMPONENT_PREFIX):
-                    # A component core already builds, named rather than
-                    # shipped. Nothing resolves it any more: QLSM ships no
-                    # feature addon, so there is no such component to borrow.
-                    # Still shape-checked here so the frontend's "this QLSM
-                    # does not provide it" message is the failure, rather than
-                    # a malformed name slipping through to a fetch.
+                    # A component QLSM itself would provide, named rather
+                    # than shipped. Nothing resolves it, but it is still
+                    # shape-checked here so the frontend's "this QLSM does not
+                    # provide it" message is the failure, rather than a
+                    # malformed name slipping through to a fetch.
                     name = comp[len(BUNDLED_COMPONENT_PREFIX):]
                     if not name or '/' in name:
                         _err(errors, f'ui.{mount}: bundled component name "{name}" is not valid')

@@ -244,8 +244,8 @@ def setup_host_ansible_logic(host_id, rerun=False):
             append_log(host, f"Ansible setup playbook successful.\nStdout:\n{stdout_content}\nStderr:\n{stderr_content}")
 
             # Addons may need to rsync their own host-side payload now that
-            # the host is reachable and set up (e.g. qlmatch-packer's Node
-            # runtime).
+            # the host is reachable and set up (a language runtime one of
+            # their plugins needs, a helper binary).
             _dispatch_addon_payload_sync(host)
 
             # --- Final Success ---

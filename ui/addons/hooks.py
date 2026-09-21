@@ -1,9 +1,9 @@
 """Lifecycle hook names and the scope each one fires at.
 
 Every hook here generalizes an integration point core already had before the
-addon system existed (see the table in the design spec, section 4.2). New hooks
-get added when a real port needs them -- not speculatively, since every hook is
-a call site in core that has to be maintained forever.
+addon system existed. New hooks get added when a real addon needs them -- not
+speculatively, since every hook is a call site in core that has to be
+maintained forever.
 
 `HOOK_SCOPES` is what makes "enabled" mean something: a hook is only dispatched
 to addons that are effectively enabled at that hook's scope. An addon switched
@@ -13,17 +13,14 @@ no per-addon `if enabled:` check to forget.
 
 # hook name -> the scope whose enable state gates it, or None for "always"
 #
-# **Every name here must have a real dispatch call site.** They did not at
-# first: the whole set was declared in phase 1 and nothing called it until
-# phase 6, so addons could subscribe to hooks that never fired -- the
-# reference addon subscribed to instance.launch_args and would have been
-# silently ignored. tests/test_addon_hooks_are_wired.py now fails if a hook
-# is declared without a call site, so the contract cannot rot back. Most call
-# sites live in core (ui/). The exception is an addon-owned extension point
-# (see demo_management.file_kinds below), which is dispatched from inside the
-# addon that defines it -- and since every addon now lives outside this repo,
-# that call site is unreachable from here. Those names are listed explicitly
-# in the wiring test's OUT_OF_TREE set rather than silently skipped.
+# **Every name here must have a real dispatch call site**, or an addon can
+# subscribe to a hook that never fires and be silently ignored -- the worst
+# failure mode a plugin system has. tests/test_addon_hooks_are_wired.py fails
+# if a hook is declared without one. Most call sites live in core (ui/); the
+# exception is an addon-owned extension point (see demo_management.file_kinds
+# below), dispatched from inside the addon that defines it, whose call site is
+# therefore not in this repo at all. Those names are listed explicitly in the
+# wiring test's OUT_OF_TREE set rather than silently skipped.
 #
 # Core still owns the *registry* of valid hook names even for those: ctx.on()
 # rejects anything not listed here at addon load time, so a typo in an addon
@@ -32,11 +29,12 @@ HOOK_SCOPES = {
     # host lifecycle
     'host.setup': 'host',      # ansible_host_setup.py, contributes extra-vars
     # Fires after a successful host provisioning/update-plugins playbook run,
-    # so an addon can rsync its own host-side payload (e.g. qlmatch-packer's
-    # Node runtime). Ungated (None, not 'host'): staging a payload a plugin
-    # depends on is not the same thing as the addon's UI panel being enabled
-    # for that host, and gating it on that toggle would silently stop the
-    # payload deploying on hosts where nobody thought to flip it.
+    # so an addon can rsync its own host-side payload (a language runtime one
+    # of its plugins needs, a helper binary). Ungated (None, not 'host'):
+    # staging a payload a plugin depends on is not the same thing as the
+    # addon's UI panel being enabled for that host, and gating it on that
+    # toggle would silently stop the payload deploying on hosts where nobody
+    # thought to flip it.
     'host.payload_sync': None,
     'host.delete': None,       # cleanup must run even for a disabled addon
     # instance deploy contributions, all in ansible_instance_mgmt.py
@@ -53,34 +51,31 @@ HOOK_SCOPES = {
     # the export and the restore, so a tree contributed once is handled in
     # both directions.
     'backup.export': None,
-    # Addon-owned extension point (dispatched by the demo-management addon
-    # itself, which lives in the qlsm-extra repo, not by core):
-    # demo-management only recognises raw .dm_91 by default; another
-    # addon contributes additional filename extensions it wants listed and
-    # downloadable alongside it (e.g. qlmatch-packer adds "qlmatch",
-    # "replay.json.gz", "packer.log"). Gated at 'global' scope, the same
-    # whole-addon on/off switch the Addons page toggle uses -- turning
-    # qlmatch-packer off there also stops its files showing up in Demos,
-    # consistent with "hidden from host/instance menus until switched on".
+    # Addon-owned extension point, dispatched by the demo-management addon
+    # itself rather than by core. That addon lists raw .dm_91 demo files;
+    # another addon contributes further filename extensions it wants listed
+    # and downloadable alongside them (a packed or derived demo format).
+    # Gated at 'global' scope, the same whole-addon on/off switch the Addons
+    # page toggle uses -- switching the contributing addon off there also
+    # stops its files being listed, consistent with "hidden from host and
+    # instance menus until switched on".
     'demo_management.file_kinds': 'global',
-    # Addon-owned extension point (dispatched by the demo-management addon,
-    # not by core), same "global" gate as file_kinds. Consumer passes (instance_id, demos)
-    # -- the current flat file list it already built -- and a contributor
-    # returns fully-resolved groups: [{group_id, label, member_names,
-    # addon_id, actions: [{id, label, icon, danger, action: {route, method,
-    # confirm}}]}]. This differs from the `match_actions` shape sketched in
-    # addons/README.md's cross-addon-UI-contribution writeup (a per-row
-    # `match(demo)` predicate) because grouping genuinely needs whole-list
-    # context and its own I/O (qlmatch-packer opens one SFTP session to read
-    # every .qlmatch's manifest.json, the only place match_id/map live) --
-    # a per-row Python predicate could not do that without either re-opening
-    # SFTP per row or leaking a live session across the hook boundary. A
-    # `match(demo)` callable also cannot survive the hook's result reaching
-    # the browser as JSON, unlike this hook's plain, JSON-safe group dicts.
-    # `route` is relative to the CONTRIBUTING addon's own
+    # Addon-owned extension point, dispatched by the demo-management addon
+    # rather than by core, same "global" gate as file_kinds. The consumer
+    # passes (instance_id, demos) -- the flat file list it already built --
+    # and a contributor returns fully-resolved groups: [{group_id, label,
+    # member_names, addon_id, actions: [{id, label, icon, danger, action:
+    # {route, method, confirm}}]}].
+    #
+    # Groups are resolved contributor-side rather than through the per-row
+    # `match(demo)` predicate sketched in addons/README.md: grouping needs
+    # whole-list context and often its own I/O (one remote session to read
+    # every file's metadata, rather than one per row), and a callable could
+    # not survive the result reaching the browser as JSON, unlike these
+    # plain group dicts. `route` is relative to the CONTRIBUTING addon's own
     # /api/addons/<addon_id>/ prefix (`addon_id` on the group says which),
-    # not demo-management's -- the consumer is a hand-built React component,
-    # not a declarative panel, so nothing resolves that prefix for it.
+    # not the consumer's -- the consumer is a hand-built React component, not
+    # a declarative panel, so nothing resolves that prefix for it.
     'demo_management.match_groups': 'global',
 }
 

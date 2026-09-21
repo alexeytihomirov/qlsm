@@ -1,8 +1,6 @@
 # QLSM addons
 
 Optional features that plug into QLSM without core knowing they exist.
-Full design: `docs/superpowers/specs/2026-09-14-qlsm-addon-system-design.md`
-in the monorepo.
 
 ## Where addons are loaded from
 
@@ -23,43 +21,29 @@ restart.
 ## What ships here today
 
 **No feature addon does.** QLSM's image carries this documentation and the
-reference examples, nothing else. Every real addon lives in a repository the
+reference examples, nothing else. A real addon lives in a repository the
 operator installs from, so a QLSM install only runs the features its operator
 asked for.
 
-| Addon | Where it lives |
-|-------|----------------|
-| `telemetry-relay` | [qlsm-extra](https://github.com/alexeytihomirov/qlsm-extra) -- **owns the feature.** Core has no telemetry endpoints, tasks, settings module, playbook, payload or UI left. |
-| `demo-management` | qlsm-extra -- **owns the feature.** The Demos screen (as a tier-2 component), its endpoints, `ansible_instance_demos.py` and its own copy of the SFTP transport. Recognises raw `.dm_91` only by default; packed/derived formats are another addon's job to add via the `demo_management.file_kinds` hook. Not installing it means no demo listing/download in the UI at all -- by design. |
-| `qlmatch-packer` | qlsm-extra -- **owns the format.** Deploys the external Node `.qlmatch` packer to hosts (`host.payload_sync`), teaches `demo-management` to recognise `.qlmatch`/`.replay.json.gz`/`.packer.log` (`demo_management.file_kinds`), clusters a pack with its sidecar/log into one row and contributes Rebuild-sidecar/Full-rebuild actions to the Demos modal (`demo_management.match_groups`), and owns the Bearer-token external match API (`/api/addons/qlmatch-packer/instances/<id>/matches`, which came from core's old `/api/v1/instances/<id>/matches`). Its only UI presence is what it contributes into demo-management's. |
-| `demo-stream` | qlsm-extra -- **owns the feature.** Core has no demo-stream endpoints, tasks, settings module or task-logic left -- its four built-in endpoints existed only to reach parity, and were deleted once this addon's own endpoints fully replaced them. |
-| `_examples/hello-addon` | Here, reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
-| `_examples/css-test-addon` | Here, reference only. Smallest possible tier-2 component, there only to prove `ui/Panel.css` gets loaded next to `ui/Panel.js`. Not loaded; copy it into the volume to try it. |
-| `_examples/ui-kit-test-addon` | Here, reference only. Exercises the shared `window.__qlsm.ui` kit (`Modal`, `Button`, `Panel`/`Card`, `AddonField`, `Icon`, `Stack`/`Row`) and needs no CSS of its own. Not loaded; copy it into the volume to try it. |
+| Shipped here | What it is |
+|--------------|------------|
+| `_examples/hello-addon` | Reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
+| `_examples/css-test-addon` | Reference only. Smallest possible tier-2 component, there only to prove `ui/Panel.css` gets loaded next to `ui/Panel.js`. |
+| `_examples/ui-kit-test-addon` | Reference only. Exercises the shared `window.__qlsm.ui` kit (`Modal`, `Button`, `Panel`/`Card`, `AddonField`, `Icon`, `Stack`/`Row`) and needs no CSS of its own. |
 
-**Where the line falls.** Mechanics two addons both need used to sit in core
-precisely because more than one feature used them: `ui/stats_hub.py` (the
-stats-hub key storage, the reserve call, the server.cfg cvar helpers), shared
-between telemetry-relay and demo-stream via a `feature` argument, and
-`ui/instance_demo_transport.py` (the SFTP "open a session to this instance's
-demo dir" plumbing), the same pattern for demo-management and qlmatch-packer.
+**An addon owns its feature end to end.** Its endpoints, tasks, settings,
+playbooks, host-side payload and UI all live in the addon package; core keeps
+no half of a feature behind. That is what makes not installing one a real
+choice rather than a partial one -- without the addon, its part of the UI and
+its part of the API are simply not there.
 
-Both are gone from core now, and each of the two addons in each pair carries
-its own private copy. A shared addon that both install instead was considered
-and rejected: this addon system has no addon-to-addon dependency concept (no
-manifest field, no install ordering, no uninstall guard), so a shared addon
-could vanish out from under both features at once instead of one of them
-degrading gracefully -- the opposite of the failure isolation this doc
-promises above. Duplicating is not free -- the two copies of each module are
-free to diverge and nothing keeps them in sync -- but it was judged the
-lesser risk. Core keeping them alive was not an option either: it no longer
-ships the features that motivated them.
-
-Note what was never shared to begin with, even when the mechanics were: the
-stats-hub *target* each feature points at (URL, ingest token, per-host
-override, per-instance server ID). telemetry-relay and demo-stream each keep
-their own, because the two may legitimately point at different stats-hub
-instances.
+**Two addons needing the same mechanism each carry their own copy of it.**
+There is no addon-to-addon dependency concept -- no manifest field, no
+install ordering, no uninstall guard -- so a shared addon could vanish out
+from under both of its dependants at once, the opposite of the failure
+isolation described below. Duplication is not free (the copies are free to
+diverge and nothing keeps them in sync), but it is the lesser risk until
+dependencies become a real feature.
 
 ## Layout
 
@@ -222,16 +206,14 @@ at all because every visual piece comes from `ctx.ui`.
 
 None of the tiers above cover one addon adding UI elements — actions,
 grouping rules, badges — to another addon's **hand-built** (tier 2)
-component. The first precedent is `demo_management.file_kinds`
-(qlmatch-packer's `backend.py` `contribute_file_kinds`, dispatched from
-demo-management's `ansible_instance_demos.py` `_demo_filename_re()`; both
-addons live in the qlsm-extra repo): it is a real, working addon-owned hook,
-but it is
-narrow (a flat list of filename extensions feeding a regex) and was never
-written up as a general pattern. The section below is that write-up, so the
-next case (e.g. a `demo_management.match_actions` hook letting
-qlmatch-packer add a per-row "Rebuild" button to `ViewDemosModal.jsx`) has
-something to follow instead of inventing its own shape.
+component. An addon-owned hook does: the addon that owns the surface declares
+an extension point, dispatches it from its own code, and renders whatever the
+other addons contribute.
+
+The examples below use `demo_management.*`, the extension points of a
+separately distributed demo-management addon. They are declared in this repo
+because core owns the registry of valid hook names (see below), not because
+core implements them.
 
 **This is a convention, not a mechanism QLSM enforces.** See "What
 `ctx.on`/`dispatch()` actually check" below for exactly where the line falls.
@@ -241,9 +223,9 @@ something to follow instead of inventing its own shape.
 An ordinary hook (`instance.launch_args`, `host.setup`, ...) is declared in
 `ui/addons/hooks.py` *and* dispatched from core (`ui/`). An addon-owned hook
 is declared in the same `HOOK_SCOPES` dict, but **dispatched from inside the
-addon that consumes the contribution**, not from core — `demo-management`
-calls `dispatch('demo_management.file_kinds', 0)` from its own module, the
-same way core calls `dispatch('instance.launch_args', instance_id)` from
+addon that consumes the contribution**, not from core — the consuming addon
+calls `dispatch('<its_id>.<point>', scope_id)` from its own module, the same
+way core calls `dispatch('instance.launch_args', instance_id)` from
 `ansible_instance_mgmt.py`. Nothing in the registry marks this distinction;
 it exists only because the call site lives in the addon instead of `ui/`. Say
 so explicitly in the `HOOK_SCOPES` comment for the entry, the way
@@ -258,11 +240,10 @@ surface is being extended goes first, using its manifest `id` with hyphens
 turned into underscores (`demo-management` -> `demo_management`), then a
 short noun for what's being contributed (`file_kinds`, `match_actions`).
 
-The name deliberately does **not** include the contributing addon's id.
-`demo_management.file_kinds` has exactly one contributor today
-(qlmatch-packer), but the hook belongs to demo-management's surface, not to
-qlmatch-packer, and a second contributor (some other packed-demo format)
-would register the same hook name, not a new one.
+The name deliberately does **not** include the contributing addon's id. A
+hook belongs to the surface it extends, not to whoever happens to be the only
+contributor today; a second contributor registers the same hook name rather
+than a new one.
 
 ### Expected return shape
 
@@ -276,10 +257,10 @@ recommendation, not code — but shape a contribution like:
 @ctx.on('demo_management.match_actions')
 def contribute_match_actions():
     return [{
-        'id': 'qlmatch-packer.rebuild',   # unique, "<contributor_addon_id>.<action>"
+        'id': 'packer-addon.rebuild',     # unique, "<contributor_addon_id>.<action>"
         'label': 'Rebuild',
         'icon': 'refresh-cw',             # name from the ctx.ui icon vocabulary
-        'match': lambda demo: demo['name'].endswith('.qlmatch'),
+        'match': lambda demo: demo['name'].endswith('.pack'),
         'action': {'route': 'matches/{name}/rebuild', 'method': 'POST', 'confirm': 'Rebuild this match?'},
     }]
 ```
@@ -288,11 +269,10 @@ def contribute_match_actions():
   the hook name itself, which is namespaced by the **consuming** addon) so
   the consumer can key a React list and log which addon a broken contribution
   came from.
-- `match` keeps the consumer format-agnostic — demo-management does not need
-  to know what `.qlmatch` means, only that qlmatch-packer's contribution
-  applies to rows for which `match(demo)` is true. This mirrors how
-  `file_kinds` already keeps demo-management ignorant of what a `.qlmatch`
-  file actually is.
+- `match` keeps the consumer format-agnostic — it does not need to know what
+  a `.pack` file is, only that the contribution applies to rows for which
+  `match(demo)` is true. This mirrors how `file_kinds` keeps the consumer
+  ignorant of what a contributed extension actually means.
 - `action` reuses the tier-1 `row_actions` route/method/confirm shape
   (`AddonTablePanel.jsx`) rather than inventing a second one, since the
   consumer is likely to hand it to a similar route-caller.
@@ -308,9 +288,9 @@ abort the others. For a UI-contribution hook this means: render contributed
 actions in addon-id alphabetical order, after the consumer's own hardcoded
 actions (if it has any).
 
-**Nothing dedupes or resolves conflicts.** `file_kinds` never needed
-conflict handling because duplicate extensions are harmless (a regex
-alternation with a repeated branch still matches the same set). A UI
+**Nothing dedupes or resolves conflicts.** A flat list of filename
+extensions does not need conflict handling, because duplicates are harmless
+(a regex alternation with a repeated branch still matches the same set). A UI
 contribution does not get that for free — two addons contributing the same
 `id`, or two `match` predicates both claiming the same row, will both render
 unless the **consumer** guards against it. The consuming addon is
