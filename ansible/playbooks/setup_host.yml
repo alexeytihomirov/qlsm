@@ -45,7 +45,7 @@
     # QLSM's own build: alexeytihomirov/minqlxtended fork (upstream +
     # per-match demo capture under sv_demoRecord/sv_demoCut). Shares minqlx's
     # plugin pool/shared dir on purpose -- see ui/runtime.py.
-    minqlxtended_patched_git_version: "2b7e094b27c46c7de120976f1a0b37c0a7b199d2"
+    minqlxtended_patched_git_version: "d0719268d4aa4d9c0f2f05c9524f2a87fa733bc5"
 
     runtime_shared_dir: "{{ minqlxtended_shared_dir if runtime == 'minqlxtended' else minqlx_shared_dir }}"
     runtime_plugins_dirname: "{{ 'minqlxtended-plugins' if runtime == 'minqlxtended' else 'minqlx-plugins' }}"
