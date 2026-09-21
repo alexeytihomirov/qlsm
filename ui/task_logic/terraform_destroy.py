@@ -15,6 +15,22 @@ from .terraform_runner import _run_terraform_command, _os_vars # Import the runn
 
 log = logging.getLogger(__name__)
 
+def _addon_cleanup_host(host_id):
+    """Run addon cleanup for a host that is being deleted.
+
+    Never raises: a failing addon must not block a delete the operator asked
+    for and leave a half-removed host behind. Core also drops the addon's own
+    AddonState rows here, since scope_id points at two different tables and
+    cannot be a foreign key.
+    """
+    try:
+        from ui.addons import cleanup_scope
+
+        cleanup_scope('host', host_id)
+    except Exception as e:
+        log.warning('Addon cleanup for host %s skipped: %s', host_id, e)
+
+
 def destroy_host_logic(host_id):
     """
     Task logic to destroy a host using Terraform CLI and Workspaces.
@@ -191,6 +207,7 @@ def destroy_host_logic(host_id):
 
         # Delete the host record from the database
         log.info(f"Deleting host record {host_id} ({host_name_for_files}) from database.")
+        _addon_cleanup_host(host_id)
         db.session.delete(host)
         db.session.commit()
         log.info(f"Finished task destroy_host for host_id: {host_id}. Host record '{host_name_for_files}' deleted.")

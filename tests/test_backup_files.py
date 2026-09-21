@@ -4,12 +4,12 @@ from ui.task_logic.backup_files import backup_file_trees, walk_tree
 
 
 class TestBackupFileTrees:
-    def test_returns_six_trees_in_configs_before_presets_order(self):
+    def test_returns_seven_trees_in_configs_before_presets_order(self):
         trees = backup_file_trees()
         prefixes = [t[0] for t in trees]
         assert prefixes == [
             'ssh-keys', 'terraform-state', 'configs', 'presets',
-            'plugins/shared-plugins', 'plugins/system-hooks',
+            'plugins/shared-plugins', 'plugins/system-hooks', 'addon-packages',
         ]
         assert prefixes.index('configs') < prefixes.index('presets')
 

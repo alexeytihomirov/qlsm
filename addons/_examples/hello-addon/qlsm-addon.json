@@ -1,0 +1,83 @@
+{
+  "id": "hello-addon",
+  "version": "1.0.0",
+  "name": "Hello Addon",
+  "description": "Reference addon exercising every mount point and both panel kinds. Not loaded by default - see README.md.",
+  "scopes": ["global", "host", "instance"],
+  "ui_api": 2,
+
+  "settings": {
+    "global": [
+      { "key": "greeting", "type": "string", "label": "Greeting", "default": "hello", "description": "Shown on the addon's own page." },
+      { "key": "api_token", "type": "secret", "label": "API token", "description": "Rendered masked, with a reveal toggle." }
+    ],
+    "host": [
+      { "key": "timeout_sec", "type": "number", "label": "Timeout (s)", "default": 2, "min": 1, "max": 30 },
+      { "key": "verbose", "type": "bool", "label": "Verbose logging", "default": false }
+    ],
+    "instance": [
+      { "key": "server_id", "type": "number", "label": "Server ID", "default": 0, "min": 0 }
+    ]
+  },
+
+  "ui": {
+    "icon": "puzzle",
+
+    "host_menu": [
+      { "id": "host-panel", "label": "Hello (host)", "icon": "radio", "panel": "host_form" }
+    ],
+    "instance_menu": [
+      { "id": "instance-files", "label": "Hello files", "icon": "film", "panel": "files_table" }
+    ],
+    "instance_tabs": [
+      { "id": "instance-tab", "label": "Hello", "icon": "puzzle", "panel": "instance_form" }
+    ],
+    "settings_section": {
+      "label": "Hello Addon", "icon": "puzzle", "panel": "global_form"
+    },
+    "page": {
+      "label": "Hello Addon", "icon": "puzzle", "panel": "page_table"
+    },
+
+    "panels": {
+      "host_form": {
+        "kind": "form",
+        "description": "Managed panel: no load route, so values are stored by QLSM itself and this addon needs no backend code for them.",
+        "status": { "load": "GET status" }
+      },
+      "instance_form": { "kind": "form" },
+      "global_form": { "kind": "form" },
+
+      "files_table": {
+        "kind": "table",
+        "load": "GET files?instance_id={instance_id}",
+        "rows": "files",
+        "row_key": "name",
+        "selectable": true,
+        "empty": "No files reported by this addon.",
+        "columns": [
+          { "key": "name", "label": "Name" },
+          { "key": "size", "label": "Size", "format": "bytes", "align": "right" },
+          { "key": "mtime", "label": "Modified", "format": "datetime", "align": "right" }
+        ],
+        "row_actions": [
+          { "id": "download", "label": "Download", "route": "GET files/download?filename={name}", "download": true }
+        ],
+        "bulk_actions": [
+          { "id": "download-batch", "label": "Download selected", "route": "POST files/download-batch", "download": true }
+        ]
+      },
+
+      "page_table": {
+        "kind": "table",
+        "load": "GET files",
+        "rows": "files",
+        "row_key": "name",
+        "columns": [
+          { "key": "name", "label": "Name" },
+          { "key": "size", "label": "Size", "format": "bytes", "align": "right" }
+        ]
+      }
+    }
+  }
+}

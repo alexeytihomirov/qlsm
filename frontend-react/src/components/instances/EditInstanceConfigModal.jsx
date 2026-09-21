@@ -30,6 +30,9 @@ import { qlworkshopLanguage } from '../../codemirror-lang-qlworkshop';
 import { qlentLanguage, qlentLinter } from '../../codemirror-lang-qlent';
 import HooksTab from './HooksTab';
 import OwnerAdminEditor from '../operators/OwnerAdminEditor';
+import AddonPanel from '../addons/AddonPanel';
+import { resolveAddonIcon } from '../addons/addonIcons';
+import { useAddonMounts } from '../../contexts/AddonsContext';
 import { diffAdminLists } from '../../utils/adminChanges';
 import {
   canEnableLanRate,
@@ -143,6 +146,9 @@ function EditInstanceConfigModal({
 
   // Scripts tab state
   const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'config' | 'scripts' | 'factories' | 'hooks' | 'admins'
+
+  // Addon-contributed tabs (empty when no addon declares instance_tabs)
+  const addonTabs = useAddonMounts('instance_tabs');
   const [checkedPlugins, setCheckedPlugins] = useState(new Set());
   const [initialCheckedPlugins, setInitialCheckedPlugins] = useState(new Set());
   const [scriptHostName, setScriptHostName] = useState(null);
@@ -1197,6 +1203,13 @@ function EditInstanceConfigModal({
                             { key: 'factories', icon: LayoutGrid, label: 'Factories' },
                             { key: 'hooks', icon: Webhook, label: 'Hooks' },
                             { key: 'admins', icon: Crown, label: 'Owner & Admins' },
+                            // Addon tabs come last so a newly installed addon
+                            // never reorders the tabs an operator already knows.
+                            ...addonTabs.map((mount) => ({
+                              key: `addon:${mount.key}`,
+                              icon: resolveAddonIcon(mount.icon),
+                              label: mount.label,
+                            })),
                           ].map((tab) => (
                             <button
                               key={tab.key}
@@ -1295,6 +1308,19 @@ function EditInstanceConfigModal({
                               adminsPreload={adminsPreload}
                             />
                           </div>
+                          {addonTabs.map((mount) => (
+                            activeMainTab === `addon:${mount.key}` && (
+                              <div key={mount.key} className="flex-1 min-h-0 overflow-y-auto">
+                                <AddonPanel
+                                  addon={mount.addon}
+                                  entry={mount.entry}
+                                  panel={mount.panel}
+                                  scope={mount.scope}
+                                  scopeId={instanceId}
+                                />
+                              </div>
+                            )
+                          ))}
                         </div>
 
                         <div className="mt-4 flex justify-between items-center flex-shrink-0">
