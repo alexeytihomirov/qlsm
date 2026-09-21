@@ -26,12 +26,6 @@ MOUNT_POINTS = ('host_menu', 'instance_menu', 'instance_tabs', 'settings_section
 # rather than a generic panel that loses half its controls.
 RENDER_MODES = ('panel', 'modal')
 
-# Reserved prefix for a component QLSM itself would provide, named in the
-# manifest instead of shipped as a file. QLSM provides none, so an entry using
-# it is reported as unsupported -- recognised here only so the manifest fails
-# with an explanation instead of rendering an empty panel.
-BUNDLED_COMPONENT_PREFIX = 'bundled:'
-
 # Bumped when the contract a mounted component sees (ctx shape, ui kit) changes
 # in a way an already-built addon bundle cannot survive. An addon declaring a
 # higher value is listed but not mounted -- see ui/addons/registry.py.
@@ -147,19 +141,10 @@ def _validate_ui(ui, errors):
             if has_panel and item['panel'] not in panels:
                 _err(errors, f'ui.{mount}: panel "{item["panel"]}" is not declared in ui.panels')
             if has_component:
-                comp = item['component']
-                if comp.startswith(BUNDLED_COMPONENT_PREFIX):
-                    # A component QLSM itself would provide, named rather
-                    # than shipped. Nothing resolves it, but it is still
-                    # shape-checked here so the frontend's "this QLSM does not
-                    # provide it" message is the failure, rather than a
-                    # malformed name slipping through to a fetch.
-                    name = comp[len(BUNDLED_COMPONENT_PREFIX):]
-                    if not name or '/' in name:
-                        _err(errors, f'ui.{mount}: bundled component name "{name}" is not valid')
-                # Tier-2 components are served from the addon's own ui/ dir;
+                # A component is served from the addon's own ui/ directory;
                 # anything escaping it is a path-traversal attempt.
-                elif comp.startswith('/') or '..' in comp.split('/'):
+                comp = item['component']
+                if comp.startswith('/') or '..' in comp.split('/'):
                     _err(errors, f'ui.{mount}: component path "{comp}" must stay inside the addon')
             renders = item.get('renders')
             if renders is not None and renders not in RENDER_MODES:

@@ -40,7 +40,7 @@ describe('ensureAddonCss', () => {
   });
 
   it('does nothing when the component has no css by convention', () => {
-    ensureAddonCss('demo-addon', 'bundled:relay-modal');
+    ensureAddonCss('demo-addon', 'ui/Panel');
     expect(document.querySelectorAll('link[id^="qlsm-addon-css--"]').length).toBe(0);
   });
 

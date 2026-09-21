@@ -3,7 +3,6 @@ import AddonComponentHost from './AddonComponentHost';
 import AddonErrorBoundary from './AddonErrorBoundary';
 import AddonFormPanel from './AddonFormPanel';
 import AddonTablePanel from './AddonTablePanel';
-import { BUNDLED_PREFIX } from './addonEntry';
 
 /**
  * Renders whatever a mount point asked for -- a declarative panel (tier 1) or
@@ -13,17 +12,7 @@ import { BUNDLED_PREFIX } from './addonEntry';
 function AddonPanel({ addon, entry, panel, scope, scopeId }) {
   let body;
 
-  if (entry?.component?.startsWith(BUNDLED_PREFIX)) {
-    // Named a component compiled into QLSM's own build. QLSM provides none,
-    // so there is no such component to borrow. Say so instead of rendering an
-    // empty panel.
-    body = (
-      <p className="py-4 text-sm text-theme-muted">
-        This addon asks for a built-in component ({entry.component}) that this QLSM does not
-        provide. Ship the component with the addon instead (see addons/README.md, "tier 2").
-      </p>
-    );
-  } else if (entry?.component) {
+  if (entry?.component) {
     body = <AddonComponentHost addon={addon} entry={entry} scope={scope} scopeId={scopeId} />;
   } else if (panel?.kind === 'form') {
     body = <AddonFormPanel addon={addon} panel={panel} scope={scope} scopeId={scopeId} />;

@@ -155,35 +155,19 @@ def test_read_manifest_round_trip(tmp_path):
     assert manifest['name'] == 'Sample Addon'
 
 
-# ---- bundled components + render mode ---------------------------------
+# ---- render mode ------------------------------------------------------
 
-def test_a_bundled_component_reference_is_accepted():
-    """The prefix is a valid manifest shape; whether this QLSM provides such
-    a component is the frontend's problem, not the validator's."""
+def test_a_component_entry_may_render_its_own_modal():
     manifest, errors = validate_manifest(_minimal(ui={
-        'host_menu': [{'id': 'relay', 'component': 'bundled:relay-modal', 'renders': 'modal'}],
+        'host_menu': [{'id': 'relay', 'component': 'ui/Panel.js', 'renders': 'modal'}],
     }))
     assert errors == []
     assert manifest['ui']['host_menu'][0]['renders'] == 'modal'
 
 
-def test_a_bundled_component_name_may_not_contain_a_path():
-    _, errors = validate_manifest(_minimal(ui={
-        'host_menu': [{'id': 'relay', 'component': 'bundled:../secret'}],
-    }))
-    assert any('not valid' in e for e in errors)
-
-
-def test_an_empty_bundled_component_name_is_rejected():
-    _, errors = validate_manifest(_minimal(ui={
-        'host_menu': [{'id': 'relay', 'component': 'bundled:'}],
-    }))
-    assert any('not valid' in e for e in errors)
-
-
 def test_render_mode_must_be_known():
     _, errors = validate_manifest(_minimal(ui={
-        'host_menu': [{'id': 'relay', 'component': 'bundled:relay-modal', 'renders': 'hologram'}],
+        'host_menu': [{'id': 'relay', 'component': 'ui/Panel.js', 'renders': 'hologram'}],
     }))
     assert any('"renders" must be one of' in e for e in errors)
 
