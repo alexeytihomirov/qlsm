@@ -99,9 +99,9 @@ describe('AddonComponentHost', () => {
 
     // The cross-addon handle: a contributed action names the addon that owns
     // the route, and it must reach that addon, not this one.
-    ctx.apiFor('qlmatch-packer')('POST', 'matches/x/rebuild');
+    ctx.apiFor('other-addon')('POST', 'matches/x/rebuild');
     expect(mocks.addonRequest).toHaveBeenLastCalledWith(
-      'qlmatch-packer', 'POST', 'matches/x/rebuild', undefined,
+      'other-addon', 'POST', 'matches/x/rebuild', undefined,
     );
 
     ctx.download('GET', 'demos/download');
