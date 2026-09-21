@@ -98,14 +98,13 @@ export default function SidebarResizeHandle() {
       <span className="absolute inset-y-0 -left-1.5 -right-1.5" aria-hidden="true" />
       <span
         aria-hidden="true"
-        className={`pointer-events-none absolute top-1/2 left-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border transition-colors ${
+        className={`pointer-events-none absolute top-1/2 left-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-colors ${
           dragging
-            ? 'border-[var(--accent-primary)] bg-[#3a3b42]'
-            : 'border-[#3c4453] bg-[#2a2b30] group-hover:border-[var(--accent-primary)] group-hover:bg-[#3a3b42]'
+            ? 'border-[var(--accent-primary)] bg-[var(--resize-pill-bg-hover)]'
+            : 'border-[var(--resize-pill-border)] bg-[var(--resize-pill-bg)] group-hover:border-[var(--accent-primary)] group-hover:bg-[var(--resize-pill-bg-hover)]'
         }`}
-        style={{ boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)' }}
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" className="text-[#e2e8f0]">
+        <svg viewBox="0 0 16 16" width="12" height="12" className="text-[var(--resize-pill-icon)]">
           <rect x="4" y="2" width="2" height="12" rx="1" fill="currentColor" />
           <rect x="10" y="2" width="2" height="12" rx="1" fill="currentColor" />
         </svg>
