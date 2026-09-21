@@ -1,8 +1,10 @@
-import React, { Suspense, useState } from 'react';
+import React, { useState } from 'react';
 import { Menu } from '@headlessui/react';
+import AddonComponentHost from './AddonComponentHost';
+import AddonErrorBoundary from './AddonErrorBoundary';
 import AddonModal from './AddonModal';
 import { resolveAddonIcon } from './addonIcons';
-import { rendersOwnModal, resolveBundledComponent } from './bundledPanels';
+import { rendersOwnModal } from './addonEntry';
 import { useAddonMounts } from '../../contexts/AddonsContext';
 
 /**
@@ -15,9 +17,10 @@ import { useAddonMounts } from '../../contexts/AddonsContext';
  * outside it. HostActionsMenu already keeps its own confirmation modals
  * outside `<Menu>` for the same reason.
  *
- * `entity` is the whole host/instance object, not just its id: a bundled
- * addon can mount the same purpose-built modal core mounts, and those take
- * the entity (they show its name, port and so on).
+ * `entity` is the whole host/instance object, not just its id: an addon that
+ * supplies its own dialog gets it through `ctx.modal.entity`, because a
+ * purpose-built screen usually shows the thing's name, port and so on -- not
+ * only its id.
  *
  * Usage in a menu component:
  *
@@ -62,21 +65,30 @@ export function useAddonMenu(point, entity, subtitle) {
     );
   };
 
-  // A bundled addon may supply the whole dialog. Then core's modal shell is
-  // skipped entirely -- that is what makes the addon entry pixel-identical to
-  // the built-in one instead of merely similar.
-  const OwnModal = openMount && rendersOwnModal(openMount.entry)
-    ? resolveBundledComponent(openMount.addon, openMount.entry)
-    : null;
+  // An addon may supply the whole dialog (`renders: "modal"` on a tier-2
+  // component). Then core's modal shell is skipped entirely -- that is what
+  // lets a feature keep its purpose-built screen on the way into an addon
+  // instead of being flattened into the generic panel shell.
+  const ownModal = openMount && rendersOwnModal(openMount.entry) && openMount.entry?.component;
 
-  // Suspense because the bundled components are lazily loaded (see
-  // bundledPanels). Nothing is shown while it loads: the operator clicked a
-  // menu entry, and a flash of placeholder before the real dialog is worse
-  // than the dialog simply appearing.
-  const modal = OwnModal ? (
-    <Suspense fallback={null}>
-      <OwnModal isOpen={Boolean(openMount)} onClose={() => setOpenMount(null)} entity={entity} />
-    </Suspense>
+  // Nothing is shown while the bundle loads: the operator clicked a menu
+  // entry, and a flash of placeholder before the real dialog is worse than
+  // the dialog simply appearing.
+  const modal = ownModal ? (
+    <AddonErrorBoundary addonId={openMount.addon?.id}>
+      <AddonComponentHost
+        addon={openMount.addon}
+        entry={openMount.entry}
+        scope={openMount.scope}
+        scopeId={scopeId}
+        modal={{
+          isOpen: Boolean(openMount),
+          onClose: () => setOpenMount(null),
+          entity,
+          subtitle,
+        }}
+      />
+    </AddonErrorBoundary>
   ) : (
     <AddonModal
       isOpen={Boolean(openMount)}

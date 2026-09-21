@@ -16,12 +16,14 @@ features used to share in core, is gone entirely now that each addon carries
 its own private copy).
 """
 import os
+import re
 
 import pytest
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 UI_DIR = os.path.join(REPO_ROOT, 'ui')
 FRONTEND_SRC = os.path.join(REPO_ROOT, 'frontend-react', 'src')
+ADDONS_TREE = os.path.join(REPO_ROOT, 'addons')
 
 # Names that only exist because the telemetry-relay feature does.
 FORBIDDEN_IN_CORE = [
@@ -40,16 +42,14 @@ FORBIDDEN_IN_CORE = [
     'is_instance_demo_stream_enabled',
 ]
 
-# The one acknowledged exception. bundledPanels.jsx and bundled/ are the
-# bridge that lets an addon shipped *inside the image* mount a component
-# QLSM's own build compiles, and naming the addon is unavoidable there. It is
-# the price of not making every bundled addon ship a pre-built JS bundle; the
-# way out is tier 2 (see addons/README.md), at which point this exception
-# goes away. Listed explicitly so it stays visible instead of becoming a
-# quietly-weakened assertion.
-BRIDGE = os.path.join(FRONTEND_SRC, 'components', 'addons')
 # The addon system itself, which builds the synthetic module name every addon
 # is loaded under. Machinery, not a dependency on any particular addon.
+#
+# There used to be a second exception here: frontend-react's bundled-component
+# registry, which named the addons whose UI core compiled. That exception is
+# gone -- QLSM ships no feature addon in its image any more, every addon
+# brings its own pre-built component, and no file under frontend-react/src
+# names an addon. The spec's "one acknowledged coupling" is closed.
 ADDON_MACHINERY = os.path.join(UI_DIR, 'addons')
 
 
@@ -58,7 +58,7 @@ def _core_files():
         for root, dirs, files in os.walk(base):
             dirs[:] = [d for d in dirs if d not in ('__pycache__', 'node_modules')]
             here = os.path.abspath(root)
-            if here.startswith(BRIDGE) or here.startswith(ADDON_MACHINERY):
+            if here.startswith(ADDON_MACHINERY):
                 continue
             for name in files:
                 if name.endswith(('.py', '.js', '.jsx')):
@@ -86,8 +86,6 @@ def test_core_never_imports_an_addon():
     satisfy a grep would make the code harder to understand for no gain. What
     must never happen is core *depending* on addon code: uninstall the addon
     and core stops working.
-
-    The bundled bridge is the one allowed exception (see BRIDGE above).
     """
     offenders = []
     for path in _core_files():
@@ -95,8 +93,21 @@ def test_core_never_imports_an_addon():
             body = f.read()
         if 'qlsm_addon_' in body:
             offenders.append((os.path.relpath(path, REPO_ROOT), 'imports an addon module'))
-        if "from '../../../../../addons/" in body or 'from "../../../../../addons/' in body:
-            offenders.append((os.path.relpath(path, REPO_ROOT), 'imports addon UI'))
+        for spec in re.findall(r'''from ['"](\.[^'"]+)['"]''', body):
+            # Resolve the relative import for real rather than pattern-matching
+            # the ../ depth: components/addons/ is core's own directory and
+            # would match any "addons/" needle.
+            target = os.path.normpath(os.path.join(os.path.dirname(path), spec))
+            if not target.startswith(ADDONS_TREE + os.sep):
+                continue
+            # addons/_examples/ is reference material that ships in this repo
+            # and loads nowhere -- a test may import one to prove the contract
+            # it demonstrates still holds (UiKitTestAddonPanel.test.jsx). A
+            # real addon is a different thing entirely: it can be uninstalled.
+            if target.startswith(os.path.join(ADDONS_TREE, '_examples') + os.sep):
+                continue
+            offenders.append((os.path.relpath(path, REPO_ROOT),
+                              f'imports addon UI: {os.path.relpath(target, REPO_ROOT)}'))
     assert not offenders, f'core depends on addon code: {offenders}'
 
 
@@ -117,16 +128,16 @@ def test_core_has_no_telemetry_endpoints():
     assert not [r for r in core_rules if 'demo-stream' in r], core_rules
 
 
-def test_the_telemetry_addon_still_provides_them():
-    """The other half of the criterion: removed from core, present as an addon.
+def test_no_feature_addon_ships_in_the_image():
+    """The other half of the criterion, as far as this repo can still check it.
 
-    telemetry-relay itself no longer ships bundled in this repo (it lives in
-    the separate qlsm-extra repo, installed by the operator onto the
-    ADDON_PACKAGES_DIR volume) -- so a default app has nowhere to load it
-    from and cannot assert its routes exist. Same for demo-stream, which
-    followed the exact same path afterwards. demo-management is the one
-    addon that still ships bundled; its route is the part of this guarantee
-    this repo alone can check."""
+    Every feature addon (telemetry-relay, demo-management, demo-stream,
+    qlmatch-packer) now lives in the separate qlsm-extra repo and is installed
+    by the operator onto the ADDON_PACKAGES_DIR volume, so a default app has
+    nowhere to load one from and cannot assert its routes exist. What this
+    repo can still pin is the inverse: a stock QLSM answers the addon
+    machinery's own routes and nothing feature-specific, and addons/ holds
+    only documentation plus the non-loading reference examples."""
     from ui import create_app
 
     app = create_app({
@@ -134,7 +145,15 @@ def test_the_telemetry_addon_still_provides_them():
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:', 'RCON_ENABLED': False,
     })
     rules = {str(r) for r in app.url_map.iter_rules()}
-    assert '/api/addons/demo-management/instances/<int:instance_id>/demos' in rules
+    assert '/api/addons' in rules
+    assert not [r for r in rules if r.startswith('/api/addons/demo-management')]
+
+    addons_dir = os.path.join(REPO_ROOT, 'addons')
+    shipped = {
+        name for name in os.listdir(addons_dir)
+        if os.path.isfile(os.path.join(addons_dir, name, 'qlsm-addon.json'))
+    }
+    assert shipped == set(), f'a feature addon crept back into the image: {shipped}'
 
 
 def test_the_external_api_moved_with_qlmatch_packer():

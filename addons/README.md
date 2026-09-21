@@ -22,38 +22,43 @@ restart.
 
 ## What ships here today
 
-| Addon | State |
-|-------|-------|
-| `telemetry-relay` | **Owns the feature.** QLSM core has no telemetry endpoints, tasks, settings module, playbook, payload or UI left. All of it lives here, including `ui/TelemetryRelayModal.jsx`. |
-| `demo-management` | **Owns the feature.** The Demos screen, its endpoints, and `ansible_instance_demos.py` all live here. Recognises raw `.dm_91` only by default -- packed/derived formats are another addon's job to add via the `demo_management.file_kinds` hook (see `qlmatch-packer`). Uninstalling this addon removes demo listing/download for the UI entirely -- by design. |
-| `qlmatch-packer` | **Owns the format.** Deploys the external Node `.qlmatch` packer to hosts (`host.payload_sync`), teaches `demo-management` to recognise `.qlmatch`/`.replay.json.gz`/`.packer.log` (`demo_management.file_kinds`), clusters a pack with its sidecar/log into one row and contributes Rebuild-sidecar/Full-rebuild actions to the Demos modal (`demo_management.match_groups`), and owns the Bearer-token external match API (`/api/addons/qlmatch-packer/instances/<id>/matches`, moved here from `demo-management`, which itself moved it from core's old `/api/v1/instances/<id>/matches`). No declarative panel of its own -- its only UI presence is what it contributes into demo-management's. |
-| `demo-stream` | **Owns the feature.** QLSM core has no demo-stream endpoints, tasks, settings module or task-logic left -- its four built-in endpoints existed only to reach parity, and were deleted once this addon's own endpoints fully replaced them. |
-| `_examples/hello-addon` | Reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
-| `_examples/css-test-addon` | Reference only. Smallest possible tier-2 component, there only to prove `ui/Panel.css` gets loaded next to `ui/Panel.js`. Not loaded; copy it into the volume to try it. |
-| `_examples/ui-kit-test-addon` | Reference only. Exercises the shared `window.__qlsm.ui` kit (`Modal`, `Button`, `Panel`/`Card`, `AddonField`, `Icon`, `Stack`/`Row`) and needs no CSS of its own. Not loaded; copy it into the volume to try it. |
+**No feature addon does.** QLSM's image carries this documentation and the
+reference examples, nothing else. Every real addon lives in a repository the
+operator installs from, so a QLSM install only runs the features its operator
+asked for.
 
-**Where the line falls.** The stats-hub *mechanics* every stats-hub
-integration needs (key storage, the reserve call, the server.cfg cvar
-helpers) used to live in core as `ui/stats_hub.py`, shared between
-telemetry-relay and demo-stream via a `feature` argument -- and the SFTP
-plumbing for reading an instance's demo dir (`ui/instance_demo_transport.py`)
-was the same pattern for demo-management and qlmatch-packer. Both are gone
-from core now: each of the two addons in each pair carries its own private
-copy (`telemetry-relay/stats_hub.py` + `demo-stream/stats_hub.py`;
-`demo-management/instance_demo_transport.py` +
-`qlmatch-packer/instance_demo_transport.py`, the latter in the separate
-qlsm-extra repo). A shared addon that both install instead was considered
+| Addon | Where it lives |
+|-------|----------------|
+| `telemetry-relay` | [qlsm-extra](https://github.com/alexeytihomirov/qlsm-extra) -- **owns the feature.** Core has no telemetry endpoints, tasks, settings module, playbook, payload or UI left. |
+| `demo-management` | qlsm-extra -- **owns the feature.** The Demos screen (as a tier-2 component), its endpoints, `ansible_instance_demos.py` and its own copy of the SFTP transport. Recognises raw `.dm_91` only by default; packed/derived formats are another addon's job to add via the `demo_management.file_kinds` hook. Not installing it means no demo listing/download in the UI at all -- by design. |
+| `qlmatch-packer` | qlsm-extra -- **owns the format.** Deploys the external Node `.qlmatch` packer to hosts (`host.payload_sync`), teaches `demo-management` to recognise `.qlmatch`/`.replay.json.gz`/`.packer.log` (`demo_management.file_kinds`), clusters a pack with its sidecar/log into one row and contributes Rebuild-sidecar/Full-rebuild actions to the Demos modal (`demo_management.match_groups`), and owns the Bearer-token external match API (`/api/addons/qlmatch-packer/instances/<id>/matches`, which came from core's old `/api/v1/instances/<id>/matches`). Its only UI presence is what it contributes into demo-management's. |
+| `demo-stream` | qlsm-extra -- **owns the feature.** Core has no demo-stream endpoints, tasks, settings module or task-logic left -- its four built-in endpoints existed only to reach parity, and were deleted once this addon's own endpoints fully replaced them. |
+| `_examples/hello-addon` | Here, reference only. Not loaded (`_examples` has no manifest of its own); copy it into the volume to try it. |
+| `_examples/css-test-addon` | Here, reference only. Smallest possible tier-2 component, there only to prove `ui/Panel.css` gets loaded next to `ui/Panel.js`. Not loaded; copy it into the volume to try it. |
+| `_examples/ui-kit-test-addon` | Here, reference only. Exercises the shared `window.__qlsm.ui` kit (`Modal`, `Button`, `Panel`/`Card`, `AddonField`, `Icon`, `Stack`/`Row`) and needs no CSS of its own. Not loaded; copy it into the volume to try it. |
+
+**Where the line falls.** Mechanics two addons both need used to sit in core
+precisely because more than one feature used them: `ui/stats_hub.py` (the
+stats-hub key storage, the reserve call, the server.cfg cvar helpers), shared
+between telemetry-relay and demo-stream via a `feature` argument, and
+`ui/instance_demo_transport.py` (the SFTP "open a session to this instance's
+demo dir" plumbing), the same pattern for demo-management and qlmatch-packer.
+
+Both are gone from core now, and each of the two addons in each pair carries
+its own private copy. A shared addon that both install instead was considered
 and rejected: this addon system has no addon-to-addon dependency concept (no
 manifest field, no install ordering, no uninstall guard), so a shared addon
 could vanish out from under both features at once instead of one of them
 degrading gracefully -- the opposite of the failure isolation this doc
 promises above. Duplicating is not free -- the two copies of each module are
 free to diverge and nothing keeps them in sync -- but it was judged the
-lesser risk against a module disappearing out from under two independent,
-independently-installable features. The stats-hub *target* each feature
-points at (URL, ingest token, per-host override, per-instance server ID) was
-never shared to begin with, even when the mechanics were: each feature keeps
-its own, because the two may legitimately point at different stats-hub
+lesser risk. Core keeping them alive was not an option either: it no longer
+ships the features that motivated them.
+
+Note what was never shared to begin with, even when the mechanics were: the
+stats-hub *target* each feature points at (URL, ingest token, per-host
+override, per-instance server ID). telemetry-relay and demo-stream each keep
+their own, because the two may legitimately point at different stats-hub
 instances.
 
 ## Layout
@@ -145,34 +150,6 @@ Mount points: `host_menu`, `instance_menu`, `instance_tabs`,
 addon's own `/api/addons/<id>/` prefix; absolute paths are rejected at
 manifest validation, so a panel cannot point at a core endpoint.
 
-## UI, tier 1.5 — a component QLSM already builds (bundled addons only)
-
-A feature that already has a purpose-built screen must not lose half of it on
-the way into an addon. The declarative panels are generic by design; the
-Demos modal alone has a filename filter, a "N of M" counter, a refresh
-button, a header subtitle, monospace filenames and a Recorded column that no
-generic table reproduces by accident.
-
-So a **bundled** addon may name a component QLSM already builds:
-
-```json
-{ "id": "relay", "label": "Telemetry Relay", "icon": "radio",
-  "component": "bundled:relay-modal", "renders": "modal" }
-```
-
-`renders: "modal"` means the component *is* the whole dialog — QLSM's modal
-shell is skipped. The registry lives in
-`frontend-react/src/components/addons/bundledPanels.jsx`, and each entry
-mounts the same component the built-in menu mounts with its data source
-swapped for the addon's endpoints. Parity is then true by construction and
-stays true when either side changes.
-
-Only addons shipped in the image can do this — an uploaded `.zip` cannot
-reach into QLSM's build, and `bundled:` is refused for it. Everything in that
-registry is loaded lazily: it sits in the import chain of every action menu,
-and anything heavy at module scope there breaks unrelated pages and their
-tests.
-
 ## UI, tier 2 — the addon's own component
 
 Build it yourself and ship the built file in `ui/`:
@@ -193,11 +170,40 @@ The component receives one prop:
 
 ```js
 export default function Panel({ ctx }) { /* ... */ }
-// ctx = { addonId, scope: { kind, id }, api, ui, manifest }
+// ctx = { addonId, scope: { kind, id }, api, apiFor, download, saveBlob, ui, manifest, modal }
 ```
 
 `ctx.api(method, path, { params, data })` is pre-pinned to your addon's own
-prefix. `ctx.ui` is the shared component kit.
+prefix; `ctx.apiFor(otherAddonId)` returns the same call pinned to another
+addon's, which is how a component runs an action a *different* addon
+contributed into it (see "Cross-addon UI contribution" below). Neither can
+reach a core endpoint. `ctx.download(method, path, { data, fallbackName })` is the same call
+for a file response -- it comes back as `{ blob, filename }`, keeping the
+CSRF header and the 401 interceptor a bare `<a href>` would lose, and
+`ctx.saveBlob(blob, filename)` hands it to the browser. `ctx.ui` is the
+shared component kit.
+
+**A component may be the whole dialog.** A mount point in `host_menu` or
+`instance_menu` that declares `"renders": "modal"` gets no shell from core --
+your component renders it, which is how a feature keeps a purpose-built
+screen (its own width, header actions, subtitle) that the generic shell
+cannot express. Then `ctx.modal` is set:
+
+```json
+{ "id": "demos", "label": "Demos", "icon": "film",
+  "component": "ui/Panel.js", "renders": "modal" }
+```
+
+```js
+// ctx.modal = { isOpen, onClose, entity, subtitle }
+const { Modal } = window.__qlsm.ui;
+return h(Modal, { isOpen: ctx.modal.isOpen, onClose: ctx.modal.onClose, size: '2xl' }, ...);
+```
+
+`entity` is the whole host/instance object, not just its id, because a
+purpose-built screen usually shows its name and port too. Nothing is rendered
+while the bundle loads: the operator clicked a menu entry, and a flash of
+placeholder before the real dialog is worse than the dialog simply appearing.
 
 Declare `"ui_api"` in the manifest. A core that does not implement the
 version you ask for lists the addon but withholds its UI, with the reason
@@ -215,11 +221,12 @@ at all because every visual piece comes from `ctx.ui`.
 ## Cross-addon UI contribution (addon-owned hooks)
 
 None of the tiers above cover one addon adding UI elements — actions,
-grouping rules, badges — to another addon's **hand-built** (tier 1.5/2)
-component. The only precedent today is `demo_management.file_kinds`
-(`addons/qlmatch-packer/backend.py`'s `contribute_file_kinds`, dispatched
-from `addons/demo-management/ansible_instance_demos.py`'s
-`_demo_filename_re()`): it is a real, working addon-owned hook, but it is
+grouping rules, badges — to another addon's **hand-built** (tier 2)
+component. The first precedent is `demo_management.file_kinds`
+(qlmatch-packer's `backend.py` `contribute_file_kinds`, dispatched from
+demo-management's `ansible_instance_demos.py` `_demo_filename_re()`; both
+addons live in the qlsm-extra repo): it is a real, working addon-owned hook,
+but it is
 narrow (a flat list of filename extensions feeding a regex) and was never
 written up as a general pattern. The section below is that write-up, so the
 next case (e.g. a `demo_management.match_actions` hook letting
@@ -238,9 +245,11 @@ addon that consumes the contribution**, not from core — `demo-management`
 calls `dispatch('demo_management.file_kinds', 0)` from its own module, the
 same way core calls `dispatch('instance.launch_args', instance_id)` from
 `ansible_instance_mgmt.py`. Nothing in the registry marks this distinction;
-it exists only because the call site happens to live in `addons/` instead of
-`ui/`. Say so explicitly in the `HOOK_SCOPES` comment for the entry, the way
-`demo_management.file_kinds` already does.
+it exists only because the call site lives in the addon instead of `ui/`. Say
+so explicitly in the `HOOK_SCOPES` comment for the entry, the way
+`demo_management.file_kinds` already does, and add the name to
+`tests/test_addon_hooks_are_wired.py`'s `OUT_OF_TREE` set — that test demands
+a real dispatch call site inside this repo, and an addon's is not in it.
 
 ### Naming convention
 

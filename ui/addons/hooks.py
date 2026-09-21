@@ -19,10 +19,15 @@ no per-addon `if enabled:` check to forget.
 # reference addon subscribed to instance.launch_args and would have been
 # silently ignored. tests/test_addon_hooks_are_wired.py now fails if a hook
 # is declared without a call site, so the contract cannot rot back. Most call
-# sites live in core (ui/), but an addon-owned extension point (see
-# demo_management.file_kinds below) dispatches from inside the addon that
-# defines it instead -- the wiring test scans addons/ too for exactly that
-# case, still requiring a real call, not just the declaration here.
+# sites live in core (ui/). The exception is an addon-owned extension point
+# (see demo_management.file_kinds below), which is dispatched from inside the
+# addon that defines it -- and since every addon now lives outside this repo,
+# that call site is unreachable from here. Those names are listed explicitly
+# in the wiring test's OUT_OF_TREE set rather than silently skipped.
+#
+# Core still owns the *registry* of valid hook names even for those: ctx.on()
+# rejects anything not listed here at addon load time, so a typo in an addon
+# fails loudly instead of subscribing to nothing.
 HOOK_SCOPES = {
     # host lifecycle
     'host.setup': 'host',      # ansible_host_setup.py, contributes extra-vars
@@ -48,8 +53,9 @@ HOOK_SCOPES = {
     # the export and the restore, so a tree contributed once is handled in
     # both directions.
     'backup.export': None,
-    # Addon-owned extension point (dispatched by demo-management itself, not
-    # core): demo-management only recognises raw .dm_91 by default; another
+    # Addon-owned extension point (dispatched by the demo-management addon
+    # itself, which lives in the qlsm-extra repo, not by core):
+    # demo-management only recognises raw .dm_91 by default; another
     # addon contributes additional filename extensions it wants listed and
     # downloadable alongside it (e.g. qlmatch-packer adds "qlmatch",
     # "replay.json.gz", "packer.log"). Gated at 'global' scope, the same
@@ -57,8 +63,8 @@ HOOK_SCOPES = {
     # qlmatch-packer off there also stops its files showing up in Demos,
     # consistent with "hidden from host/instance menus until switched on".
     'demo_management.file_kinds': 'global',
-    # Addon-owned extension point (dispatched by demo-management, not core),
-    # same "global" gate as file_kinds. Consumer passes (instance_id, demos)
+    # Addon-owned extension point (dispatched by the demo-management addon,
+    # not by core), same "global" gate as file_kinds. Consumer passes (instance_id, demos)
     # -- the current flat file list it already built -- and a contributor
     # returns fully-resolved groups: [{group_id, label, member_names,
     # addon_id, actions: [{id, label, icon, danger, action: {route, method,

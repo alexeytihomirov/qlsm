@@ -2,10 +2,9 @@ import React from 'react';
 import * as addonUi from './uiKit';
 
 /**
- * Publishes React and the shared UI kit on window.__qlsm so any addon
- * component -- a tier-2 pre-built bundle (AddonComponentHost) or a bundled
- * addon's own component compiled straight into core (bundledPanels) -- can
- * read them off the runtime instead of importing core internals directly.
+ * Publishes React and the shared UI kit on window.__qlsm so an addon's
+ * pre-built component bundle (AddonComponentHost) can read them off the
+ * runtime instead of importing core internals directly.
  *
  * Idempotent and cheap (three property assignments), so it is safe to call
  * on every render path that might mount an addon component rather than only
