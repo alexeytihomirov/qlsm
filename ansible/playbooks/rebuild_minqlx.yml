@@ -11,6 +11,10 @@
     runtime: "minqlx"
     minqlxtended_git_version: "411591a2f6f8ad26949ee4c83758149d5b95f7ab"
     minqlxtended_shared_dir: "/home/ql/minqlxtended-shared"
+    # QLSM's own build: alexeytihomirov/minqlxtended fork (upstream +
+    # per-match demo capture under sv_demoRecord/sv_demoCut). Shares minqlx's
+    # plugin pool/shared dir on purpose -- see ui/runtime.py.
+    minqlxtended_patched_git_version: "d0719268d4aa4d9c0f2f05c9524f2a87fa733bc5"
 
   tasks:
     - name: Clean up old minqlx build directory

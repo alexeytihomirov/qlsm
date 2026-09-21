@@ -67,6 +67,32 @@ _RUNTIME_PATHS = {
         # runtime provides the behaviour natively.
         'excluded_system_hooks': frozenset({'force_rate.so'}),
     },
+    # QLSM's own build: the alexeytihomirov/minqlxtended fork, i.e. upstream
+    # tjone270/minqlxtended plus QLSM-specific engine work landed as real
+    # commits (per-match demo capture driven from game_events.c, under
+    # sv_demoRecord/sv_demoCut). No patch chain is applied at deploy time --
+    # the fork is built directly from its own git_repo/git_version.
+    #
+    # Shares minqlx's plugin pool and shared dir rather than minqlxtended's,
+    # because that is what host "germany" has actually been running since
+    # this flavor was introduced -- changing either here would silently
+    # re-point that host's next rerun-setup at an empty/foreign location.
+    MINQLXTENDED_PATCHED: {
+        'runtime': MINQLXTENDED_PATCHED,
+        'plugins_dirname': 'minqlx-plugins',
+        'asset_plugins_dir': 'minqlx-plugins',
+        'shared_dir': '/home/ql/minqlx-shared',
+        'engine_so': 'minqlxtended.x64.so',
+        'launch_script': 'run_server_x64_minqlxtended.sh',
+        'log_filename': 'minqlxtended.log',
+        'git_repo': 'https://github.com/alexeytihomirov/minqlxtended.git',
+        'git_version': 'd0719268d4aa4d9c0f2f05c9524f2a87fa733bc5',
+        'os_name': 'Ubuntu 24.04 LTS x64',
+        'os_family': 'ubuntu',
+        'os_type': 'ubuntu',
+        'min_python': (3, 12),
+        'excluded_system_hooks': frozenset({'force_rate.so'}),
+    },
 }
 
 
