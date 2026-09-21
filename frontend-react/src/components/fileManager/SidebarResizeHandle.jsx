@@ -89,13 +89,27 @@ export default function SidebarResizeHandle() {
       onPointerCancel={endDrag}
       onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
       onKeyDown={handleKeyDown}
-      className={`relative w-px flex-shrink-0 cursor-col-resize touch-none transition-colors focus:outline-none focus-visible:bg-[var(--accent-primary)] ${
+      className={`group relative w-px flex-shrink-0 cursor-col-resize touch-none transition-colors focus:outline-none focus-visible:bg-[var(--accent-primary)] ${
         dragging
           ? 'bg-[var(--accent-primary)]'
           : 'bg-[var(--surface-border)] hover:bg-[var(--accent-primary)]'
       }`}
     >
       <span className="absolute inset-y-0 -left-1.5 -right-1.5" aria-hidden="true" />
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute top-1/2 left-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border transition-colors ${
+          dragging
+            ? 'border-[var(--accent-primary)] bg-[#3a3b42]'
+            : 'border-[#3c4453] bg-[#2a2b30] group-hover:border-[var(--accent-primary)] group-hover:bg-[#3a3b42]'
+        }`}
+        style={{ boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)' }}
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" className="text-[#e2e8f0]">
+          <rect x="4" y="2" width="2" height="12" rx="1" fill="currentColor" />
+          <rect x="10" y="2" width="2" height="12" rx="1" fill="currentColor" />
+        </svg>
+      </span>
     </div>
   );
 }
