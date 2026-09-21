@@ -11,6 +11,7 @@ from ui.addons.install import (
     AddonInstallError,
     install_addon_zip,
     scan_installed_ids,
+    scan_installed_versions,
     uninstall_addon,
 )
 from ui.addons.manifest import CURRENT_UI_API, MANIFEST_FILENAME, read_manifest, validate_manifest
@@ -43,6 +44,7 @@ __all__ = [
     'install_addon_zip',
     'read_manifest',
     'scan_installed_ids',
+    'scan_installed_versions',
     'uninstall_addon',
     'validate_manifest',
 ]
