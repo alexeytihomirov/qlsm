@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import * as addonUi from './uiKit';
-import { addonAssetUrl, addonRequest } from '../../services/addons';
+import {
+  addonAssetUrl, addonDownload, addonRequest, saveBlob,
+} from '../../services/addons';
 import { ensureAddonCss } from './addonCss';
 import { publishAddonRuntime } from './publishAddonRuntime';
 
@@ -47,7 +49,15 @@ function AddonComponentHost({ addon, entry, scope, scopeId }) {
     return () => { cancelled = true; };
   }, [addon.id, entry.component, entry.export]);
 
+  // An own-modal mount has no panel body to put a message in -- whatever it
+  // renders lands loose on the page behind the (absent) dialog. So it reports
+  // a failed load to the console and shows nothing, the same way the bundled
+  // tier used to show nothing while its lazy chunk loaded.
   if (error) {
+    if (modal) {
+      console.error(`Addon ${addon.id}: could not load ${entry.component}: ${error}`);
+      return null;
+    }
     return (
       <p className="py-4 text-sm" style={{ color: 'var(--accent-danger)' }}>
         Could not load this addon's component: {error}
@@ -56,6 +66,7 @@ function AddonComponentHost({ addon, entry, scope, scopeId }) {
   }
 
   if (!Component) {
+    if (modal) return null;
     return (
       <div className="flex items-center gap-2 py-6 text-sm text-theme-muted">
         <Loader2 size={15} className="animate-spin" /> Loading component...
@@ -63,15 +74,31 @@ function AddonComponentHost({ addon, entry, scope, scopeId }) {
     );
   }
 
-  // The context an addon component receives. `api` is pre-pinned to the
-  // addon's own prefix, so the component cannot call a core endpoint through
-  // the handle it is given.
+  // The context an addon component receives. Every call handle here is
+  // pinned to an addon prefix, so the component cannot reach a core endpoint
+  // through anything it is given.
   const ctx = {
     addonId: addon.id,
     scope: { kind: scope, id: scopeId },
     api: (method, path, options) => addonRequest(addon.id, method, path, options),
+    // A handle on *another* addon's endpoints. The one legitimate use is a
+    // cross-addon UI contribution (see addons/README.md): a contributed
+    // action names the addon that owns it and a route relative to that
+    // addon's prefix, so the consuming component needs a call it cannot make
+    // through its own pinned `api`. Still an addon prefix -- core endpoints
+    // stay unreachable either way.
+    apiFor: (otherAddonId) => (method, path, options) => (
+      addonRequest(otherAddonId, method, path, options)
+    ),
+    // File downloads go through the same blob round-trip the declarative
+    // table panel uses, so an addon keeps the CSRF header and the 401
+    // interceptor instead of pointing a bare <a href> at the endpoint.
+    download: (method, path, options) => addonDownload(addon.id, method, path, options),
+    saveBlob,
     ui: addonUi,
     manifest: addon,
+    // Only for `renders: "modal"` entries; undefined everywhere else.
+    modal,
   };
 
   return <Component ctx={ctx} />;

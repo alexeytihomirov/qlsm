@@ -12,9 +12,10 @@ vi.mock('../../../services/addons', () => ({
 import { addonDownload, addonRequest, saveBlob } from '../../../services/addons';
 import AddonTablePanel from '../AddonTablePanel';
 
-const ADDON = { id: 'demo-management' };
+const ADDON = { id: 'file-lister' };
 
-// Mirrors addons/demo-management/qlsm-addon.json.
+// A table panel of the shape the tier-1 contract documents: a file list
+// with per-row and bulk downloads.
 const PANEL = {
   kind: 'table',
   load: 'GET instances/{instance_id}/demos',
@@ -54,7 +55,7 @@ describe('AddonTablePanel', () => {
   it('loads rows from the declared key with the scope filled in', async () => {
     renderPanel();
     expect(await screen.findByText('a.dm_91')).toBeInTheDocument();
-    expect(addonRequest).toHaveBeenCalledWith('demo-management', 'GET', 'instances/7/demos');
+    expect(addonRequest).toHaveBeenCalledWith('file-lister', 'GET', 'instances/7/demos');
   });
 
   it('formats sizes and dates rather than dumping raw numbers', async () => {
@@ -83,7 +84,7 @@ describe('AddonTablePanel', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Download' })[0]);
 
     await waitFor(() => expect(addonDownload).toHaveBeenCalledWith(
-      'demo-management', 'GET', 'instances/7/demos/download?filename=a.dm_91',
+      'file-lister', 'GET', 'instances/7/demos/download?filename=a.dm_91',
       expect.objectContaining({ fallbackName: 'a.dm_91' }),
     ));
   });
@@ -95,7 +96,7 @@ describe('AddonTablePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Download' }));
 
     await waitFor(() => expect(addonDownload).toHaveBeenCalledWith(
-      'demo-management', 'GET',
+      'file-lister', 'GET',
       'instances/7/demos/download?filename=my%20demo.dm_91',
       expect.anything(),
     ));
@@ -118,7 +119,7 @@ describe('AddonTablePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /Download selected/ }));
 
     await waitFor(() => expect(addonDownload).toHaveBeenCalledWith(
-      'demo-management', 'POST', 'instances/7/demos/download-batch',
+      'file-lister', 'POST', 'instances/7/demos/download-batch',
       expect.objectContaining({ data: { filenames: ['a.dm_91'] } }),
     ));
   });
@@ -136,7 +137,7 @@ describe('AddonTablePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /Download selected/ }));
 
     await waitFor(() => expect(addonDownload).toHaveBeenCalledWith(
-      'demo-management', 'POST', 'instances/7/demos/download-batch',
+      'file-lister', 'POST', 'instances/7/demos/download-batch',
       expect.objectContaining({ data: { filenames: ['a.dm_91', 'b.dm_91'] } }),
     ));
   });

@@ -18,20 +18,8 @@ function readAppVersion() {
 
 const appVersion = readAppVersion()
 
-// Packages a bundled addon's UI may import. Addon components live outside
-// this directory (in addons/<id>/ui/), so Node's usual walk-up lookup never
-// reaches frontend-react/node_modules and a bare import like
-// '@headlessui/react' fails to resolve at build time. Aliasing them here also
-// makes the list explicit: this *is* the set a bundled addon's UI is allowed
-// to depend on, and it matches what a tier-2 addon bundle would externalize.
-const ADDON_UI_PACKAGES = ['react', 'react-dom', '@headlessui/react', 'lucide-react'];
-const addonUiAliases = Object.fromEntries(
-  ADDON_UI_PACKAGES.map((name) => [name, path.resolve(__dirname, 'node_modules', name)]),
-);
-
 // https://vite.dev/config/
 export default defineConfig({
-  resolve: { alias: addonUiAliases },
   plugins: [react(), tailwindcss()],
   base: '/',
   define: {

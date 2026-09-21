@@ -29,13 +29,15 @@ MOUNT_POINTS = ('host_menu', 'instance_menu', 'instance_tabs', 'settings_section
 RENDER_MODES = ('panel', 'modal')
 
 # A component core already builds, referenced by name instead of shipped as a
-# file. Only meaningful for addons bundled in the image.
+# file. Only ever meaningful for an addon bundled in the image, and none is
+# any more -- kept recognised so a manifest still carrying one fails with an
+# explanation instead of rendering an empty panel.
 BUNDLED_COMPONENT_PREFIX = 'bundled:'
 
 # Bumped when the contract a mounted component sees (ctx shape, ui kit) changes
 # in a way an already-built addon bundle cannot survive. An addon declaring a
 # higher value is listed but not mounted -- see ui/addons/registry.py.
-CURRENT_UI_API = 2
+CURRENT_UI_API = 3
 
 
 class ManifestError(ValueError):
@@ -150,11 +152,11 @@ def _validate_ui(ui, errors):
                 comp = item['component']
                 if comp.startswith(BUNDLED_COMPONENT_PREFIX):
                     # A component core already builds, named rather than
-                    # shipped. Only resolvable for addons that live in the
-                    # image -- the frontend refuses it for an installed one,
-                    # since a .zip cannot reach into core's build. This is how
-                    # a migration addon mounts the exact screen the built-in
-                    # menu mounts instead of a look-alike.
+                    # shipped. Nothing resolves it any more: QLSM ships no
+                    # feature addon, so there is no such component to borrow.
+                    # Still shape-checked here so the frontend's "this QLSM
+                    # does not provide it" message is the failure, rather than
+                    # a malformed name slipping through to a fetch.
                     name = comp[len(BUNDLED_COMPONENT_PREFIX):]
                     if not name or '/' in name:
                         _err(errors, f'ui.{mount}: bundled component name "{name}" is not valid')

@@ -4,7 +4,7 @@
   "name": "UI Kit Test Addon",
   "description": "Reference addon exercising the shared window.__qlsm.ui component kit (Modal, Button, Panel/Card, AddonField, Icon, Stack/Row). Not loaded by default - see README.md.",
   "scopes": ["global"],
-  "ui_api": 2,
+  "ui_api": 3,
 
   "ui": {
     "icon": "puzzle",

@@ -36,20 +36,30 @@ def test_addons_directory_is_unignored_for_git():
     assert '!addons/**' in lines
 
 
-def test_the_bundled_addons_actually_exist():
-    """Guards the other direction: the allowlist entries are not stale.
+def test_the_allowlist_is_not_stale():
+    """Guards the other direction: the allowlist entries still cover something.
 
-    Only demo-management ships bundled (baked into the image). The other
-    addons (telemetry-relay, demo-stream, qlmatch-packer) live in the
-    separate qlsm-addons repo and are installed by the operator onto the
-    ADDON_PACKAGES_DIR volume instead -- see qlsm-addons/README.md."""
+    No feature addon ships in the image any more -- telemetry-relay,
+    demo-management, demo-stream and qlmatch-packer all live in the separate
+    qlsm-extra repo and are installed by the operator onto the
+    ADDON_PACKAGES_DIR volume (see qlsm-extra/README.md). What addons/ still
+    has to reach the image is its documentation and the reference examples an
+    operator copies onto that volume to try them, so the allowlist entries are
+    still doing work."""
     addons_dir = os.path.join(REPO_ROOT, 'addons')
     assert os.path.isdir(addons_dir)
+    assert os.path.isfile(os.path.join(addons_dir, 'README.md'))
+    assert os.path.isdir(os.path.join(addons_dir, '_examples'))
+
+
+def test_no_feature_addon_is_bundled():
+    """A bundled addon would be a feature QLSM cannot be shipped without."""
+    addons_dir = os.path.join(REPO_ROOT, 'addons')
     shipped = {
         name for name in os.listdir(addons_dir)
         if os.path.isfile(os.path.join(addons_dir, name, 'qlsm-addon.json'))
     }
-    assert {'demo-management'} <= shipped
-    assert not ({'telemetry-relay', 'demo-stream', 'qlmatch-packer'} & shipped), (
-        'these addons moved to the separate qlsm-addons repo and must not be bundled'
+    assert shipped == set(), (
+        f'{sorted(shipped)} would ship inside the image; addons belong in a '
+        f'repository the operator installs from, not in core'
     )
