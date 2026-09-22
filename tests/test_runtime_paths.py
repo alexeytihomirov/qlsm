@@ -97,9 +97,6 @@ def test_minqlxtended_paths_match_the_p0_spike():
     assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
     assert paths["os_family"] == "ubuntu"
     assert paths["os_type"] == "ubuntu"
-    assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
-    assert paths["os_family"] == "ubuntu"
-    assert paths["os_type"] == "ubuntu"
 
 
 def test_force_rate_is_excluded_only_on_minqlxtended():
