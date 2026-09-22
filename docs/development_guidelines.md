@@ -39,19 +39,35 @@ unavailable:
 
 ## Testing
 
-### The full `pytest` suite needs the operator's OK first
+### Why the full suite used to take an hour and a half
 
-`python -m pytest` with no path filter (2500+ tests) has been observed anywhere
-from ~2.5 minutes to 90+ minutes on the same machine for the same code,
-depending on what else is competing for CPU/disk at the time (a parallel
-`pnpm install`, another test run, etc.) — not a hang, just very sensitive to
-contention, and slow enough in the bad case that blocking on it wastes a whole
-session. Until someone tracks down and fixes what makes it so contention-
-sensitive, don't run the unfiltered suite on your own initiative — ask the
-operator first, same as any other action whose cost is hard to predict up
-front.
+`python -m pytest` with no path filter (2500+ tests) was observed anywhere from
+~2.5 minutes to 90+ minutes on the same machine for the same code. That was not
+CPU/disk contention: it was whether a Redis happened to be listening on
+localhost:6379 at the time.
 
-Scope pytest to what the change actually touches instead: run the specific
+Every JWT-authenticated request runs `check_if_token_revoked()`, which does a
+real `redis.get()` on the client `create_app()` installs. With Redis up, that is
+a fraction of a millisecond. With nothing listening, a refused connect to
+localhost costs a flat 2.0s on Windows and redis-py tries twice — ~4s per call.
+The suite makes ~1037 blocklist GETs plus ~426 other commands (logout's
+`setex`, the login lockout counter), so ~1460 × 4s ≈ 97 minutes of pure socket
+timeout on top of ~3 minutes of actual work. Docker Desktop being up or down
+decided which run you got.
+
+`tests/conftest.py` now hands `create_app()` an offline stub client
+(`_OfflineRedis`) whose every command raises `ConnectionError` immediately —
+the same outcome the real client produces with no Redis, without the wait — so
+the full run is ~3 minutes either way. Tests that need blocklist or lockout
+behaviour still override `app.extensions['redis']` with their own mock.
+
+Two smaller costs were measured at the same time and are worth knowing before
+you "optimise" something else: `create_app()` is ~60ms a call and the suite
+makes ~1387 of them (~84s, almost all of it werkzeug compiling ~124 URL rules
+per app), and werkzeug's default scrypt KDF was ~120ms per `set_password()`
+(~60s), now hashed with a one-round pbkdf2 in tests.
+
+Scope pytest to what the change actually touches anyway: run the specific
 `tests/test_*.py` files covering the modules you edited (and their frontend
 `vitest` equivalents), which finishes in seconds to a few minutes and gives
 the same regression signal for that area. That is enough to call a change
