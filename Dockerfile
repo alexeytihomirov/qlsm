@@ -15,6 +15,9 @@ COPY VERSION /VERSION
 COPY frontend-react/ .
 # Resolve the public/docs symlink (-> ../../docs/user) at its expected absolute path
 COPY docs/user/ /docs/user/
+# Nothing under addons/ takes part in this build: an addon ships its own
+# pre-built component and QLSM serves it as an asset (addons/README.md,
+# "tier 2").
 RUN pnpm build
 
 # ── Stage 2: Application ───────────────────────────────────────────────────────

@@ -259,12 +259,27 @@ def create_app(test_config=None):
     from ui.routes.plugin_repository_routes import plugin_repository_api_bp
     api_bp.register_blueprint(plugin_repository_api_bp, url_prefix='/plugin-repositories')
 
+    from ui.routes.addon_routes import addon_api_bp
+    api_bp.register_blueprint(addon_api_bp, url_prefix='/addons')
+
     app.register_blueprint(api_bp)
     app.register_blueprint(index_bp) # Register index_bp
 
     # External API (versioned, separate from internal UI API)
     from ui.routes.external_api_routes import external_api_bp
     app.register_blueprint(external_api_bp, url_prefix='/api/v1')
+
+    # Addons register their own blueprints under /api/addons/<id>/, so this
+    # must run after the core blueprints above: a core route always wins a
+    # collision, and mounting order is what guarantees it.
+    try:
+        from ui.addons import init_app as init_addons
+        init_addons(app)
+    except Exception as e:
+        # The addon system failing must never stop qlsm from serving. Losing
+        # addons degrades features; losing startup loses the control plane.
+        app.logger.error(f'Addon system failed to initialize: {e}', exc_info=True)
+        app.extensions.setdefault('addons', {})
 
 
     # Register database commands

@@ -1,5 +1,4 @@
 import os
-import pwd
 import subprocess
 from pathlib import Path
 
@@ -16,6 +15,12 @@ def detect_default_self_ssh_user(host_ssh_dir="/host-ssh"):
         return env_user
 
     try:
+        # Imported lazily: `pwd` is POSIX-only, and importing it at module
+        # level made `create_app()` -- and therefore the whole `app` test
+        # fixture -- unimportable on Windows. Production is Linux either way,
+        # and the except below already falls back for any failure here.
+        import pwd
+
         uid = os.stat(host_ssh_dir).st_uid
         return pwd.getpwuid(uid).pw_name
     except Exception:

@@ -9,6 +9,7 @@ import {
   getLanRateUnsupportedMessage,
   isLanRateForcedOn,
 } from '../utils/lanRateCompatibility';
+import { useAddonMenu } from './addons/AddonMenuSection';
 
 // Define InstanceStatus constants to match backend enum values
 const InstanceStatus = {
@@ -27,6 +28,7 @@ const InstanceStatus = {
 };
 
 function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop, handleStart, handleToggleLanRate, onOpenEditConfigModal, onViewInstanceDetails, onViewLogs, onViewChatLogs, onViewMinqlxLogs, onOpenRconConsole }) {
+  const addonMenu = useAddonMenu('instance_menu', instance, instance.name);
   const { x, y, refs, strategy } = useFloating({
     placement: 'bottom-end',
     middleware: [
@@ -57,8 +59,12 @@ function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop
     : null;
 
   return (
+    <>
+    {/* Outside <Menu> on purpose: Menu.Items unmounts on close, which would
+        tear down a dialog opened from one of its own entries. */}
+    {addonMenu.modal}
     <Menu as="div" className="relative inline-block text-left ml-2">
-      {({ open }) => (
+      {({ open, close: closeMenu }) => (
         <>
           <div>
             <Menu.Button
@@ -214,6 +220,9 @@ function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop
                   </Menu.Item>
                 </div>
 
+                {/* Addon-contributed actions */}
+                {addonMenu.items(closeMenu)}
+
                 {/* Destructive action */}
                 <div className="px-1 py-1" style={{ borderTop: '1px solid var(--surface-border)' }}>
                   <Menu.Item>
@@ -232,6 +241,7 @@ function InstanceActionsMenu({ instance, handleRestart, handleDelete, handleStop
         </>
       )}
     </Menu>
+    </>
   );
 }
 

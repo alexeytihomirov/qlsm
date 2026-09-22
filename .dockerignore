@@ -29,6 +29,14 @@ configs/presets/*
 !configs/presets/_builtin/
 !configs/presets/_builtin/**
 
+# ── Addons bundled into the image ─────────────────────────────────────────────
+# NOTE: this file is a second strict allowlist, independent of .gitignore. A new
+# top-level directory has to be un-ignored in BOTH, or it is committed and
+# pushed but silently absent from the image. Operator-installed addons live on
+# the ADDON_PACKAGES_DIR volume and are never part of the build context.
+!addons/
+!addons/**
+
 # ── Game assets (plugins, scripts, qlfilter, rcon) ────────────────────────────
 # Everything ships in the image except steamapps (large binary workshop files).
 !ql-assets/
