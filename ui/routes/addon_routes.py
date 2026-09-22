@@ -19,6 +19,13 @@ addon_api_bp = Blueprint('addon_routes', __name__)
 
 _SCOPES = ('global', 'host', 'instance')
 
+# .js/.css/.map are tier-2 component bundles. .svg/.png/.webp are icons an
+# addon's manifest points at (a select option, a live_status_columns entry,
+# the addon's own icon) -- everything else in the addon directory (backend.py,
+# playbooks, plugin sources) must never be reachable over this route.
+_CODE_EXTENSIONS = ('.js', '.css', '.map')
+_IMAGE_EXTENSIONS = ('.svg', '.png', '.webp')
+
 
 def _resolve(addon_id):
     """(addon, error_response) -- error is None when the addon is usable."""
@@ -243,18 +250,20 @@ def update_addon_state_api(addon_id):
 @addon_api_bp.route('/<addon_id>/ui/<path:filename>', methods=['GET'], endpoint='get_addon_ui_asset_api')
 @jwt_required()
 def get_addon_ui_asset_api(addon_id, filename):
-    """Serve a tier-2 pre-built component from the addon's own ui/ directory.
+    """Serve a tier-2 component or an icon from the addon's own ui/ directory.
 
-    Only .js/.css/.map are served: the addon directory also holds backend.py,
-    playbooks and assets, and this route must never become a way to read them
-    over HTTP. The path is resolved and re-checked against the ui/ root, so a
-    traversal attempt fails even if Flask's own converter ever changes.
+    Only .js/.css/.map/.svg/.png/.webp are served: the addon directory also
+    holds backend.py, playbooks and assets, and this route must never become
+    a way to read them over HTTP. The path is resolved and re-checked against
+    the ui/ root, so a traversal attempt fails even if Flask's own converter
+    ever changes.
     """
     addon, error = _resolve(addon_id)
     if error:
         return error
-    if os.path.splitext(filename)[1].lower() not in ('.js', '.css', '.map'):
-        return jsonify({"error": {"message": 'Only .js, .css and .map assets are served'}}), 403
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _CODE_EXTENSIONS and ext not in _IMAGE_EXTENSIONS:
+        return jsonify({"error": {"message": 'Only .js, .css, .map, .svg, .png and .webp assets are served'}}), 403
 
     ui_root = os.path.abspath(addon.ctx.ui_dir)
     target = os.path.abspath(os.path.join(ui_root, filename))
@@ -262,4 +271,12 @@ def get_addon_ui_asset_api(addon_id, filename):
         return jsonify({"error": {"message": 'Invalid asset path'}}), 400
     if not os.path.isfile(target):
         return jsonify({"error": {"message": 'Asset not found'}}), 404
-    return send_file(target)
+
+    response = send_file(target)
+    if ext == '.svg':
+        # An SVG can carry a <script>; it is served from the same origin as
+        # the rest of the app, so it must not be allowed to run one or load
+        # styles from elsewhere.
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'"
+    return response

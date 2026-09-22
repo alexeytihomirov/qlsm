@@ -223,3 +223,29 @@ def test_traversal_out_of_the_ui_dir_is_refused(addon_app, auth):
 def test_missing_asset_is_404(addon_app, auth):
     resp = addon_app.test_client().get('/api/addons/sample-addon/ui/nope.js', headers=auth)
     assert resp.status_code == 404
+
+
+def test_svg_icon_is_served_with_hardening_headers(addon_app, auth, tmp_path):
+    packages = addon_app.config['ADDON_PACKAGES_DIR']
+    with open(os.path.join(packages, 'sample-addon', 'ui', 'logo.svg'), 'w', encoding='utf-8') as f:
+        f.write('<svg></svg>')
+    resp = addon_app.test_client().get('/api/addons/sample-addon/ui/logo.svg', headers=auth)
+    assert resp.status_code == 200
+    assert resp.headers.get('X-Content-Type-Options') == 'nosniff'
+    assert "default-src 'none'" in resp.headers.get('Content-Security-Policy', '')
+
+
+def test_png_icon_is_served(addon_app, auth):
+    packages = addon_app.config['ADDON_PACKAGES_DIR']
+    with open(os.path.join(packages, 'sample-addon', 'ui', 'logo.png'), 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n')
+    resp = addon_app.test_client().get('/api/addons/sample-addon/ui/logo.png', headers=auth)
+    assert resp.status_code == 200
+
+
+def test_arbitrary_extension_is_still_refused(addon_app, auth):
+    packages = addon_app.config['ADDON_PACKAGES_DIR']
+    with open(os.path.join(packages, 'sample-addon', 'ui', 'notes.txt'), 'w', encoding='utf-8') as f:
+        f.write('nope')
+    resp = addon_app.test_client().get('/api/addons/sample-addon/ui/notes.txt', headers=auth)
+    assert resp.status_code == 403

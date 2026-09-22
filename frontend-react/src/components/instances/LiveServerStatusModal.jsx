@@ -3,6 +3,9 @@ import { Transition } from '@headlessui/react';
 import { X, Users } from 'lucide-react';
 import QlColorString from '../common/QlColorString';
 import { useWorkshopPreview } from '../../hooks/useWorkshopPreview';
+import { useAddonPlayerColumns } from '../../hooks/useAddonPlayerColumns';
+import { addonAssetUrl } from '../../services/addons';
+import { resolveAddonIcon } from '../addons/addonIcons';
 import standardMapPreviews from '../../constants/standardMapPreviews';
 
 // Team mapping — minqlx sends string values ('red', 'blue', 'free', 'spectator')
@@ -144,6 +147,8 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
         serverStatus?.workshop_item_id,
         isOpen
     );
+
+    const playerColumns = useAddonPlayerColumns(isOpen, instance?.id, serverStatus?.players);
 
     const computedMapPreview = (() => {
         const mapName = String(serverStatus?.map || '').trim().toLowerCase();
@@ -301,16 +306,37 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
                                                                 <th className="px-3 py-2 font-medium">Team</th>
                                                                 <th className="px-3 py-2 font-medium text-right">Score</th>
                                                                 <th className="px-3 py-2 font-medium text-right">Ping</th>
+                                                                {playerColumns.map((col) => (
+                                                                    <th
+                                                                        key={col.key}
+                                                                        className={`px-3 py-2 font-medium ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                                                                    >
+                                                                        <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : 'justify-start'}`}>
+                                                                            {col.iconUrl ? (
+                                                                                <img
+                                                                                    src={addonAssetUrl(col.addonId, col.iconUrl)}
+                                                                                    alt=""
+                                                                                    className="h-3 w-3 flex-shrink-0"
+                                                                                />
+                                                                            ) : col.icon ? (
+                                                                                React.createElement(resolveAddonIcon(col.icon), { size: 12, className: 'flex-shrink-0' })
+                                                                            ) : null}
+                                                                            {col.label}
+                                                                        </span>
+                                                                    </th>
+                                                                ))}
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-theme border-t border-theme-strong">
-                                                            {sortedPlayers.map((p, i) => (
+                                                            {sortedPlayers.map((p, i) => {
+                                                                const steamId = String(p.steam || p.steamid || p.steam_id || '');
+                                                                return (
                                                                 <tr key={i} className="hover:bg-theme-elevated/50 transition-colors">
                                                                     <td className="px-3 py-2 font-medium truncate max-w-[150px]" title={p.name}>
                                                                         <QlColorString text={p.name || 'Unknown'} className="text-theme-primary" />
                                                                     </td>
                                                                     <td className="px-3 py-2 font-mono text-[11px] text-theme-muted">
-                                                                        {p.steam || p.steamid || p.steam_id || '—'}
+                                                                        {steamId || '—'}
                                                                     </td>
                                                                     <td className={`px-3 py-2 font-mono text-[11px] ${teamColor(p.team)}`}>
                                                                         {teamName(p.team)}
@@ -321,8 +347,21 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
                                                                     <td className="px-3 py-2 font-mono text-theme-secondary text-right">
                                                                         {p.ping ?? '?'}
                                                                     </td>
+                                                                    {playerColumns.map((col) => {
+                                                                        const cell = col.data[steamId];
+                                                                        return (
+                                                                            <td
+                                                                                key={col.key}
+                                                                                className={`px-3 py-2 font-mono text-theme-secondary ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                                                                                title={cell?.title || undefined}
+                                                                            >
+                                                                                {cell?.display ?? '—'}
+                                                                            </td>
+                                                                        );
+                                                                    })}
                                                                 </tr>
-                                                            ))}
+                                                                );
+                                                            })}
                                                         </tbody>
                                                     </table>
                                                 </div>

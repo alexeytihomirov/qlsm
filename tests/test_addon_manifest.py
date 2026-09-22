@@ -187,3 +187,112 @@ def test_panel_render_mode_is_fine_with_a_panel():
         'host_menu': [{'id': 'relay', 'panel': 'p', 'renders': 'panel'}],
     }))
     assert errors == []
+
+
+# ---- select option icons -----------------------------------------------
+
+def test_select_option_icon_url_is_accepted():
+    manifest, errors = validate_manifest(_minimal(settings={
+        'instance': [{
+            'key': 'provider', 'type': 'select',
+            'options': [{'value': 'qlstats', 'label': 'qlstats', 'icon_url': 'logos/qlstats.svg'}],
+        }],
+    }))
+    assert errors == []
+    assert manifest['settings']['instance'][0]['options'][0]['icon_url'] == 'logos/qlstats.svg'
+
+
+def test_select_option_icon_and_icon_url_are_mutually_exclusive():
+    _, errors = validate_manifest(_minimal(settings={
+        'instance': [{
+            'key': 'provider', 'type': 'select',
+            'options': [{'value': 'qlstats', 'icon': 'gauge', 'icon_url': 'logos/qlstats.svg'}],
+        }],
+    }))
+    assert any('mutually exclusive' in e for e in errors)
+
+
+@pytest.mark.parametrize('icon_url', ['/etc/passwd', '../../backend.py', 'a/../../b.svg'])
+def test_select_option_icon_url_may_not_escape_the_addon(icon_url):
+    _, errors = validate_manifest(_minimal(settings={
+        'instance': [{
+            'key': 'provider', 'type': 'select',
+            'options': [{'value': 'qlstats', 'icon_url': icon_url}],
+        }],
+    }))
+    assert any('must stay inside the addon' in e for e in errors)
+
+
+# ---- live_status_columns -------------------------------------------------
+
+def _column(**overrides):
+    col = {'id': 'rating', 'label': 'Rating', 'route': 'GET instances/{instance_id}/ranks'}
+    col.update(overrides)
+    return col
+
+
+def test_live_status_column_is_accepted():
+    manifest, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column()]}))
+    assert errors == []
+    assert manifest['ui']['live_status_columns'][0]['id'] == 'rating'
+
+
+def test_live_status_column_requires_id():
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(id='')]}))
+    assert any('missing "id"' in e for e in errors)
+
+
+def test_live_status_column_requires_label():
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(label='')]}))
+    assert any('"label" is required' in e for e in errors)
+
+
+def test_live_status_column_label_has_a_length_cap():
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(label='x' * 25)]}))
+    assert any('at most 24 characters' in e for e in errors)
+
+
+def test_live_status_column_align_must_be_known():
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(align='center')]}))
+    assert any('"align" must be one of' in e for e in errors)
+
+
+def test_live_status_column_route_must_be_get():
+    _, errors = validate_manifest(_minimal(ui={
+        'live_status_columns': [_column(route='POST instances/{instance_id}/ranks')],
+    }))
+    assert any('must be a GET route' in e for e in errors)
+
+
+def test_live_status_column_route_may_not_be_absolute():
+    _, errors = validate_manifest(_minimal(ui={
+        'live_status_columns': [_column(route='GET /api/hosts')],
+    }))
+    assert any('must be relative to the addon prefix' in e for e in errors)
+
+
+def test_live_status_column_duplicate_id_is_rejected():
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(), _column()]}))
+    assert any('duplicate column id' in e for e in errors)
+
+
+def test_live_status_column_icon_and_icon_url_are_mutually_exclusive():
+    _, errors = validate_manifest(_minimal(ui={
+        'live_status_columns': [_column(icon='gauge', icon_url='logos/qlstats.svg')],
+    }))
+    assert any('mutually exclusive' in e for e in errors)
+
+
+def test_addon_level_icon_url_is_accepted():
+    manifest, errors = validate_manifest(_minimal(ui={'icon_url': 'logos/player-ranks.svg'}))
+    assert errors == []
+    assert manifest['ui']['icon_url'] == 'logos/player-ranks.svg'
+
+
+def test_addon_level_icon_and_icon_url_are_mutually_exclusive():
+    _, errors = validate_manifest(_minimal(ui={'icon': 'gauge', 'icon_url': 'logos/player-ranks.svg'}))
+    assert any('mutually exclusive' in e for e in errors)
+
+
+def test_current_ui_api_is_4():
+    assert CURRENT_UI_API == 4
