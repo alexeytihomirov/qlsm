@@ -13,6 +13,13 @@ import re
 
 MINQLX = 'minqlx'
 MINQLXTENDED = 'minqlxtended'
+# _RUNTIME_PATHS below carries an entry for QLSM's own engine fork. The name
+# is defined here so that entry is constructible at import time; it is
+# deliberately NOT in VALID_RUNTIMES, because the rest of the support for it
+# (a clone/build task in setup_host.yml, a choice in the Add Host form) did
+# not survive the rebase onto fresh upstream. normalize_runtime() therefore
+# still answers minqlx for it, exactly as it did before this name existed.
+MINQLXTENDED_PATCHED = 'minqlxtended-patched'
 
 VALID_RUNTIMES = (MINQLX, MINQLXTENDED)
 
