@@ -2,20 +2,77 @@ import React, { useState } from 'react';
 import {
   Trash2, RefreshCw, AlertTriangle, Loader2, Download, ChevronRight, FileEdit,
 } from 'lucide-react';
-import { downloadPluginRepositoryPlugins } from '../../services/api';
+import { downloadPluginRepositoryPlugins, installPluginRepositoryAddon } from '../../services/api';
 import { useNotification } from '../NotificationProvider';
 import { formatDateTime } from '../../utils/uiUtils';
 import RuntimePicker from './RuntimePicker';
 import OverwritePluginsModal from './OverwritePluginsModal';
 import PluginManifestEditorModal from './PluginManifestEditorModal';
 
-// One repository's plugin list: expand/collapse, per-plugin checkboxes, and a
-// per-plugin runtime pick for selected entries that declare no runtime.
-function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing }) {
+// Local-vs-repo comparison verdicts, from GET /plugin-repositories/updates.
+// 'unknown' (manifest lacks a sha256/version/runtime to compare) renders as
+// nothing rather than a scary badge.
+const STATUS_BADGES = {
+  update_available: { text: 'Update available', className: 'text-amber-600 dark:text-amber-400' },
+  up_to_date: { text: 'Up to date', className: 'text-[var(--text-muted)]' },
+  not_installed: { text: 'Not installed', className: 'text-[var(--text-muted)]' },
+};
+
+function StatusBadge({ status }) {
+  const badge = STATUS_BADGES[status];
+  if (!badge) return null;
+  return <span className={`text-xs whitespace-nowrap ${badge.className}`}>{badge.text}</span>;
+}
+
+// What the action button on an addon row should say. Keyed off the same
+// verdict as the badge next to it, so a row reading "Up to date" can't also
+// offer "Install" -- the one thing that button is still able to do there is
+// put the repository's copy back over whatever is installed.
+const ADDON_ACTION_LABEL = {
+  update_available: 'Update',
+  up_to_date: 'Reinstall',
+  not_installed: 'Install',
+};
+
+// Returns { hidden: Set(filename), helpersFor: Map(filename -> [filename]) } --
+// the rows to drop, and the resolvable helpers to name on each plugin that
+// needs them. A helper a repo entry declares in `depends_on` is part of the
+// plugin that needs it, not something to pick: the backend downloads the
+// closure either way (expand_with_dependencies in ui/plugin_repositories.py).
+// Same rule the Plugins tab already applies to the local pool
+// (fileManager/pluginSelection.js).
+function resolveRepoDependencies(plugins = []) {
+  const known = new Set(plugins.map(p => p.filename));
+  const hidden = new Set();
+  const helpersFor = new Map();
+  plugins.forEach((plugin) => {
+    const helpers = (plugin.depends_on || []).filter(
+      name => known.has(name) && name !== plugin.filename,
+    );
+    if (!helpers.length) return;
+    helpersFor.set(plugin.filename, helpers);
+    helpers.forEach(name => hidden.add(name));
+  });
+  return { hidden, helpersFor };
+}
+
+// One repository's contents: expand/collapse, per-plugin checkboxes (and a
+// per-plugin runtime pick for selected entries that declare no runtime), plus
+// the addon packages the repository offers for one-click install/update.
+function PluginRepositoryCard({ repo, updates, onSync, onDelete, onDownloaded, syncing }) {
   const [expanded, setExpanded] = useState(false);
   const [checked, setChecked] = useState(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [installingAddon, setInstallingAddon] = useState(null);
   const [pickedRuntimes, setPickedRuntimes] = useState({});
+  const addons = repo.addons || [];
+  const pluginStatuses = updates?.plugins || {};
+  const addonStatuses = updates?.addons || {};
+  const allPlugins = repo.plugins || [];
+  const { hidden: helperFilenames, helpersFor } = resolveRepoDependencies(allPlugins);
+  // The list the operator actually sees and counts: plugins, not the helper
+  // modules some of them are built from.
+  const plugins = allPlugins.filter(p => !helperFilenames.has(p.filename));
   // Files a download attempt reported as already present in the local pool
   // ({ code: 'exists' } from the backend) -- offered as an overwrite confirm
   // rather than a dead-end error, since that's the one failure mode with an
@@ -39,12 +96,25 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
   const reportResult = (result) => {
     const downloaded = result.downloaded || [];
     const errors = result.errors || [];
+    // Helpers the backend pulled in on its own (`depends_on`), and helpers it
+    // left alone because the pool already had this repository's version.
+    const autoAdded = result.auto_added || [];
+    const skippedHelpers = result.skipped || [];
     if (downloaded.length) {
       const push = result.push || { queued: [], skipped: [] };
       const queuedNames = (push.queued || []).map(h => h.name);
+      // Say what came along besides the picks: helpers written, and helpers
+      // the pool already had at this version.
+      const helpers = autoAdded.filter(f => downloaded.includes(f));
+      const extras = [
+        helpers.length ? `with ${helpers.join(', ')}` : null,
+        skippedHelpers.length ? `${skippedHelpers.join(', ')} already current` : null,
+      ].filter(Boolean);
+      const what = `Downloaded ${downloaded.length} plugin(s)`
+        + (extras.length ? ` (${extras.join('; ')})` : '');
       showSuccess(queuedNames.length
-        ? `Downloaded ${downloaded.length} plugin(s). Pushing to ${queuedNames.join(', ')}.`
-        : `Downloaded ${downloaded.length} plugin(s). No active host to push to.`);
+        ? `${what}. Pushing to ${queuedNames.join(', ')}.`
+        : `${what}. No active host to push to.`);
       const skipped = push.skipped || [];
       if (skipped.length) {
         showError(`Not pushed to ${skipped.map(h => `${h.name} (${h.reason})`).join(', ')}. Run Check for Updates on those hosts later.`);
@@ -94,7 +164,7 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
 
   // Selected plugins that declare no runtime and have no pick yet -- Download
   // stays disabled until each one has a runtime.
-  const missingRuntime = repo.plugins
+  const missingRuntime = plugins
     .filter(p => checked.has(p.filename) && !p.runtime && !pickedRuntimes[p.filename])
     .map(p => p.filename);
 
@@ -108,6 +178,19 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
   const handleConfirmOverwrite = (filenames) => {
     setOverwriteConfirm(null);
     runDownload(filenames, true);
+  };
+
+  const handleInstallAddon = async (addon) => {
+    setInstallingAddon(addon.id);
+    try {
+      const result = await installPluginRepositoryAddon(repo.id, addon.id);
+      showSuccess(result.message || `"${addon.id}" installed. Restart QLSM to activate it.`);
+      onDownloaded?.();
+    } catch (err) {
+      showError(err.error?.message || err.message || `Failed to install "${addon.id}".`);
+    } finally {
+      setInstallingAddon(null);
+    }
   };
 
   return (
@@ -125,7 +208,8 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
             <div className="flex items-center gap-2">
               <span className="users-td-username">{repo.name}</span>
               <span className="text-xs text-[var(--text-muted)]">
-                {repo.plugins.length} plugin{repo.plugins.length === 1 ? '' : 's'}
+                {plugins.length} plugin{plugins.length === 1 ? '' : 's'}
+                {addons.length > 0 && ` · ${addons.length} addon${addons.length === 1 ? '' : 's'}`}
               </span>
             </div>
             <div className="font-mono text-xs text-[var(--text-muted)] truncate">{repo.url}</div>
@@ -169,23 +253,26 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
       <div className={`collapsible-section${expanded ? ' is-expanded' : ''}`} inert={!expanded}>
         <div className="collapsible-inner">
         <div className="px-4 pb-4 border-t border-[var(--surface-border)]">
-          {repo.plugins.length === 0 ? (
+          {plugins.length === 0 && addons.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)] pt-3">
-              {repo.last_sync_error ? 'Last sync failed — nothing to show.' : 'No plugins in this repository.'}
+              {repo.last_sync_error ? 'Last sync failed — nothing to show.' : 'Nothing in this repository.'}
             </p>
           ) : (
             <>
+              {plugins.length > 0 && (
+              <>
               <table className="users-table mt-2">
                 <thead>
                   <tr>
                     <th className="users-th" style={{ width: '2rem' }} />
                     <th className="users-th">Plugin</th>
                     <th className="users-th w-40">Runtime</th>
+                    <th className="users-th">Status</th>
                     <th className="users-th">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {repo.plugins.map((plugin) => (
+                  {plugins.map((plugin) => (
                     <tr key={plugin.filename} className="users-tr">
                       <td className="users-td">
                         <input
@@ -206,6 +293,27 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
                         {plugin.description && (
                           <div className="text-xs text-[var(--text-muted)]">{plugin.description}</div>
                         )}
+                        {/* The helpers this plugin drags in. Named rather than
+                            hidden entirely, so a download that writes three
+                            files into the pool isn't a surprise. */}
+                        {helpersFor.has(plugin.filename) && (
+                          <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                            Includes:{' '}
+                            <span className="font-mono">{helpersFor.get(plugin.filename).join(', ')}</span>
+                          </div>
+                        )}
+                        {/* A package-style entry (e.g. match_restore.py + its restore/
+                            folder) brings extra files that aren't plugins of their own
+                            either -- named here for the same reason helpers are. */}
+                        {Object.keys(plugin.package_files || {}).length > 0 && (
+                          <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                            Includes {Object.keys(plugin.package_files).length} file
+                            {Object.keys(plugin.package_files).length === 1 ? '' : 's'} in{' '}
+                            <span className="font-mono">
+                              {Object.keys(plugin.package_files)[0].split('/')[0]}/
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="users-td">
                         {plugin.runtime ? (
@@ -217,6 +325,9 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
                             ariaLabel={`Runtime for ${plugin.filename}`}
                           />
                         )}
+                      </td>
+                      <td className="users-td">
+                        <StatusBadge status={pluginStatuses[plugin.filename]} />
                       </td>
                       <td className="users-td">
                         {plugin.version_risk ? (
@@ -253,6 +364,87 @@ function PluginRepositoryCard({ repo, onSync, onDelete, onDownloaded, syncing })
                   </span>
                 )}
               </div>
+              </>
+              )}
+
+              {addons.length > 0 && (
+                <>
+                  <h3 className="text-sm font-medium mt-4">Addons</h3>
+                  <p className="text-xs text-[var(--text-muted)] mt-1">
+                    Installed into the addon packages volume, like an uploaded .zip.
+                    A freshly installed or updated addon needs a QLSM restart to go live.
+                  </p>
+                  <table className="users-table mt-2">
+                    <thead>
+                      <tr>
+                        <th className="users-th">Addon</th>
+                        <th className="users-th">Version</th>
+                        <th className="users-th">Status</th>
+                        <th className="users-th">Notes</th>
+                        <th className="users-th" style={{ width: '6rem' }} />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {addons.map((addon) => {
+                        const state = addonStatuses[addon.id];
+                        return (
+                          <tr key={addon.id} className="users-tr">
+                            <td className="users-td">
+                              <div>
+                                {addon.label || addon.id}
+                                {addon.label && addon.label !== addon.id && (
+                                  <span className="ml-2 font-mono text-xs text-[var(--text-muted)]">{addon.id}</span>
+                                )}
+                              </div>
+                              {addon.description && (
+                                <div className="text-xs text-[var(--text-muted)]">{addon.description}</div>
+                              )}
+                            </td>
+                            <td className="users-td">
+                              <span className="font-mono text-xs">
+                                {addon.version || '—'}
+                                {state?.installed_version && state.installed_version !== addon.version
+                                  && ` (installed: ${state.installed_version})`}
+                              </span>
+                            </td>
+                            <td className="users-td">
+                              <StatusBadge status={state?.status} />
+                            </td>
+                            <td className="users-td">
+                              {addon.version_risk ? (
+                                <span className="flex items-center gap-1 text-xs text-red-500 dark:text-[#FF3366]">
+                                  <AlertTriangle size={13} /> {addon.version_risk.message}
+                                </span>
+                              ) : addon.requires_qlsm_version ? (
+                                <span className="text-xs text-[var(--text-muted)]">
+                                  Requires qlsm &gt;= {addon.requires_qlsm_version}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="users-td">
+                              <button
+                                onClick={() => handleInstallAddon(addon)}
+                                disabled={installingAddon !== null}
+                                className={`btn ${state?.status === 'up_to_date' ? 'btn-secondary' : 'btn-primary'}`}
+                                title={state?.status === 'up_to_date'
+                                  ? "Already installed at this version — writes the repository's copy over it again."
+                                  : undefined}
+                              >
+                                {installingAddon === addon.id ? (
+                                  <Loader2 size={16} className="animate-spin" />
+                                ) : (
+                                  <Download size={16} />
+                                )}
+                                {ADDON_ACTION_LABEL[state?.status] || 'Install'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
+              )}
             </>
           )}
         </div>

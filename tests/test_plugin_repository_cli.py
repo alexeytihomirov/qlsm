@@ -17,7 +17,7 @@ def _patch_fetch(monkeypatch, error=None):
         calls.append(url)
         if error:
             raise PluginRepositoryError(error)
-        return [dict(p) for p in PLUGINS]
+        return {'plugins': [dict(p) for p in PLUGINS], 'addons': []}
     monkeypatch.setattr(plugin_repository_routes, 'fetch_manifest', fake_fetch_manifest)
     return calls
 

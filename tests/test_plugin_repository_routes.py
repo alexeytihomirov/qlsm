@@ -4,32 +4,45 @@ import pytest
 from tests.helpers import make_user, auth_headers
 from ui.models import PluginRepository
 from ui import db
+import ui.plugin_repositories as plugin_repositories
 import ui.routes.plugin_repository_routes as plugin_repository_routes
 from ui.plugin_repositories import PluginRepositoryError
 
 
 PLUGIN_LIST = [
     {'filename': 'balance2.py', 'label': 'Balance', 'description': None,
-     'runtime': 'minqlx', 'requires_qlsm_version': None},
+     'runtime': 'minqlx', 'version': None, 'sha256': None,
+     'requires_qlsm_version': None},
+]
+
+ADDON_LIST = [
+    {'id': 'demo-addon', 'zip': 'demo-addon.zip', 'label': 'Demo', 'description': None,
+     'version': '1.2.0', 'sha256': None, 'requires_qlsm_version': None},
 ]
 
 
-def _patch_fetch(monkeypatch, plugins=None, error=None):
+def _patch_fetch(monkeypatch, plugins=None, addons=None, error=None):
     def fake_fetch_manifest(url):
         if error:
             raise PluginRepositoryError(error)
-        return plugins if plugins is not None else list(PLUGIN_LIST)
+        return {
+            'plugins': plugins if plugins is not None else list(PLUGIN_LIST),
+            'addons': addons if addons is not None else [],
+        }
     monkeypatch.setattr(plugin_repository_routes, 'fetch_manifest', fake_fetch_manifest)
 
 
-def _seeded_repo(name, url, plugins=None):
+def _seeded_repo(name, url, plugins=None, addons=None):
     """A PluginRepository as it looks right after a real sync -- unlike a bare
     db.session.add(), this populates manifest_json, which to_dict()['plugins']
     (and the download route's lookup) reads from. Creating a repo without this
     and then asserting on its plugin list is the bug three of these tests
     originally had (caught by CI, not locally -- see commit history)."""
     repo = PluginRepository(name=name, url=url)
-    repo.manifest_json = json.dumps(plugins if plugins is not None else list(PLUGIN_LIST))
+    repo.manifest_json = json.dumps({
+        'plugins': plugins if plugins is not None else list(PLUGIN_LIST),
+        'addons': addons if addons is not None else [],
+    })
     db.session.add(repo)
     db.session.commit()
     return repo
@@ -253,7 +266,7 @@ def test_download_uses_the_manifests_own_runtime(client, app, monkeypatch):
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append((base_url, filename, runtime)),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append((base_url, filename, runtime)),
     )
     response = client.post(
         f'/api/plugin-repositories/{repo_id}/download', headers=headers,
@@ -302,7 +315,7 @@ def test_download_picked_runtime_does_not_override_declared_runtime(client, app,
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: calls.append((base_url, filename, runtime)),
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append((base_url, filename, runtime)),
     )
     response = client.post(
         f'/api/plugin-repositories/{repo_id}/download', headers=headers,
@@ -345,7 +358,7 @@ def test_download_partial_failure_returns_207(client, app, monkeypatch):
         ])
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         if filename == 'bad.py':
             raise PluginRepositoryError('download failed')
 
@@ -368,7 +381,7 @@ def test_download_surfaces_the_exists_code_and_overwrite_retries(client, app, mo
         repo = _seeded_repo('Repo I', 'https://example.com/i')
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         if not overwrite:
             raise PluginRepositoryError(f'{filename} already exists in the local pool.', code='exists')
 
@@ -404,7 +417,7 @@ def test_download_mixed_exists_and_other_failure_returns_422(client, app, monkey
         ])
         repo_id = repo.id
 
-    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         if filename == 'dup.py':
             raise PluginRepositoryError('dup.py already exists in the local pool.', code='exists')
         raise PluginRepositoryError('download failed')
@@ -417,6 +430,189 @@ def test_download_mixed_exists_and_other_failure_returns_422(client, app, monkey
     assert response.status_code == 422
     codes = {e['filename']: e.get('code') for e in response.get_json()['errors']}
     assert codes == {'dup.py': 'exists', 'bad.py': None}
+
+
+HELPER_PLUGIN_LIST = [
+    {'filename': 'chat_rcon.py', 'label': 'Chat RCON', 'description': None,
+     'runtime': 'minqlx', 'version': None, 'sha256': None,
+     'requires_qlsm_version': None, 'depends_on': ['chat_rcon_acl.py']},
+    {'filename': 'chat_rcon_acl.py', 'label': 'helper', 'description': None,
+     'runtime': 'minqlx', 'version': None, 'sha256': None,
+     'requires_qlsm_version': None, 'depends_on': []},
+]
+
+
+def test_download_pulls_in_a_declared_helper(client, app, monkeypatch):
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldeps', 'password123')
+    headers = auth_headers(app, 'dldeps')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps', 'https://example.com/deps', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append(filename),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status', lambda entry: 'not_installed')
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon.py']},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    # Helper written first, so the pool never holds a plugin without it.
+    assert calls == ['chat_rcon_acl.py', 'chat_rcon.py']
+    assert body['downloaded'] == ['chat_rcon_acl.py', 'chat_rcon.py']
+    assert body['auto_added'] == ['chat_rcon_acl.py']
+
+
+def test_download_gives_a_runtimeless_helper_its_pullers_runtime(client, app, monkeypatch):
+    """A helper has to land in the same pool as the plugin importing it, so an
+    entry with no runtime of its own inherits the puller's instead of being
+    rejected for a runtime the operator was never shown a picker for."""
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepsruntime', 'password123')
+    headers = auth_headers(app, 'dldepsruntime')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps5', 'https://example.com/deps5', plugins=[
+            {'filename': 'top.py', 'label': None, 'description': None,
+             'runtime': None, 'version': None, 'sha256': None,
+             'requires_qlsm_version': None, 'depends_on': ['helper.py']},
+            {'filename': 'helper.py', 'label': None, 'description': None,
+             'runtime': None, 'version': None, 'sha256': None,
+             'requires_qlsm_version': None, 'depends_on': []},
+        ])
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append((filename, runtime)),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status', lambda entry: 'not_installed')
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['top.py'], 'runtimes': {'top.py': 'minqlxtended'}},
+    )
+    assert response.status_code == 200
+    assert calls == [('helper.py', 'minqlxtended'), ('top.py', 'minqlxtended')]
+
+
+def test_download_skips_an_auto_added_helper_already_up_to_date(client, app, monkeypatch):
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepsuptodate', 'password123')
+    headers = auth_headers(app, 'dldepsuptodate')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps2', 'https://example.com/deps2', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append(filename),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status',
+        lambda entry: 'up_to_date' if entry['filename'] == 'chat_rcon_acl.py' else 'not_installed',
+    )
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon.py']},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    # No overwrite prompt for a helper the operator never picked and that
+    # already matches this repository's copy.
+    assert calls == ['chat_rcon.py']
+    assert body['downloaded'] == ['chat_rcon.py']
+    assert body['skipped'] == ['chat_rcon_acl.py']
+
+
+def test_download_a_skipped_helper_does_not_turn_an_exists_error_into_success(client, app, monkeypatch):
+    """The picked plugin already being in the pool is still an overwrite
+    prompt, even though its helper was silently skipped as already current."""
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepsexists', 'password123')
+    headers = auth_headers(app, 'dldepsexists')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps6', 'https://example.com/deps6', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    def fake_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
+        raise PluginRepositoryError(f'{filename} already exists in the local pool.', code='exists')
+
+    monkeypatch.setattr(plugin_repository_routes, 'download_plugin', fake_download)
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status',
+        lambda entry: 'up_to_date' if entry['filename'] == 'chat_rcon_acl.py' else 'update_available',
+    )
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon.py']},
+    )
+    assert response.status_code == 409
+    body = response.get_json()
+    assert [e['filename'] for e in body['errors']] == ['chat_rcon.py']
+    assert body['skipped'] == ['chat_rcon_acl.py']
+
+
+def test_download_an_explicitly_picked_helper_is_not_skipped(client, app, monkeypatch):
+    _patch_fetch(monkeypatch, error='offline')
+    make_user(app, 'dldepspicked', 'password123')
+    headers = auth_headers(app, 'dldepspicked')
+    with app.app_context():
+        repo = _seeded_repo('Repo Deps3', 'https://example.com/deps3', plugins=HELPER_PLUGIN_LIST)
+        repo_id = repo.id
+
+    calls = []
+    monkeypatch.setattr(
+        plugin_repository_routes, 'download_plugin',
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: calls.append(filename),
+    )
+    monkeypatch.setattr(
+        plugin_repository_routes, 'plugin_update_status', lambda entry: 'up_to_date')
+    monkeypatch.setattr(plugin_repository_routes, 'push_pool_to_hosts',
+                        lambda runtimes: {'queued': [], 'skipped': []})
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/download', headers=headers,
+        json={'filenames': ['chat_rcon_acl.py'], 'overwrite': True},
+    )
+    assert response.status_code == 200
+    assert calls == ['chat_rcon_acl.py']
+    assert response.get_json()['skipped'] == []
+
+
+def test_updates_folds_a_stale_helper_into_the_plugins_status(client, app, monkeypatch):
+    make_user(app, 'updatesdeps', 'password123')
+    headers = auth_headers(app, 'updatesdeps')
+    with app.app_context():
+        _seeded_repo('Repo Deps4', 'https://example.com/deps4', plugins=HELPER_PLUGIN_LIST)
+
+    # plugin_update_status_with_dependencies() resolves this by module
+    # attribute, so patch it where it lives rather than on the route module.
+    monkeypatch.setattr(
+        plugin_repositories, 'plugin_update_status',
+        lambda entry: 'update_available' if entry['filename'] == 'chat_rcon_acl.py' else 'up_to_date',
+    )
+    response = client.get('/api/plugin-repositories/updates', headers=headers)
+    assert response.status_code == 200
+    statuses = {p['filename']: p['status'] for p in response.get_json()['data'][0]['plugins']}
+    assert statuses['chat_rcon.py'] == 'update_available'
 
 
 def test_download_uses_freshly_fetched_entry_for_inline_manifest(client, app, monkeypatch):
@@ -434,7 +630,7 @@ def test_download_uses_freshly_fetched_entry_for_inline_manifest(client, app, mo
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, runtime, inline_manifest)),
     )
     response = client.post(
@@ -460,7 +656,7 @@ def test_download_falls_back_to_stored_entries_when_fresh_fetch_fails(client, ap
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, inline_manifest)),
     )
     response = client.post(
@@ -493,7 +689,7 @@ def test_download_uses_the_stored_entry_when_the_fresh_manifest_lacks_the_filena
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, runtime, inline_manifest)),
     )
     response = client.post(
@@ -523,7 +719,7 @@ def test_download_keeps_the_stored_runtime_when_the_fresh_entry_declares_another
     calls = []
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None:
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None:
             calls.append((filename, runtime, inline_manifest)),
     )
     response = client.post(
@@ -833,7 +1029,7 @@ def test_download_pushes_pool_to_hosts_of_the_downloaded_runtime(client, app, mo
 
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: None,
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: None,
     )
     pushed = []
     fake_result = {'queued': [{'id': 1, 'name': 'alpha'}], 'skipped': [{'id': 2, 'name': 'beta', 'reason': 'busy'}]}
@@ -860,7 +1056,7 @@ def test_download_does_not_push_when_nothing_was_downloaded(client, app, monkeyp
         repo = _seeded_repo('Repo Q', 'https://example.com/q')
         repo_id = repo.id
 
-    def failing_download(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+    def failing_download(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
         raise PluginRepositoryError('boom', code='fetch')
     monkeypatch.setattr(plugin_repository_routes, 'download_plugin', failing_download)
     called = []
@@ -893,7 +1089,7 @@ def test_download_still_succeeds_when_the_push_cannot_take_the_host_lock(client,
 
     monkeypatch.setattr(
         plugin_repository_routes, 'download_plugin',
-        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None: None,
+        lambda base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None: None,
     )
     import ui.plugin_push as plugin_push
 
@@ -912,3 +1108,113 @@ def test_download_still_succeeds_when_the_push_cannot_take_the_host_lock(client,
     assert body['push']['skipped'] == [
         {'id': host_id, 'name': 'redis-down', 'reason': 'lock unavailable'}
     ]
+
+
+# --- POST /api/plugin-repositories/<id>/install-addon ---
+
+def test_install_addon_passes_the_manifest_entry(client, app, monkeypatch, tmp_path):
+    make_user(app, 'addoninstall', 'password123')
+    headers = auth_headers(app, 'addoninstall')
+    # The test app fixture's from_mapping() config has no ADDON_PACKAGES_DIR.
+    app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+    with app.app_context():
+        repo = _seeded_repo('Repo AI', 'https://example.com/ai', addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    calls = []
+
+    def fake_download_addon(base_url, entry, packages_dir):
+        calls.append((base_url, entry['id'], entry['zip']))
+        return {'id': entry['id'], 'name': 'Demo Addon', 'version': '1.2.0'}
+
+    monkeypatch.setattr(plugin_repository_routes, 'download_addon', fake_download_addon)
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/install-addon', headers=headers,
+        json={'id': 'demo-addon'},
+    )
+    assert response.status_code == 201
+    data = response.get_json()['data']
+    assert data['id'] == 'demo-addon'
+    assert data['pending_restart'] is True
+    assert calls == [('https://example.com/ai', 'demo-addon', 'demo-addon.zip')]
+
+
+def test_install_addon_unknown_id_404(client, app, monkeypatch):
+    make_user(app, 'addonunknown', 'password123')
+    headers = auth_headers(app, 'addonunknown')
+    with app.app_context():
+        repo = _seeded_repo('Repo AK', 'https://example.com/ak', addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/install-addon', headers=headers,
+        json={'id': 'not-in-manifest'},
+    )
+    assert response.status_code == 404
+
+
+def test_install_addon_download_failure_422(client, app, monkeypatch, tmp_path):
+    make_user(app, 'addonfail', 'password123')
+    headers = auth_headers(app, 'addonfail')
+    app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+    with app.app_context():
+        repo = _seeded_repo('Repo AL', 'https://example.com/al', addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    def fake_download_addon(base_url, entry, packages_dir):
+        raise PluginRepositoryError('sha256 mismatch')
+
+    monkeypatch.setattr(plugin_repository_routes, 'download_addon', fake_download_addon)
+    response = client.post(
+        f'/api/plugin-repositories/{repo_id}/install-addon', headers=headers,
+        json={'id': 'demo-addon'},
+    )
+    assert response.status_code == 422
+    assert 'sha256 mismatch' in response.get_json()['error']['message']
+
+
+# --- GET /api/plugin-repositories/updates ---
+
+def test_updates_reports_both_kinds(client, app, tmp_path):
+    make_user(app, 'updatesuser', 'password123')
+    headers = auth_headers(app, 'updatesuser')
+    with app.app_context():
+        app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+        repo = _seeded_repo(
+            'Repo AM', 'https://example.com/am',
+            plugins=[
+                # No declared runtime -> nothing to compare against.
+                {'filename': 'no_runtime.py', 'label': None, 'description': None,
+                 'runtime': None, 'version': None, 'sha256': 'a' * 64,
+                 'requires_qlsm_version': None},
+            ],
+            addons=list(ADDON_LIST),
+        )
+        repo_id = repo.id
+
+    response = client.get('/api/plugin-repositories/updates', headers=headers)
+    assert response.status_code == 200
+    data = response.get_json()['data']
+    entry = next(r for r in data if r['repo_id'] == repo_id)
+    assert entry['plugins'] == [{'filename': 'no_runtime.py', 'runtime': None, 'status': 'unknown'}]
+    assert entry['addons'][0]['id'] == 'demo-addon'
+    assert entry['addons'][0]['status'] == 'not_installed'
+
+
+def test_updates_sees_an_installed_addon_version(client, app, tmp_path):
+    make_user(app, 'updatesuser2', 'password123')
+    headers = auth_headers(app, 'updatesuser2')
+    target = tmp_path / 'demo-addon'
+    target.mkdir()
+    (target / 'qlsm-addon.json').write_text(json.dumps({'id': 'demo-addon', 'version': '1.0.0'}))
+    with app.app_context():
+        app.config['ADDON_PACKAGES_DIR'] = str(tmp_path)
+        repo = _seeded_repo('Repo AN', 'https://example.com/an', plugins=[], addons=list(ADDON_LIST))
+        repo_id = repo.id
+
+    response = client.get('/api/plugin-repositories/updates', headers=headers)
+    assert response.status_code == 200
+    entry = next(r for r in response.get_json()['data'] if r['repo_id'] == repo_id)
+    assert entry['addons'][0]['status'] == 'update_available'
+    assert entry['addons'][0]['installed_version'] == '1.0.0'
+    assert entry['addons'][0]['available_version'] == '1.2.0'

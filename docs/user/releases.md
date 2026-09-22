@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.43.0` | 2026-09-22 | [#233](https://github.com/dngrtech/qlsm/pull/233) | Install and update addons straight from a plugin repository, and let a plugin ship extra files in a subfolder via `package_files`. |
 | `v1.42.0` | 2026-09-21 | [#230](https://github.com/dngrtech/qlsm/pull/230) | Add an addon system for extending QLSM with installable packages, contributing their own UI panels, settings, and API endpoints. |
 | `v1.41.1` | 2026-09-21 | [#231](https://github.com/dngrtech/qlsm/pull/231) | Add a pill-shaped drag handle to the file-list splitter in the config/plugins/factories editor. |
 | `v1.41.0` | 2026-09-21 | [#225](https://github.com/dngrtech/qlsm/pull/225) | Edit a plugin repository's `qlsm-plugins.json` under **Settings → Plugin Repositories** — reorder its plugins, edit their cvars and commands, see what QLSM would drop from the file, and download the result to commit to the repository. |

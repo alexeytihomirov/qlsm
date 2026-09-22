@@ -1,32 +1,78 @@
-"""External plugin repositories: fetch a `qlsm-plugins.json` manifest over
-plain HTTP from an operator-supplied repo URL, and download individual plugin
-files from it into the operator tier of the local pool
-(data/shared-plugins/<runtime>/, see ui/plugin_pool.py).
+"""External repositories: fetch a manifest over plain HTTP from an
+operator-supplied repo URL, and install its contents locally -- individual
+plugin files into the operator tier of the local pool
+(data/shared-plugins/<runtime>/, see ui/plugin_pool.py), and addon packages
+(.zip) into ADDON_PACKAGES_DIR via the same installer the zip-upload path
+uses.
 
 This is deliberately separate from `.ql-plugin.json` (plugin_manifest.py,
-per-plugin display/edit metadata for a file already in the pool) and from the
-qlsm control-plane addon system (docs/superpowers/specs/...-qlsm-addon-system-
-design.md, extensions to qlsm itself) -- a repository is just a remote source
-list for THIS manifest format's files.
+per-plugin display/edit metadata for a file already in the pool) and from
+`qlsm-addon.json` (ui/addons/manifest.py, the manifest *inside* an addon
+package) -- a repository is just a remote source list.
 
-Repo manifest shape, all fields but `filename` optional:
-    {"plugins": [
-        {"filename": "some_plugin.py", "label": "...", "description": "...",
-         "runtime": "minqlx" | "minqlxtended" | "minqlxtended-patched",
-         "requires_qlsm_version": "1.30.0",
-         "cvars": [...], "commands": [...]},
-        ...
-    ]}
-`filename` must be a bare, root-level, importable module name ending in
-.py -- same constraint the pool itself enforces (see plugin_manifest.py /
-pluginSelection.js isEnableablePluginPath). `requires_qlsm_version` is the
-plugin author's own claim, compared against this qlsm's own VERSION file by
-version_risk() below -- see that function's docstring for what "risk" does
-and does not mean here (operator decision, 2026-09-14).
-`cvars`/`commands` use the `.ql-plugin.json` shape; on download they (with
-label/description) become the plugin's pool sidecar unless the repo also
-ships a separate `<plugin>.ql-plugin.json`, which wins.
+Two manifest filenames, tried in this order:
+
+    qlsm-repository.json  -- current format, plugins and/or addons:
+        {"plugins": [...same entries as below...],
+         "addons": [
+            {"id": "my-addon", "version": "1.2.0", "zip": "my-addon.zip",
+             "sha256": "<hex of the zip>", "label": "...",
+             "description": "...", "requires_qlsm_version": "1.30.0"},
+            ...
+         ]}
+    qlsm-plugins.json     -- original plugins-only format, kept working:
+        {"plugins": [
+            {"filename": "some_plugin.py", "label": "...",
+             "description": "...", "version": "...",
+             "sha256": "<hex of the LF-normalized .py>",
+             "runtime": "minqlx" | "minqlxtended" | "minqlxtended-patched",
+             "requires_qlsm_version": "1.30.0",
+             "depends_on": ["some_helper.py"],
+             "cvars": [...], "commands": [...]},
+        ]}
+
+All fields but `filename` / `id`+`zip` are optional. `filename` must be a
+bare, root-level, importable module name ending in .py -- same constraint the
+pool itself enforces (see plugin_manifest.py / pluginSelection.js
+isEnableablePluginPath). `requires_qlsm_version` is the author's own claim,
+compared against this qlsm's own VERSION file by version_risk() below -- see
+that function's docstring for what "risk" does and does not mean here
+(operator decision, 2026-09-14).
+`cvars`/`commands`/`depends_on` use the `.ql-plugin.json` shape; on download
+they (with label/description) become the plugin's pool sidecar unless the repo
+also ships a separate `<plugin>.ql-plugin.json`, which wins.
+
+`depends_on` names other entries in this same manifest that the plugin needs
+on disk but that are not loadable plugins themselves (a shared helper module
+-- e.g. chat_rcon.py needs chat_rcon_acl.py). A named entry gets no row of its
+own in the UI and is downloaded automatically together with whatever depends
+on it (see dependency_filenames / expand_with_dependencies below) -- the
+repository list offers plugins, not the files they happen to be made of. It
+also lands in the downloaded sidecar, which is what makes the Plugins tab
+hide the same helper from its own checkbox list (pluginSelection.js).
+
+`package_files` is for a plugin that needs more than loadable .py modules --
+a helper *folder* sitting next to `filename` that its imports reach into
+directly (e.g. match_restore.py does `from restore import codec`, so it
+needs a whole restore/ package on disk beside it, not just another root-level
+.py `depends_on` could name). Shape: {"<relative/path>": "<sha256 of the
+LF-normalized file>", ...}, one entry per file under the package folder,
+always at least one directory deep -- a root-level helper module belongs in
+`depends_on` instead, not here. Every declared path is fetched from
+`<base_url>/<relative/path>` and written into the operator pool at that same
+relative path alongside `filename` (see download_plugin). Update detection
+for these files is a tree diff (dependency_filenames/expand_with_dependencies
+don't apply here -- they're not separate manifest entries) -- see
+package_update_status.
+
+A declared `sha256` is what update detection runs on (plugin_update_status /
+addon_update_status): no hash in the manifest means qlsm cannot tell whether
+the repo's copy changed without downloading it, so the entry reports status
+"unknown". A plugin entry's hash is of the LF-normalized source (matching
+the CRLF-insensitive comparison download_plugin() already does); an addon
+entry's hash is of the .zip exactly as served.
 """
+import hashlib
 import json
 import logging
 import os
@@ -34,20 +80,46 @@ import re
 
 import requests
 
+from ui.addons.install import (
+    AddonInstallError,
+    MAX_ARCHIVE_BYTES,
+    install_addon_zip,
+    read_manifest_from_blob,
+)
+from ui.addons.manifest import (
+    ADDON_ID_MAX,
+    ADDON_ID_RE,
+    MANIFEST_FILENAME as ADDON_MANIFEST_FILENAME,
+    read_manifest as read_addon_manifest,
+)
 from ui.plugin_manifest import PLUGIN_MANIFEST_MAX_SIZE
-from ui.plugin_pool import operator_pool_dir, resolve_pool_file
-from ui.runtime import is_valid_runtime
+from ui.plugin_pool import operator_pool_dir, resolve_pool_file, resolve_pool_path
+from ui.runtime import is_valid_runtime, normalize_runtime
+from ui.update_checks import diff_trees
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_FILENAME = 'qlsm-plugins.json'
+MANIFEST_FILENAME = 'qlsm-plugins.json'           # legacy, plugins only
+REPO_MANIFEST_FILENAME = 'qlsm-repository.json'   # current, plugins + addons
 MANIFEST_MAX_SIZE = 256 * 1024
 PLUGIN_FILE_MAX_SIZE = 512 * 1024
+# A package-style entry's declared file count (see `package_files` in the
+# module docstring). Generous for a helper folder like match_restore.py's
+# restore/ (five files); a manifest entry needing more than this is most
+# likely an addon .zip mistakenly listed as a plugin.
+PACKAGE_MAX_FILES = 64
 FETCH_TIMEOUT_SECONDS = 10
+
+_SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 
 # A plugin file is a Python module loaded by bare name -- no dots, no path
 # separators, nothing but what a valid module name and this pool allow.
 _FILENAME_RE = re.compile(r'^[A-Za-z0-9_\-]+\.py$')
+
+# One path segment of a package_files relative path -- same charset as a
+# plugin filename's own stem, but without forcing a .py extension (a package
+# can carry non-Python members, e.g. data files).
+_PACKAGE_SEGMENT_RE = re.compile(r'^[A-Za-z0-9_.\-]+$')
 
 
 def is_safe_plugin_filename(filename):
@@ -55,10 +127,35 @@ def is_safe_plugin_filename(filename):
     extension. Anything else never reaches a pool path."""
     return isinstance(filename, str) and bool(_FILENAME_RE.match(filename))
 
+
+def is_safe_package_relpath(path):
+    """A forward-slash relative path for one member of a package_files entry
+    (see module docstring), or False.
+
+    Same reject-don't-sanitize stance as ui.addons.install._safe_member_path:
+    no absolute path, no drive-qualified segment, no `..` or empty segment,
+    no hidden (dot-prefixed) segment. Also requires at least one subdirectory
+    -- a root-level helper module is what `depends_on` is for, and allowing
+    both to name the same kind of file here would just duplicate it.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    parts = path.replace('\\', '/').split('/')
+    if len(parts) < 2:
+        return False
+    for part in parts:
+        if not part or part in ('.', '..') or part.startswith('.'):
+            return False
+        if len(part) == 2 and part[1] == ':':
+            return False  # drive-qualified segment, e.g. "C:"
+        if not _PACKAGE_SEGMENT_RE.match(part):
+            return False
+    return True
+
 # The part of a repo manifest entry that becomes the plugin's pool sidecar
 # (<plugin>.ql-plugin.json). Everything else on an entry (filename, runtime,
 # requires_qlsm_version) only matters for listing/downloading.
-_SIDECAR_FIELDS = ('label', 'description', 'cvars', 'commands')
+_SIDECAR_FIELDS = ('label', 'description', 'cvars', 'commands', 'depends_on')
 _INLINE_LIST_FIELDS = ('cvars', 'commands')
 
 
@@ -131,7 +228,7 @@ def github_raw_bases(url):
 
 
 def resolve_manifest_source(url, fetch=None):
-    """(fetch_url, plugins) for a repository URL the operator typed.
+    """(fetch_url, manifest) for a repository URL the operator typed.
 
     A github.com URL is rewritten to its raw form and each branch candidate
     tried until one serves a manifest; every other URL is fetched as given.
@@ -153,38 +250,97 @@ def resolve_manifest_source(url, fetch=None):
             last_error = e
     if len(candidates) > 1:
         raise PluginRepositoryError(
-            f"No {MANIFEST_FILENAME} found in that repository on "
+            f"No {REPO_MANIFEST_FILENAME} or {MANIFEST_FILENAME} found in that repository on "
             f"{' or '.join(GITHUB_BRANCH_CANDIDATES)}."
         )
     raise last_error
 
 
-def _manifest_url(base_url):
-    return base_url.rstrip('/') + '/' + MANIFEST_FILENAME
+def _manifest_url(base_url, filename=MANIFEST_FILENAME):
+    return base_url.rstrip('/') + '/' + filename
 
 
-def fetch_manifest(base_url):
-    """Fetch and validate <base_url>/qlsm-plugins.json.
+def _optional_str(entry, key):
+    value = entry.get(key)
+    return value if isinstance(value, str) and value.strip() else None
 
-    Returns the normalized plugin list (a list of dicts, always present even
-    if empty). A malformed individual entry is dropped rather than failing
-    the whole fetch -- same "never throws on one bad entry" rule
-    plugin_manifest.py already applies to `.ql-plugin.json`. Raises
-    PluginRepositoryError for anything wrong with the fetch itself or the
-    manifest's outer shape.
+
+def _optional_sha256(entry):
+    value = entry.get('sha256')
+    if not isinstance(value, str):
+        return None
+    value = value.strip().lower()
+    return value if _SHA256_RE.match(value) else None
+
+
+def _optional_filename_list(entry, key):
+    """A list of bare plugin filenames, or []. Same filename constraint as an
+    entry's own `filename`: anything else is dropped rather than failing the
+    manifest, matching the "one bad field never breaks the fetch" rule."""
+    value = entry.get(key)
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        name = item.strip()
+        if is_safe_plugin_filename(name) and name not in out:
+            out.append(name)
+    return out
+
+
+def _optional_package_files(entry):
+    """{relpath: sha256} for a package-style entry's extra members (see
+    `package_files` in the module docstring), or {} when the field is absent,
+    malformed, or oversized.
+
+    Same "one bad field is dropped, not the whole entry" rule as everywhere
+    else in this module: an individual member with an unsafe path or an
+    unparseable hash is skipped rather than failing the entry. An entry
+    declaring more members than PACKAGE_MAX_FILES drops the whole field
+    instead of truncating it -- a partial member list would silently ship an
+    incomplete package.
     """
-    content = _fetch(_manifest_url(base_url), MANIFEST_MAX_SIZE)
-    try:
-        data = json.loads(content)
-    except ValueError as e:
-        raise PluginRepositoryError(f"{_manifest_url(base_url)} is not valid JSON: {e}") from e
-    if not isinstance(data, dict) or not isinstance(data.get('plugins'), list):
-        raise PluginRepositoryError(
-            f"{_manifest_url(base_url)} must be a JSON object with a \"plugins\" array"
+    value = entry.get('package_files')
+    if not isinstance(value, dict):
+        return {}
+    if len(value) > PACKAGE_MAX_FILES:
+        logger.warning(
+            f"package_files for {entry.get('filename')!r} has more than "
+            f"{PACKAGE_MAX_FILES} entries -- dropping the whole package tree"
         )
+        return {}
+    out = {}
+    for relpath, sha in value.items():
+        if not is_safe_package_relpath(relpath):
+            continue
+        if not isinstance(sha, str):
+            continue
+        sha = sha.strip().lower()
+        if _SHA256_RE.match(sha):
+            out[relpath] = sha
+    return out
 
+
+def _zip_path(entry):
+    """The addon entry's `zip` as a safe relative path, or None. Same
+    reject-don't-sanitize stance as addons/install.py's _safe_member_path."""
+    value = entry.get('zip')
+    if not isinstance(value, str) or not value.strip():
+        return None
+    path = value.strip().replace('\\', '/')
+    if path.startswith('/') or not path.lower().endswith('.zip'):
+        return None
+    parts = [p for p in path.split('/') if p]
+    if any(p in ('.', '..') or ':' in p for p in parts):
+        return None
+    return '/'.join(parts)
+
+
+def _normalize_plugins(entries):
     plugins = []
-    for entry in data['plugins']:
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
         filename = entry.get('filename')
@@ -192,17 +348,14 @@ def fetch_manifest(base_url):
             continue
         plugin = {
             'filename': filename,
-            'label': entry['label'] if isinstance(entry.get('label'), str) and entry['label'].strip() else None,
-            'description': (
-                entry['description'] if isinstance(entry.get('description'), str) and entry['description'].strip()
-                else None
-            ),
+            'label': _optional_str(entry, 'label'),
+            'description': _optional_str(entry, 'description'),
             'runtime': entry.get('runtime') if is_valid_runtime(entry.get('runtime')) else None,
-            'requires_qlsm_version': (
-                entry['requires_qlsm_version']
-                if isinstance(entry.get('requires_qlsm_version'), str) and entry['requires_qlsm_version'].strip()
-                else None
-            ),
+            'version': _optional_str(entry, 'version'),
+            'sha256': _optional_sha256(entry),
+            'requires_qlsm_version': _optional_str(entry, 'requires_qlsm_version'),
+            'depends_on': _optional_filename_list(entry, 'depends_on'),
+            'package_files': _optional_package_files(entry),
         }
         # Inline sidecar metadata: kept only when well-formed, and only added
         # when present so plain entries keep their existing shape.
@@ -211,6 +364,122 @@ def fetch_manifest(base_url):
                 plugin[field] = entry[field]
         plugins.append(plugin)
     return plugins
+
+
+def dependency_filenames(plugins):
+    """Filenames some *other* entry in the same manifest declares in its
+    `depends_on` -- the helper modules that get no row of their own.
+
+    Only names that are themselves entries count: a `depends_on` pointing at
+    something this repository does not publish cannot be downloaded, and
+    hiding a row that does not exist would be a no-op anyway. A self-reference
+    is ignored so a malformed entry cannot hide itself.
+    """
+    known = {e['filename'] for e in plugins}
+    deps = set()
+    for entry in plugins:
+        for name in entry.get('depends_on') or []:
+            if name in known and name != entry['filename']:
+                deps.add(name)
+    return deps
+
+
+def expand_with_dependencies(plugins, selected):
+    """`selected` filenames plus every dependency they need, transitively.
+
+    Returns (ordered, pulled_by). `ordered` puts dependencies before the
+    entries that need them, so a batch that fails partway never leaves a
+    plugin in the pool whose helper is missing. `pulled_by` maps each
+    auto-added helper to the entry that declared it -- the caller needs that
+    both for the operator-facing message and to give a helper with no runtime
+    of its own the runtime of whatever dragged it in. Only dependencies this
+    manifest actually publishes are followed (see dependency_filenames); a
+    cycle terminates rather than recursing forever. Names not in the manifest
+    at all are kept in place -- the route still has to report them, and
+    dropping them here would hide the reason.
+    """
+    by_name = {e['filename']: e for e in plugins}
+    ordered, pulled_by, visiting = [], {}, set()
+
+    def visit(name):
+        if name in ordered or name in visiting:
+            return
+        visiting.add(name)
+        for dep in (by_name.get(name) or {}).get('depends_on') or []:
+            if dep in by_name and dep != name:
+                pulled_by.setdefault(dep, name)
+                visit(dep)
+        visiting.discard(name)
+        ordered.append(name)
+
+    for name in selected:
+        visit(name)
+    for name in selected:
+        pulled_by.pop(name, None)
+    return ordered, pulled_by
+
+
+def _normalize_addons(entries):
+    addons = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        addon_id = entry.get('id')
+        if (not isinstance(addon_id, str) or len(addon_id) > ADDON_ID_MAX
+                or not ADDON_ID_RE.match(addon_id)):
+            continue
+        zip_path = _zip_path(entry)
+        if zip_path is None:
+            continue
+        addons.append({
+            'id': addon_id,
+            'zip': zip_path,
+            'label': _optional_str(entry, 'label'),
+            'description': _optional_str(entry, 'description'),
+            'version': _optional_str(entry, 'version'),
+            'sha256': _optional_sha256(entry),
+            'requires_qlsm_version': _optional_str(entry, 'requires_qlsm_version'),
+        })
+    return addons
+
+
+def fetch_manifest(base_url):
+    """Fetch and validate the repository manifest.
+
+    Tries <base_url>/qlsm-repository.json first; if that fetch fails (not
+    published, older repo), falls back to the original plugins-only
+    <base_url>/qlsm-plugins.json. Returns {'plugins': [...], 'addons': [...]},
+    both lists always present even if empty. A malformed individual entry is
+    dropped rather than failing the whole fetch -- same "never throws on one
+    bad entry" rule plugin_manifest.py already applies to `.ql-plugin.json`.
+    Raises PluginRepositoryError for anything wrong with the fetch itself or
+    the manifest's outer shape (a v2 file that exists but is broken is an
+    error, not a fall-through to v1 -- it would silently hide the breakage).
+    """
+    url = _manifest_url(base_url, REPO_MANIFEST_FILENAME)
+    try:
+        content = _fetch(url, MANIFEST_MAX_SIZE)
+    except PluginRepositoryError:
+        url = _manifest_url(base_url)
+        try:
+            content = _fetch(url, MANIFEST_MAX_SIZE)
+        except PluginRepositoryError as e:
+            raise PluginRepositoryError(f"{e} (also tried {REPO_MANIFEST_FILENAME})") from e
+
+    try:
+        data = json.loads(content)
+    except ValueError as e:
+        raise PluginRepositoryError(f"{url} is not valid JSON: {e}") from e
+    if (not isinstance(data, dict)
+            or not (isinstance(data.get('plugins'), list) or isinstance(data.get('addons'), list))):
+        raise PluginRepositoryError(
+            f"{url} must be a JSON object with a \"plugins\" and/or \"addons\" array"
+        )
+
+    return {
+        'plugins': _normalize_plugins(data.get('plugins') or []),
+        'addons': _normalize_addons(data.get('addons') or []),
+    }
 
 
 def build_inline_manifest(entry):
@@ -280,7 +549,7 @@ def version_risk(requires_qlsm_version, current_qlsm_version=None):
     }
 
 
-def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifest=None):
+def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifest=None, package_files=None):
     """Fetch <base_url>/<filename> over HTTP and write it into the local pool
     for `runtime`, together with its `.ql-plugin.json` sidecar: the repo's own
     separate sidecar file when it ships a parseable one, else
@@ -292,6 +561,16 @@ def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifes
     PluginRepositoryError if the plugin source itself can't be fetched; a
     missing, malformed or non-object separate sidecar is not an error.
 
+    `package_files` is a package-style entry's declared {relpath: sha256}
+    (see module docstring) -- every relpath is fetched from
+    `<base_url>/<relpath>` and written into the operator pool at that same
+    relative path, landing next to `filename` the way match_restore.py needs
+    its restore/ package to. The whole download is all-or-nothing: `filename`
+    and every package member are checked against the merged pool up front,
+    and if ANY of them differs from what's already there, nothing is written
+    and PluginRepositoryError(code='exists') names every conflicting path --
+    a package is never left with some members updated and others stale.
+
     Writes always land in the operator tier (data/shared-plugins/<runtime>/);
     the built-in tier inside the image is never modified. Refuses to shadow a
     file already in the merged pool -- an earlier download, or a bundled
@@ -300,39 +579,77 @@ def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifes
     then wins over the bundled one on every host and breaks the manifest.json
     sha256 baseline, so it has to be a deliberate choice. The caller (the
     route) is the one that turns this into an operator-facing
-    confirm-and-retry. Sidecar handling is scoped to the operator tier: a
-    bundled plugin's own sidecar stays where it is, and read_plugin_manifest()
+    confirm-and-retry. Sidecar handling is scoped to the operator tier and to
+    `filename` alone -- package members have no sidecar of their own -- and
+    a bundled plugin's own sidecar stays where it is, and read_plugin_manifest()
     still falls back to it when the download brings none of its own.
     """
     if not is_safe_plugin_filename(filename):
         raise PluginRepositoryError(f"Refusing to download unsafe filename: {filename!r}")
+    package_files = package_files or {}
+    for relpath in package_files:
+        if not is_safe_package_relpath(relpath):
+            raise PluginRepositoryError(f"Refusing to download unsafe package path: {relpath!r}")
 
     pool_dir = operator_pool_dir(runtime)
     dest_path = os.path.join(pool_dir, filename)
 
-    source = fetch_plugin_source(base_url, filename)
-    existing_path = resolve_pool_file(runtime, filename)
-    if existing_path and not overwrite:
-        # Same code already in the pool (ignoring CRLF/LF) is "up to date",
-        # not a collision: keep the local copy as is. Otherwise the operator
-        # decides via the prompt.
-        with open(existing_path, 'rb') as f:
-            existing = f.read()
-        if _normalize_eol(existing) != _normalize_eol(source):
-            raise PluginRepositoryError(
-                f"{filename} already exists in the local pool.", code='exists',
-            )
-        if existing_path != dest_path:
-            # The match is the built-in copy. Writing a sidecar next to a
-            # .py that isn't there would leave an orphan in the operator
-            # tier that shadows the bundled sidecar for every later release.
-            # An earlier operator download, by contrast, still gets its
-            # sidecar synced below.
-            return
+    # (name, dest path, merged-pool path if already present) for the main
+    # file plus every declared package member, so both can be validated and
+    # written by the same loop below.
+    members = [(filename, dest_path, resolve_pool_file(runtime, filename))]
+    for relpath in package_files:
+        members.append((
+            relpath,
+            os.path.join(pool_dir, *relpath.split('/')),
+            resolve_pool_path(runtime, relpath),
+        ))
+
+    fetched = {}
+    conflicts = []
+    for name, member_dest, existing_path in members:
+        blob = fetch_plugin_source(base_url, name)
+        fetched[name] = blob
+        if existing_path and not overwrite:
+            # Same code already in the pool (ignoring CRLF/LF) is "up to
+            # date", not a collision: keep the local copy as is. Otherwise
+            # the operator decides via the prompt.
+            with open(existing_path, 'rb') as f:
+                existing = f.read()
+            if _normalize_eol(existing) != _normalize_eol(blob):
+                conflicts.append(name)
+
+    if conflicts:
+        raise PluginRepositoryError(
+            f"{', '.join(conflicts)} already exist{'s' if len(conflicts) == 1 else ''} "
+            f"in the local pool.", code='exists',
+        )
+
+    main_existing = members[0][2]
+    if not overwrite and main_existing and main_existing != dest_path:
+        # The main file matched the built-in copy. Writing a sidecar next to
+        # a .py that isn't there would leave an orphan in the operator tier
+        # that shadows the bundled sidecar for every later release. An
+        # earlier operator download, by contrast, still gets its sidecar
+        # synced below. Package members (if any) are still written normally
+        # below -- they have no sidecar to skip.
+        skip_sidecar = True
     else:
-        os.makedirs(pool_dir, exist_ok=True)
-        with open(dest_path, 'wb') as f:
-            f.write(source)
+        skip_sidecar = False
+
+    for name, member_dest, existing_path in members:
+        blob = fetched[name]
+        if existing_path:
+            with open(existing_path, 'rb') as f:
+                existing = f.read()
+            if _normalize_eol(existing) == _normalize_eol(blob):
+                continue  # already current somewhere in the merged pool
+        os.makedirs(os.path.dirname(member_dest), exist_ok=True)
+        with open(member_dest, 'wb') as f:
+            f.write(blob)
+
+    if skip_sidecar:
+        return
 
     manifest_filename = filename[:-len('.py')] + '.ql-plugin.json'
     manifest_path = os.path.join(pool_dir, manifest_filename)
@@ -357,3 +674,198 @@ def download_plugin(base_url, filename, runtime, overwrite=False, inline_manifes
         return
     with open(manifest_path, 'wb') as f:
         f.write(manifest_content)
+
+
+def download_addon(base_url, entry, packages_dir):
+    """Fetch the addon .zip a normalized manifest entry points at and install
+    it through the same installer the upload path uses (install_addon_zip,
+    with all its archive guards and its atomic replace-with-rollback -- which
+    is also what makes this the update path: installing over an existing
+    addon *is* the upgrade). Returns the installed addon's parsed
+    qlsm-addon.json manifest. The addon is not live until QLSM restarts,
+    exactly like an uploaded one.
+    """
+    blob = _fetch(base_url.rstrip('/') + '/' + entry['zip'], MAX_ARCHIVE_BYTES)
+
+    declared = entry.get('sha256')
+    if declared and hashlib.sha256(blob).hexdigest() != declared:
+        raise PluginRepositoryError(
+            f"{entry['zip']} does not match the sha256 the repository manifest "
+            f"declares -- refusing to install."
+        )
+
+    # Validate the archive and its manifest *before* touching the packages
+    # dir, so an id mismatch never leaves a half-trusted package installed.
+    try:
+        manifest = read_manifest_from_blob(blob)
+    except AddonInstallError as e:
+        raise PluginRepositoryError(f"{entry['zip']} is not a valid addon package: {e}") from e
+    if manifest['id'] != entry['id']:
+        raise PluginRepositoryError(
+            f"{entry['zip']} contains addon \"{manifest['id']}\" but the repository "
+            f"manifest entry says \"{entry['id']}\" -- refusing to install."
+        )
+
+    try:
+        install_addon_zip(blob, packages_dir)
+    except AddonInstallError as e:
+        raise PluginRepositoryError(f"Could not install \"{entry['id']}\": {e}") from e
+    return manifest
+
+
+# Shared update-status vocabulary for both artifact kinds. 'unknown' means
+# the manifest doesn't carry enough to compare (no sha256 / no version /
+# no runtime to locate the pool file), not that anything is wrong.
+STATUS_NOT_INSTALLED = 'not_installed'
+STATUS_UP_TO_DATE = 'up_to_date'
+STATUS_UPDATE_AVAILABLE = 'update_available'
+STATUS_UNKNOWN = 'unknown'
+
+
+def _hash_pool_relpath(runtime, relpath):
+    """LF-normalized sha256 of one package member's merged-pool copy, or None
+    if it isn't there in either tier. Same normalization plugin_update_status
+    applies to the main file, generalized to a path that may sit under a
+    subdirectory (see resolve_pool_path)."""
+    path = resolve_pool_path(runtime, relpath)
+    if path is None:
+        return None
+    try:
+        with open(path, 'rb') as f:
+            content = f.read()
+    except OSError:
+        return None
+    return hashlib.sha256(_normalize_eol(content)).hexdigest()
+
+
+def package_update_status(runtime, package_files):
+    """STATUS_UP_TO_DATE / STATUS_UPDATE_AVAILABLE for a package-style
+    entry's declared members (see `package_files` in the module docstring)
+    against the merged local pool.
+
+    Built as a tree diff (ui.update_checks.diff_trees) between the manifest's
+    declared {relpath: sha256} and the same shape computed locally, LF
+    normalized the same way a single file's own sha256 comparison is --
+    ui.update_checks.hash_local_tree() itself has no such normalization knob
+    (it hashes raw bytes, which is fine for its own local-vs-local instance
+    callers but not for comparing against a hash the repository computed from
+    a possibly-CRLF source), so the local side is hashed here instead of
+    through that function. A relpath missing from the local pool entirely
+    reads the same as one with different content -- both mean "not current".
+    An empty `package_files` is trivially up to date -- nothing declared, so
+    nothing to be behind on.
+    """
+    if not package_files:
+        return STATUS_UP_TO_DATE
+    local = {}
+    for relpath in package_files:
+        digest = _hash_pool_relpath(runtime, relpath)
+        if digest is not None:
+            local[relpath] = digest
+    return STATUS_UP_TO_DATE if not diff_trees(package_files, local) else STATUS_UPDATE_AVAILABLE
+
+
+def plugin_update_status(entry):
+    """One normalized repo plugin entry vs the local pool, by content hash.
+
+    Purely local -- compares the manifest's declared sha256 against the
+    hash of the pool file's LF-normalized content (the same CRLF-insensitive
+    equality download_plugin() applies), no network. The pool copy examined
+    is the merged view (resolve_pool_file: operator tier over built-in),
+    i.e. exactly the copy a download would be compared against. Which pool
+    to look in comes from the entry's own declared runtime; without one
+    there is nothing to compare against. Note this is name-based: a
+    same-named file the operator authored themselves will honestly show as
+    differing from the repository's copy.
+
+    A package-style entry (see `package_files`) is also only "up to date"
+    when every declared member matches too -- package_update_status() does
+    that half of the comparison as a tree diff.
+    """
+    runtime = entry.get('runtime')
+    if not is_valid_runtime(runtime):
+        return STATUS_UNKNOWN
+    runtime = normalize_runtime(runtime)
+    path = resolve_pool_file(runtime, entry['filename'])
+    if path is None:
+        return STATUS_NOT_INSTALLED
+    declared = entry.get('sha256')
+    package_files = entry.get('package_files') or {}
+    if not declared and not package_files:
+        return STATUS_UNKNOWN
+    if declared:
+        try:
+            with open(path, 'rb') as f:
+                content = f.read()
+        except OSError:
+            return STATUS_NOT_INSTALLED
+        if hashlib.sha256(_normalize_eol(content)).hexdigest() != declared:
+            return STATUS_UPDATE_AVAILABLE
+    if package_update_status(runtime, package_files) != STATUS_UP_TO_DATE:
+        return STATUS_UPDATE_AVAILABLE
+    return STATUS_UP_TO_DATE
+
+
+def plugin_update_status_with_dependencies(plugins, entry):
+    """plugin_update_status() for one entry, folding in its `depends_on`
+    closure.
+
+    A hidden helper has no row of its own to carry a badge, so a plugin whose
+    helper is missing or stale must not read "Up to date" -- clicking Download
+    on it genuinely has something to fetch. The plugin's own verdict still
+    wins when it is `not_installed`: the helper is beside the point until the
+    plugin itself is there.
+    """
+    own = plugin_update_status(entry)
+    if own == STATUS_NOT_INSTALLED:
+        return own
+    by_name = {e['filename']: e for e in plugins}
+    closure, _pulled_by = expand_with_dependencies(plugins, [entry['filename']])
+    for name in closure:
+        if name == entry['filename'] or name not in by_name:
+            continue
+        if plugin_update_status(by_name[name]) in (STATUS_NOT_INSTALLED, STATUS_UPDATE_AVAILABLE):
+            return STATUS_UPDATE_AVAILABLE
+    return own
+
+
+def addon_update_status(entry, packages_dir):
+    """One normalized repo addon entry vs what's installed on the volume.
+
+    Compares versions (the repo entry's against the installed package's own
+    qlsm-addon.json), reading the volume directly rather than the registry so
+    a just-installed, pending-restart addon is already judged by its new
+    version. Only looks at ADDON_PACKAGES_DIR: a bundled-only addon reports
+    not_installed, since installing from the repo would create the volume
+    copy that overrides it -- which is the supported way to update a bundled
+    addon anyway. Returns {'id', 'status', 'installed_version',
+    'available_version'}.
+    """
+    result = {
+        'id': entry['id'],
+        'status': STATUS_UNKNOWN,
+        'installed_version': None,
+        'available_version': entry.get('version'),
+    }
+    if not packages_dir:
+        return result
+    target = os.path.join(packages_dir, entry['id'])
+    if not os.path.isfile(os.path.join(target, ADDON_MANIFEST_FILENAME)):
+        result['status'] = STATUS_NOT_INSTALLED
+        return result
+    manifest, _errors = read_addon_manifest(target)
+    installed = (manifest or {}).get('version') or None
+    result['installed_version'] = installed
+    available = entry.get('version')
+    if not installed or not available:
+        return result
+    parsed_available = _parse_dotted_version(available)
+    parsed_installed = _parse_dotted_version(installed)
+    if parsed_available is not None and parsed_installed is not None:
+        newer = parsed_available > parsed_installed
+    else:
+        # Unparseable version strings still deserve a verdict: different
+        # string = the repo ships something else than what's installed.
+        newer = available.strip() != installed.strip()
+    result['status'] = STATUS_UPDATE_AVAILABLE if newer else STATUS_UP_TO_DATE
+    return result

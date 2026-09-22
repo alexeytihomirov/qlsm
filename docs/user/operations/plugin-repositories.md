@@ -1,21 +1,21 @@
-# Plugin Repositories
+# Repositories
 
-**Settings → Plugin Repositories** lets you add third-party plugin sources and download their plugins into QLSM's shared plugin folder.
+**Settings → Repositories** lets you add third-party sources and install their contents: plugins go into QLSM's shared plugin folder, addons onto the addon packages volume.
 
 A new QLSM install already lists one repository, **Doomsday's Plugins Repository** (`https://github.com/D00MSDAYDEVICE/minqlx`). None of its plugins are downloaded until you pick them. You can delete it; it won't come back when QLSM restarts or updates.
 
 ## Add A Repository
 
 1. Click **Add Repository** and enter a name and the repository's URL.
-2. QLSM fetches `<URL>/qlsm-plugins.json` right away and lists the plugins it describes.
+2. QLSM fetches `<URL>/qlsm-repository.json` (or, when that's absent, the older plugins-only `<URL>/qlsm-plugins.json`) right away and lists the plugins and addons it describes.
 
 **GitHub links work directly.** Paste the repository page URL, for example `https://github.com/D00MSDAYDEVICE/minqlx`, and QLSM converts it to the raw file address itself, looking on the `main` branch and then `master`. The card keeps showing the address you typed. To use another branch or a subfolder, paste that page's URL, such as `https://github.com/owner/repo/tree/dev/plugins`. Private repositories aren't supported.
 
-Any other file host works too, as long as the files are served directly. The URL is treated as a folder that holds `qlsm-plugins.json` and the plugins.
+Any other file host works too, as long as the files are served directly. The URL is treated as a folder that holds the manifest and the files it lists.
 
 Names must be unique (ignoring case), and a URL can only be added once (ignoring a trailing `/`). Click the sync icon on a repository to fetch its list again.
 
-A repository's `qlsm-plugins.json` looks like this. Every field except `filename` is optional:
+A repository's `qlsm-repository.json` looks like this. Every field except `filename` (plugins) and `id`/`zip` (addons) is optional:
 
 ```json
 {
@@ -26,16 +26,30 @@ A repository's `qlsm-plugins.json` looks like this. Every field except `filename
       "description": "Replies to !hello.",
       "runtime": "minqlxtended",
       "requires_qlsm_version": "1.36.0",
+      "sha256": "…hash of the LF-normalized .py…",
       "cvars": [
         { "cvar": "qlx_helloMessage", "label": "Reply text", "type": "string", "default": "Hello!", "description": "What !hello replies with." }
       ]
     },
     { "filename": "another_plugin.py" }
+  ],
+  "addons": [
+    {
+      "id": "my-addon",
+      "version": "1.2.0",
+      "zip": "my-addon.zip",
+      "sha256": "…hash of the zip…",
+      "label": "My Addon",
+      "description": "What it does.",
+      "requires_qlsm_version": "1.41.0"
+    }
   ]
 }
 ```
 
-One file describes every plugin in the repository. `cvars` (and `commands`) use the same format as a `.ql-plugin.json` file. When you download a plugin, QLSM saves its label, description, cvars and commands next to it, which gives it an editable settings form (see [Plugin Settings](edit-configs.md#plugin-settings-cvars)).
+One file describes everything in the repository. A plugins-only repository can keep using the older filename `qlsm-plugins.json` with just the `plugins` array; the entries are the same.
+
+`cvars` (and `commands`) use the same format as a `.ql-plugin.json` file. When you download a plugin, QLSM saves its label, description, cvars and commands next to it, which gives it an editable settings form (see [Plugin Settings](edit-configs.md#plugin-settings-cvars)).
 
 A plugin can still ship its own `<name>.ql-plugin.json` file next to its `.py` file. If it does, QLSM uses that file instead of the plugin's entry in `qlsm-plugins.json`.
 
@@ -58,6 +72,10 @@ It does not change anything QLSM has stored. QLSM keeps a copy of whatever the r
 The list under the editor names every problem found, worst first; click one to jump to the plugin it belongs to. A red dot on a plugin means QLSM would drop something from that entry on its next sync — a filename that isn't a bare `name.py`, or a filename used twice. An amber dot is cosmetic: a missing label or description, or a cvar type the settings form doesn't recognize.
 
 Only the plugins QLSM could read at the last sync appear here. If the repository's file has entries QLSM skipped, they are not in the editor and will not be in the downloaded file either, so check the result before committing it over the original.
+
+**`sha256` powers the update badges.** For each listed plugin (hash of the `.py` with line endings normalized to LF) and addon (hash of the `.zip` as served), QLSM compares the declared hash/version against what's installed locally and shows **Update available** / **Up to date** / **Not installed** in the list. Entries without a `sha256` (or, for addons, without a `version`) simply show no status.
+
+**A plugin that needs a whole folder, not just its own `.py`,** declares `package_files`: a map of `"<relative/path>": "<sha256 of that file, LF-normalized>"` for every extra file, each one at least one directory deep (e.g. a plugin that does `from restore import codec` needs `{"restore/__init__.py": "…", "restore/codec.py": "…"}`). Downloading the plugin fetches every listed path from the repository and writes it next to the `.py` file, in the same shared plugin folder. The update badge and the overwrite prompt cover the whole set: if any file in it is missing or has changed, the plugin shows **Update available**, and downloading again asks about every file that would change, not just the main one. A root-level helper `.py` that has no folder of its own still belongs in `depends_on`, not here.
 
 ## Download Plugins
 
@@ -83,3 +101,9 @@ Downloading a plugin also pushes QLSM's shared plugin folder to every **Active**
 1. Open the instance's config (or **Deploy A New Instance**) and go to the **Plugins** tab. The plugin is listed with the other shared plugins (see [Shared Plugins](edit-configs.md#shared-plugins)), marked **shared** once the host has it.
 2. If the row shows **not on host** instead, the host has not received the file yet. Click the upload icon next to it to push the shared folder to that host, and wait for the badge to clear.
 3. Tick the plugin and save. Restart the instance to load it.
+
+## Install Addons
+
+A repository that lists addons shows them in their own table under the plugin list, with an **Install** button per row (it reads **Update** when the repository has a newer version than the installed one).
+
+Installing downloads the addon's `.zip` and puts it through exactly the same installer and checks as uploading it on the Addons page — including verifying the archive against the `sha256` the repository declares, when it declares one. Like an upload, **the addon is not live until QLSM restarts**; it shows as *pending restart* on the Addons page until then. Updating works the same way: installing over an existing addon replaces it atomically, and its settings are kept.

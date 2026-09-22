@@ -32,6 +32,12 @@ x-app: &app
     - ./ansible/inventory:/app/ansible/inventory
     - ./configs:/app/configs
     - ./logs:/app/logs
+    # Operator-installed addon packages (ADDON_PACKAGES_DIR, ui/config.py) --
+    # without this, an installed addon's files live only in the container's
+    # writable layer: they survive `docker restart` but not a `docker compose
+    # up` after an image pull/recreate, while the AddonState DB row (on the
+    # ./data mount above) still says the addon is installed/enabled.
+    - ./addon-packages:/app/addon-packages
   restart: unless-stopped
   depends_on:
     redis:
@@ -93,6 +99,7 @@ services:
       - ./ansible/inventory:/app/ansible/inventory
       - ./configs:/app/configs
       - ./logs:/app/logs
+      - ./addon-packages:/app/addon-packages
       # Self-host SSH bridge. DO NOT change to ${HOME}/.ssh — the web container
       # must not have access to the operator's full SSH identity.
       # The host-init service (above) sets up the directory and sshd config.
@@ -136,6 +143,7 @@ services:
       - ./ansible/inventory:/app/ansible/inventory
       - ./configs:/app/configs
       - ./logs:/app/logs
+      - ./addon-packages:/app/addon-packages
       # Worker removes self-host keys during destroy tasks and needs the same
       # dedicated host SSH bridge as the web service.
       - ${HOME}/.qlsm-ssh:/host-ssh

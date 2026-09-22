@@ -125,7 +125,7 @@ The Flask application follows the application factory pattern, which provides se
 
 ### Database Models
 
-The application has database models including `User`, `Host`, `QLInstance`, `ConfigPreset`, `ApiKey`, `AppSetting`, `BinaryMetadata`, and `Operator`.
+The application has database models including `User`, `Host`, `QLInstance`, `ConfigPreset`, `ApiKey`, `AppSetting`, `BinaryMetadata`, `Operator`, `PluginRepository`, and `AddonState` (see **Addon System** below).
 
 **Host Model:** Represents a target server where Quake Live instances can be deployed. These hosts are provisioned via Terraform triggered by the UI.
 
@@ -236,6 +236,20 @@ class ConfigPreset(db.Model):
 **ApiKey Model:** Stores API keys for external service authentication. Used by `external_api_routes.py` to validate `Authorization: Bearer <key>` headers.
 
 **AppSetting Model:** Generic key-value store for application settings (e.g., rate limit values). Accessed via `settings_routes.py`.
+
+## Addon System
+
+A second extension mechanism alongside plugins: plugins extend the minqlx game-server runtime, addons extend QLSM's own control plane (settings UI, API endpoints, lifecycle hooks). See `ui/addons/` and [Architecture → Addon System](architecture.md#component-descriptions) for the fuller design write-up; this section covers implementation details worth knowing before touching the code.
+
+**Discovery and loading.** `ui/addons/registry.py`'s `init_app()` runs once, at app-factory time, and scans two tiers: `addons/` (bundled in the image) and `ADDON_PACKAGES_DIR` (`./addon-packages`, bind-mounted so it survives a container recreate — see `docker-compose.yml`). A directory counts as an addon only if it has a `qlsm-addon.json` (`ui/addons/manifest.py`, validated but never raises — a broken manifest just gets reported `broken` in the catalog). An id present in both tiers resolves to the installed copy. `backend.py`, if present, is imported via `importlib.util.spec_from_file_location` with `submodule_search_locations` set to the addon's own directory, so it loads as a package (`from . import settings` works) rather than a bare module; its `register(ctx)` function is the addon's entry point. Every step here is wrapped so one broken addon can't take the app down.
+
+**Activation is separate from loading.** A loaded addon is inert until enabled. `AddonState` rows (`addon_id`, `scope`, `scope_id`, `enabled`, `settings_json`) gate it at three nested scopes — `GLOBAL` → `HOST` → `INSTANCE`, each requiring the one above to be on. `scope_id` is `0` for the global row (SQLite treats `NULL` as distinct under a unique constraint, so `0` is used as a real sentinel instead). Settings are stored as an opaque JSON blob QLSM core never interprets; `ui/addons/settings.py` validates it against the manifest's own schema.
+
+**Install/update/uninstall (`ui/addons/install.py`).** Installing a `.zip` (via direct upload, `POST /addons/`, or `POST /plugin-repositories/<id>/install-addon`) extracts it fully into a `tempfile.mkdtemp` staging directory *before* touching anything at the final path, then swaps it in with `os.rename(staging, target)` — atomic against a crash mid-extraction, since a killed process just leaves an orphaned, dot-prefixed staging dir that the catalog scan ignores. An existing `target` is first renamed aside to a `.<id>.previous-<pid>` backup and restored if the swap fails.
+
+This scheme is **not safe against two concurrent installs of the same addon id** — there is no lock around the check-exists → rename-aside → rename-in sequence. Two racing installs (an accidental double-click, or a manual upload racing a repository install) can each successfully complete their own `rename(staging, target)`; whichever happens last silently wins, and the loser's response still reports success even though its bytes were never the ones left on disk. Because the web routes run this synchronously in the Flask request (no RQ enqueue, no `flock`), and `ADDON_PACKAGES_DIR` is bind-mounted into every app container per `docs/docker-volume-concurrency.md`, this race isn't confined to one process — two containers hitting the same addon id at once are exposed to it too. Low real-world likelihood (a single operator has to actively race themselves), but worth knowing before building anything that installs addons unattended (e.g. an automated repository sync). Uninstall (`shutil.rmtree`, no staging) racing an install is safe — POSIX rename/rmtree semantics mean the addon ends up either fully removed or freshly installed, never half-written.
+
+**The registry is not re-scanned live.** An install/update/uninstall never touches `app.extensions['addons']` in the running process — the next `GET /addons/` diffs the on-disk state (`scan_installed_ids`/`scan_installed_versions`) against what's loaded and reports `pending_restart`; the change only takes effect after QLSM restarts.
 
 ## Server Runtimes
 

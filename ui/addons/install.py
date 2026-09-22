@@ -16,7 +16,7 @@ import shutil
 import tempfile
 import zipfile
 
-from ui.addons.manifest import MANIFEST_FILENAME, validate_manifest
+from ui.addons.manifest import MANIFEST_FILENAME, read_manifest, validate_manifest
 
 # Bounds, all deliberately generous for a metadata + small-payload package and
 # still far below anything that could exhaust the container.
@@ -109,6 +109,20 @@ def read_manifest_from_zip(zf, manifest_path):
     if errors:
         raise AddonInstallError('Manifest is invalid: ' + '; '.join(errors))
     return manifest
+
+
+def read_manifest_from_blob(blob):
+    """Validate the archive's shape and return its parsed manifest without
+    installing anything -- the same member checks _inspect applies during a
+    real install. Lets a caller (e.g. a repository install) verify what the
+    package claims to be before the packages dir is touched."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile:
+        raise AddonInstallError('The file is not a valid .zip archive.')
+    with zf:
+        _root_prefix, _members, manifest_path = _inspect(zf)
+        return read_manifest_from_zip(zf, manifest_path)
 
 
 def install_addon_zip(blob, packages_dir):
@@ -211,3 +225,25 @@ def scan_installed_ids(packages_dir):
         if os.path.isfile(os.path.join(packages_dir, entry, MANIFEST_FILENAME)):
             found.add(entry)
     return found
+
+
+def scan_installed_versions(packages_dir):
+    """Addon id -> on-disk manifest version, for every id scan_installed_ids
+    would return.
+
+    An in-place update (same id, present on the volume before and after,
+    just newer bytes written by install_addon_zip) never changes set
+    membership, so a caller that only has scan_installed_ids cannot tell it
+    apart from a no-op. This carries the version needed to make that
+    distinction.
+    """
+    if not packages_dir or not os.path.isdir(packages_dir):
+        return {}
+    versions = {}
+    for entry in os.listdir(packages_dir):
+        if entry.startswith('.'):
+            continue  # staging/previous leftovers
+        manifest, _errors = read_manifest(os.path.join(packages_dir, entry))
+        if manifest is not None:
+            versions[entry] = manifest.get('version') or ''
+    return versions

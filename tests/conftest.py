@@ -1,15 +1,27 @@
-import os
 import sys
-import tempfile
 import pytest
+import redis as redis_lib
+from redis import exceptions as redis_exceptions
+from werkzeug.security import generate_password_hash
+import ui.models
 from ui import create_app, db
 
 @pytest.fixture
 def app(tmp_path):
-    """Create and configure a Flask app for testing."""
-    # Create a temporary file to isolate the database for each test
-    db_fd, db_path = tempfile.mkstemp()
+    """Create and configure a Flask app for testing.
 
+    The database is in-memory, not a temp file. Each test still gets its own,
+    because each `app` gets its own engine and an in-memory SQLite database
+    lives and dies with the connection behind it. Worth ~46s across the suite
+    over `tempfile.mkstemp()` -- a file-backed database means creating the
+    file, a WAL and an SHM sidecar per test, then unlinking all three, and on
+    Windows that unlink sometimes loses to SQLite still holding the handle.
+
+    The one thing it cannot do is be read from a second connection: a thread
+    that opens its own would find an empty database rather than this one's
+    tables. No test does that today; if one ever needs to, give that test a
+    file-backed URI of its own rather than moving the whole suite back.
+    """
     app = create_app({
         'TESTING': True,
         'SECRET_KEY': 'test-secret-key', # Added for session/flash support in tests
@@ -18,7 +30,7 @@ def app(tmp_path):
         'JWT_TOKEN_LOCATION': ['headers', 'cookies'],  # Accept tokens from both locations
         'JWT_EXPIRATION_HOURS': 24,  # Matches ui.config.Config default
         'JWT_REMEMBER_ME_DAYS': 90,  # Matches ui.config.Config default
-        'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
+        'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'WTF_CSRF_ENABLED': False,  # Disable CSRF protection in tests
         'SERVER_NAME': 'test.server', # Added to allow url_for outside request context
@@ -32,16 +44,9 @@ def app(tmp_path):
     
     yield app
 
-    # Dispose the engine first so SQLite releases its WAL/SHM files before
-    # we unlink anything — otherwise those sidecar files are orphaned in /tmp.
     with app.app_context():
         db.session.remove()
         db.engine.dispose()
-
-    os.close(db_fd)
-    for path in (db_path, f'{db_path}-wal', f'{db_path}-shm'):
-        if os.path.exists(path):
-            os.unlink(path)
 
 @pytest.fixture
 def app_with_builtin_presets(app):
@@ -85,6 +90,55 @@ def app_context(app):
     """An application context for the app."""
     with app.app_context() as ctx:
         yield ctx
+
+
+class _OfflineRedis:
+    """Stands in for the shared Redis client create_app() installs.
+
+    Every command raises ConnectionError, which is exactly what the real client
+    does when no Redis is listening -- the blocklist check fails open, logout's
+    setex is swallowed, the lockout counter never trips. What it does not do is
+    spend two seconds per socket finding that out: on Windows a refused connect
+    to localhost costs a flat 2.0s, redis-py tries twice, and every
+    JWT-authenticated request in the suite runs one blocklist GET. That is
+    ~1460 commands x ~4s -- about an hour and a half of the suite's wall clock,
+    against roughly three minutes of actual work.
+
+    Tests that want blocklist/lockout behaviour keep overriding
+    app.extensions['redis'] with their own mock, as they already do.
+    """
+
+    def __getattr__(self, name):
+        def _refused(*args, **kwargs):
+            raise redis_exceptions.ConnectionError(
+                'Error 10061 connecting to localhost:6379. '
+                '(tests: no Redis, see _OfflineRedis in tests/conftest.py)')
+        return _refused
+
+
+@pytest.fixture(autouse=True)
+def _offline_redis(monkeypatch):
+    """Keep create_app() from handing out a client that dials a real Redis."""
+    monkeypatch.setattr(redis_lib, 'from_url', lambda *a, **kw: _OfflineRedis())
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _fast_password_hashing(monkeypatch):
+    """Hash test passwords with a cheap KDF.
+
+    werkzeug's default is scrypt, ~120ms per call by design. The suite calls
+    set_password() a few hundred times to get a user it can log in as, which is
+    a minute of wall clock spent proving that scrypt is slow. Nothing asserts on
+    the stored algorithm, and check_password_hash reads the method out of the
+    hash itself, so the round trip still works.
+    """
+    monkeypatch.setattr(
+        ui.models, 'generate_password_hash',
+        lambda password, **kwargs: generate_password_hash(
+            password, method='pbkdf2:sha256:1'),
+    )
+    yield
 
 
 @pytest.fixture(autouse=True)
