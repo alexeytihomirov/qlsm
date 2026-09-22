@@ -1,6 +1,4 @@
-import os
 import sys
-import tempfile
 import pytest
 import redis as redis_lib
 from redis import exceptions as redis_exceptions
@@ -10,10 +8,20 @@ from ui import create_app, db
 
 @pytest.fixture
 def app(tmp_path):
-    """Create and configure a Flask app for testing."""
-    # Create a temporary file to isolate the database for each test
-    db_fd, db_path = tempfile.mkstemp()
+    """Create and configure a Flask app for testing.
 
+    The database is in-memory, not a temp file. Each test still gets its own,
+    because each `app` gets its own engine and an in-memory SQLite database
+    lives and dies with the connection behind it. Worth ~46s across the suite
+    over `tempfile.mkstemp()` -- a file-backed database means creating the
+    file, a WAL and an SHM sidecar per test, then unlinking all three, and on
+    Windows that unlink sometimes loses to SQLite still holding the handle.
+
+    The one thing it cannot do is be read from a second connection: a thread
+    that opens its own would find an empty database rather than this one's
+    tables. No test does that today; if one ever needs to, give that test a
+    file-backed URI of its own rather than moving the whole suite back.
+    """
     app = create_app({
         'TESTING': True,
         'SECRET_KEY': 'test-secret-key', # Added for session/flash support in tests
@@ -22,7 +30,7 @@ def app(tmp_path):
         'JWT_TOKEN_LOCATION': ['headers', 'cookies'],  # Accept tokens from both locations
         'JWT_EXPIRATION_HOURS': 24,  # Matches ui.config.Config default
         'JWT_REMEMBER_ME_DAYS': 90,  # Matches ui.config.Config default
-        'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
+        'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'WTF_CSRF_ENABLED': False,  # Disable CSRF protection in tests
         'SERVER_NAME': 'test.server', # Added to allow url_for outside request context
@@ -36,16 +44,9 @@ def app(tmp_path):
     
     yield app
 
-    # Dispose the engine first so SQLite releases its WAL/SHM files before
-    # we unlink anything — otherwise those sidecar files are orphaned in /tmp.
     with app.app_context():
         db.session.remove()
         db.engine.dispose()
-
-    os.close(db_fd)
-    for path in (db_path, f'{db_path}-wal', f'{db_path}-shm'):
-        if os.path.exists(path):
-            os.unlink(path)
 
 @pytest.fixture
 def app_with_builtin_presets(app):
