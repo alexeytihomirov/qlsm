@@ -65,7 +65,7 @@ export function resolveRoute(route, context) {
  * manifest validator and the existing plugin-cvars form both behave: a bad
  * entry is skipped, never thrown.
  */
-const FIELD_TYPES = ['bool', 'number', 'string', 'secret'];
+const FIELD_TYPES = ['bool', 'number', 'string', 'secret', 'select'];
 
 export function normalizeFields(fields) {
   if (!Array.isArray(fields)) return [];
@@ -81,6 +81,7 @@ export function normalizeFields(fields) {
       placeholder: typeof f.placeholder === 'string' ? f.placeholder : '',
       min: typeof f.min === 'number' ? f.min : undefined,
       max: typeof f.max === 'number' ? f.max : undefined,
+      options: f.type === 'select' && Array.isArray(f.options) ? f.options : undefined,
       // Carried through deliberately: without it an unset number field starts
       // at 0, which for a field declared `min: 1` is invalid the moment the
       // form renders -- the operator sees a validation error they never caused.

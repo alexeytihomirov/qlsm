@@ -16,7 +16,7 @@ ADDON_ID_RE = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
 ADDON_ID_MAX = 64
 
 SCOPES = ('global', 'host', 'instance')
-FIELD_TYPES = ('bool', 'number', 'string', 'secret')
+FIELD_TYPES = ('bool', 'number', 'string', 'secret', 'select')
 PANEL_KINDS = ('form', 'table', 'logs')
 MOUNT_POINTS = ('host_menu', 'instance_menu', 'instance_tabs', 'settings_section', 'page')
 
@@ -57,6 +57,17 @@ def _validate_field(field, where, errors):
                 _err(errors, f'{where}.{key}: "{bound}" only applies to type "number"')
             elif not isinstance(field[bound], (int, float)) or isinstance(field[bound], bool):
                 _err(errors, f'{where}.{key}: "{bound}" must be a number')
+    if ftype == 'select':
+        options = field.get('options')
+        if not isinstance(options, list) or not options:
+            _err(errors, f'{where}.{key}: type "select" requires a non-empty "options" list')
+        else:
+            for option in options:
+                value = option.get('value') if isinstance(option, dict) else option
+                if not isinstance(value, str) or not value.strip():
+                    _err(errors, f'{where}.{key}: each option must have a non-empty string value')
+    elif 'options' in field:
+        _err(errors, f'{where}.{key}: "options" only applies to type "select"')
     return errors
 
 

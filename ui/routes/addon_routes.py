@@ -13,6 +13,7 @@ from flask_jwt_extended import jwt_required
 
 from ui.addons import catalog, get_addon
 from ui.addons.settings import AddonSettingsError
+from ui.models import Host, QLInstance
 
 addon_api_bp = Blueprint('addon_routes', __name__)
 
@@ -41,6 +42,10 @@ def _scope_args():
         scope_id = int(raw_id)
     except (TypeError, ValueError):
         return None, None, (jsonify({"error": {"message": 'scope_id must be an integer'}}), 400)
+    if scope == 'host' and Host.query.get(scope_id) is None:
+        return None, None, (jsonify({"error": {"message": f'Host {scope_id} not found'}}), 404)
+    if scope == 'instance' and QLInstance.query.get(scope_id) is None:
+        return None, None, (jsonify({"error": {"message": f'Instance {scope_id} not found'}}), 404)
     return scope, scope_id, None
 
 

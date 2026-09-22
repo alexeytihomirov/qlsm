@@ -52,6 +52,16 @@ def _coerce(field, value):
         if 'max' in field and number > field['max']:
             raise AddonSettingsError(f'"{key}" must be at most {field["max"]}')
         return int(number) if float(number).is_integer() else number
+    if ftype == 'select':
+        if not isinstance(value, str):
+            raise AddonSettingsError(f'"{key}" must be a string')
+        allowed = {
+            (opt['value'] if isinstance(opt, dict) else opt)
+            for opt in field.get('options', [])
+        }
+        if value not in allowed:
+            raise AddonSettingsError(f'"{key}" must be one of {", ".join(sorted(allowed))}')
+        return value
     # string / secret
     if value is None:
         return ''
