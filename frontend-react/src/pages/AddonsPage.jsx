@@ -216,8 +216,8 @@ function AddonsPage() {
                   className="inline-flex items-center gap-1.5 text-sm text-theme-secondary hover:text-theme-primary disabled:opacity-50">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
-          <button type="button" onClick={() => setInstallOpen(true)} className="users-add-btn">
-            <Upload size={15} /> <span>Install</span>
+          <button type="button" onClick={() => setInstallOpen(true)} className="btn btn-primary">
+            <Upload className="mr-1.5 h-4 w-4" /> Install
           </button>
         </div>
       </div>
