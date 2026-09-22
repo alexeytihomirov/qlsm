@@ -8,6 +8,7 @@ from ui.runtime import (
     DEFAULT_RUNTIME,
     MINQLX,
     MINQLXTENDED,
+    MINQLXTENDED_PATCHED,
     VALID_RUNTIMES,
     host_runtime,
     is_valid_runtime,
@@ -21,7 +22,7 @@ from ui.runtime import (
 def test_default_runtime_is_minqlx():
     """P1 must never change what an existing host resolves to."""
     assert DEFAULT_RUNTIME == MINQLX
-    assert VALID_RUNTIMES == (MINQLX, MINQLXTENDED)
+    assert VALID_RUNTIMES == (MINQLX, MINQLXTENDED, MINQLXTENDED_PATCHED)
 
 
 @pytest.mark.parametrize("value", [None, "", "  ", "nonsense", "MINQLX-2", 0, object()])
@@ -83,6 +84,23 @@ def test_minqlxtended_paths_match_the_p0_spike():
     assert paths["os_family"] == "ubuntu"
     assert paths["os_type"] == "ubuntu"
     assert paths["min_python"] == (3, 12)
+
+
+def test_minqlxtended_patched_shares_minqlx_pool_and_shared_dir():
+    """host "germany" runs this today (see ui/runtime.py's module comment) --
+    it must keep resolving to minqlx's pool/dir, not get a pool of its own that
+    was never populated for it."""
+    paths = runtime_paths(MINQLXTENDED_PATCHED)
+    assert paths["plugins_dirname"] == "minqlx-plugins"
+    assert paths["asset_plugins_dir"] == "minqlx-plugins"
+    assert paths["shared_dir"] == "/home/ql/minqlx-shared"
+    assert paths["engine_so"] == "minqlxtended.x64.so"
+    assert paths["launch_script"] == "run_server_x64_minqlxtended.sh"
+    assert paths["log_filename"] == "minqlxtended.log"
+    assert paths["min_python"] == (3, 12)
+    assert "force_rate.so" in paths["excluded_system_hooks"]
+    assert paths["git_repo"] == "https://github.com/alexeytihomirov/minqlxtended.git"
+    assert paths["git_version"] != "HEAD"
 
 
 def test_force_rate_is_excluded_only_on_minqlxtended():

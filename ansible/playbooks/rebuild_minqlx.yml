@@ -170,3 +170,64 @@
         path: "{{ minqlx_build_dir }}"
         state: absent
       when: runtime == 'minqlxtended'
+
+    - name: Clean up old minqlxtended-patched build directory
+      file:
+        path: "{{ minqlx_build_dir }}"
+        state: absent
+      when: runtime == 'minqlxtended-patched'
+
+    - name: Create fresh minqlxtended-patched build directory
+      file:
+        path: "{{ minqlx_build_dir }}"
+        state: directory
+        owner: ql
+        group: ql
+        mode: '0755'
+      when: runtime == 'minqlxtended-patched'
+
+    - name: Ensure minqlx shared directory exists (minqlxtended-patched)
+      file:
+        path: "{{ minqlx_shared_dir }}"
+        state: directory
+        owner: ql
+        group: ql
+        mode: '0755'
+      when: runtime == 'minqlxtended-patched'
+
+    - name: Clone minqlxtended-patched (alexeytihomirov fork) repo as ql user
+      become: yes
+      become_user: ql
+      git:
+        repo: https://github.com/alexeytihomirov/minqlxtended.git
+        dest: "{{ minqlx_build_dir }}"
+        version: "{{ minqlxtended_patched_git_version }}"
+        depth: 1
+      when: runtime == 'minqlxtended-patched'
+
+    - name: Compile minqlxtended-patched (make) as ql user
+      become: yes
+      become_user: ql
+      make:
+        chdir: "{{ minqlx_build_dir }}"
+      when: runtime == 'minqlxtended-patched'
+
+    - name: Copy minqlxtended-patched compiled files to shared location
+      copy:
+        src: "{{ minqlx_build_dir }}/{{ item.src }}"
+        dest: "{{ minqlx_shared_dir }}/{{ item.dest }}"
+        remote_src: yes
+        owner: ql
+        group: ql
+        mode: '0755'
+      loop:
+        - { src: "bin/minqlxtended.x64.so", dest: "minqlxtended.x64.so" }
+        - { src: "bin/minqlxtended.zip", dest: "minqlxtended.zip" }
+        - { src: "bin/run_server_x64_minqlxtended.sh", dest: "run_server_x64_minqlxtended.sh" }
+      when: runtime == 'minqlxtended-patched'
+
+    - name: Clean up minqlxtended-patched build directory
+      file:
+        path: "{{ minqlx_build_dir }}"
+        state: absent
+      when: runtime == 'minqlxtended-patched'

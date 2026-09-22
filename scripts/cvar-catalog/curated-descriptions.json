@@ -6,6 +6,7 @@
     "factories": "Behaviour visible in the game's own scripts/factories.txt (which official factory sets it, and to what).",
     "naming": "Read off the cvar name and its weapon/ammo suffix. Not observed on a live server - treat as a hint, not a fact.",
     "qlsm": "Set or overwritten by this app.",
+    "minqlxtended-source": "Read from the Cvar_Get registration in the minqlxtended fork's own C source on GitHub - not observed on a live server.",
     "null": "No description: the name comes from a listcvars dump and nothing else about it is verified."
   },
   "entries": {
@@ -275,6 +276,12 @@
     "sv_mapChecksum": ["Checksum of the running map.", "naming"],
     "sv_cylinderScale": ["Scale applied to cylinder hitboxes.", "naming"],
     "sv_altEntDir": ["Alternative directory the server loads map entity overrides from.", "naming"],
+    "sv_demoRecord": ["Native per-client demo capture: 0 = off, 1 = record every connected client from connect-time gamestate. minqlxtended's own match capture (demo_arm/demo_disarm, qlx_nativeDemoRecordEnabled) layers policy on top of this rather than replacing it.", "minqlxtended-source"],
+    "sv_demoDir": ["Output subdirectory under fs_homepath that native demo capture (sv_demoRecord) writes .dm_91 files to. Default \"demos\".", "minqlxtended-source"],
+    "sv_demoNameFormat": ["Filename template for native demo capture, supporting %date, %slot and %name substitutions. Default \"%date_slot%slot_%name\".", "minqlxtended-source"],
+    "sv_demoCleanupParts": ["Remove leftover .part files (incomplete demos from a previous run) at startup. Default on.", "minqlxtended-source"],
+    "sv_demoCut": ["Turns on the in-engine match machinery on top of sv_demoRecord 1: each match's POVs are cut to the match window and named after the match, a capture no match claimed is trimmed to [went live, end] or deleted, and a spectator's capture is discarded rather than kept. Off by default; no plugin is involved.", "minqlxtended-source"],
+    "sv_demoCutJoinLead": ["Seconds of lead-in for a client who joins the game after the countdown: their shipped POV starts this far before the join instead of at a countdown they were not in. Default 15, clamped to 600 and to the start of the capture's own clock epoch. Only read when sv_demoCut is on.", "minqlxtended-source"],
 
     "net_qport": ["Client port number used to tell connections apart behind NAT.", "naming"],
     "net_noudp": ["Disable the UDP network stack.", "naming"],

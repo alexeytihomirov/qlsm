@@ -135,6 +135,9 @@ describe('AddInstanceModal draft handoff', () => {
     expect(mocks.formProps.current.initialData.defaultSeedsByRuntime).toEqual({
       minqlx: { checkedPlugins: ['balance.py'], availableHooks: [], enabledHooks: [] },
       minqlxtended: { checkedPlugins: ['essentials.py'], availableHooks: [], enabledHooks: [] },
+      // minqlxtended-patched has no preset of its own -- it falls back to
+      // minqlx's 'default' preset (see defaultPresetNameForRuntime).
+      'minqlxtended-patched': { checkedPlugins: ['balance.py'], availableHooks: [], enabledHooks: [] },
     });
   });
 

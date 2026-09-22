@@ -19,6 +19,12 @@ export const RUNTIME_OPTIONS = [
     description: 'A hard fork by tjone270. Its plugins are not interchangeable with minqlx.',
     repoUrl: 'https://github.com/tjone270/minqlxtended',
   },
+  {
+    id: 'minqlxtended-patched',
+    name: 'minqlxtended (QLSM patched)',
+    description: "QLSM's own build of minqlxtended, with per-match demo capture landed as native commits (sv_demoRecord/sv_demoCut). Shares minqlx's plugin pool.",
+    repoUrl: 'https://github.com/alexeytihomirov/minqlxtended',
+  },
 ];
 
 const KNOWN = new Set(RUNTIME_OPTIONS.map(option => option.id));
@@ -51,6 +57,8 @@ const TOOLTIP_TAILS = {
   },
 };
 
+TOOLTIP_TAILS['minqlxtended-patched'] = TOOLTIP_TAILS.minqlxtended;
+
 export function runtimeTooltipTail(runtime, provider) {
   const tails = TOOLTIP_TAILS[runtimeLabel(runtime)];
   if (provider !== 'standalone' && provider !== 'self') return tails.provisioned;
@@ -65,6 +73,7 @@ export function runtimeTooltipTail(runtime, provider) {
 const RUNTIME_LOG_FILENAMES = {
   minqlx: 'minqlx.log',
   minqlxtended: 'minqlxtended.log',
+  'minqlxtended-patched': 'minqlxtended.log',
 };
 
 export const runtimeLogFilename = (value) => RUNTIME_LOG_FILENAMES[runtimeLabel(value)];

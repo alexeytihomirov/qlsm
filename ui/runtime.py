@@ -13,8 +13,9 @@ import re
 
 MINQLX = 'minqlx'
 MINQLXTENDED = 'minqlxtended'
+MINQLXTENDED_PATCHED = 'minqlxtended-patched'
 
-VALID_RUNTIMES = (MINQLX, MINQLXTENDED)
+VALID_RUNTIMES = (MINQLX, MINQLXTENDED, MINQLXTENDED_PATCHED)
 
 # Nothing ever "flips" this: the Add Host form pre-selects no runtime at all,
 # because the choice is irreversible and QLSM will not make it on an operator's

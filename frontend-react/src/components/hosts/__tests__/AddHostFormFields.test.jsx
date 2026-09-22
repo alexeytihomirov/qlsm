@@ -114,7 +114,7 @@ describe('AddHostFormFields runtime radios', () => {
     // The runtime radios are the only ones on the form for a cloud provider,
     // so no name filter is needed -- and none of them may start checked.
     const radios = screen.getAllByRole('radio');
-    expect(radios).toHaveLength(2);
+    expect(radios).toHaveLength(3);
     radios.forEach(radio => expect(radio).not.toBeChecked());
   });
 
