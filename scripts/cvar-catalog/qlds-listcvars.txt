@@ -467,12 +467,6 @@ showpackets
 sv_altEntDir
 sv_cheats
 sv_cylinderScale
-sv_demoCleanupParts
-sv_demoCut
-sv_demoCutJoinLead
-sv_demoDir
-sv_demoNameFormat
-sv_demoRecord
 sv_dumpEntities
 sv_errorExit
 sv_floodprotect
