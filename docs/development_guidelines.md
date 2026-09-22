@@ -37,6 +37,28 @@ unavailable:
     `core.hooksPath`, which every worktree of the clone then shares);
     `setup-worktree.sh` runs it for you.
 
+## Testing
+
+### The full `pytest` suite needs the operator's OK first
+
+`python -m pytest` with no path filter (2500+ tests) has been observed anywhere
+from ~2.5 minutes to 90+ minutes on the same machine for the same code,
+depending on what else is competing for CPU/disk at the time (a parallel
+`pnpm install`, another test run, etc.) — not a hang, just very sensitive to
+contention, and slow enough in the bad case that blocking on it wastes a whole
+session. Until someone tracks down and fixes what makes it so contention-
+sensitive, don't run the unfiltered suite on your own initiative — ask the
+operator first, same as any other action whose cost is hard to predict up
+front.
+
+Scope pytest to what the change actually touches instead: run the specific
+`tests/test_*.py` files covering the modules you edited (and their frontend
+`vitest` equivalents), which finishes in seconds to a few minutes and gives
+the same regression signal for that area. That is enough to call a change
+verified per the "risky change -> get OK first" / "tests only where critical"
+rules — it does not by itself justify skipping a full run the operator asks
+for, or one CI already runs on its own schedule.
+
 ## Coding Practices & Principles
 
 *   **Descriptive Naming:** Clear, purpose-indicating names for files, variables, functions.
