@@ -8,7 +8,6 @@
 
 # ── Root files ────────────────────────────────────────────────────────────────
 !.gitignore
-!.gitattributes
 !.env.example
 !.dockerignore
 !setup-worktree.sh
@@ -17,11 +16,6 @@
 !vultr-startup.sh
 !.github/
 !.github/**
-
-# ── Claude Code skills ────────────────────────────────────────────────────────
-!.claude/
-!.claude/skills/
-!.claude/skills/**
 
 # The Woodpecker pipeline and the home-docker deploy files used to live here
 # (.woodpecker.yml, deploy/). They moved to the private alexeytihomirov/qlsm-ci

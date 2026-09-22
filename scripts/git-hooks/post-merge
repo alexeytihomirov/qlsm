@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# Same reminder as post-commit, for the merge path. Git runs post-merge for
-# fast-forward merges too (verified), which is exactly how worktree branches
-# usually land on main - and the case post-commit alone would miss.
-set -uo pipefail
-top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
-[[ -x "$top/scripts/check-unpushed.sh" ]] || exit 0
-"$top/scripts/check-unpushed.sh" --hook || true
-exit 0

@@ -23,19 +23,24 @@ perfectly successful push `git status` therefore keeps reporting "ahead of
 origin/main by N" until something fetches - so the local ref produces phantom
 unpushed commits, and a real missed push is indistinguishable from the noise.
 
-`scripts/check-unpushed.sh` asks the remote instead (a read-only `ls-remote`,
-no token needed) and only falls back to the local ref when the network is
-unavailable:
+This check (and the LF line-ending rules it depends on for shell scripts) is
+not tracked inside this repo - it lives outside any clone, in
+`ql-local/qlsm-tools/` next to the monorepo this checkout usually sits in, so
+that this fork stays close to `upstream/main` instead of carrying dev tooling
+as permanent diff. Run `ql-local/qlsm-tools/install.sh` once per clone (fork
+or plain upstream) to wire it up:
 
-*   Run it before calling a qlsm change done. It lists the genuinely unpushed
-    commits and exits `1` when `main` is ahead of the remote, so it works as a
-    gate. On a feature branch it is a no-op, since a branch is supposed to be
-    local until it is merged. `--offline` skips the network.
-*   `scripts/git-hooks/post-commit` and `post-merge` print the same report
-    automatically after a commit or a merge on `main`, and never block.
-    Enable them once per clone with `scripts/git-hooks/install.sh` (it sets
-    `core.hooksPath`, which every worktree of the clone then shares);
-    `setup-worktree.sh` runs it for you.
+*   `ql-local/qlsm-tools/check-unpushed.sh` asks the remote instead (a
+    read-only `ls-remote`, no token needed) and only falls back to the local
+    ref when the network is unavailable. Run it before calling a qlsm change
+    done. It lists the genuinely unpushed commits and exits `1` when `main`
+    is ahead of the remote, so it works as a gate. On a feature branch it is
+    a no-op, since a branch is supposed to be local until it is merged.
+    `--offline` skips the network.
+*   `ql-local/qlsm-tools/hooks/post-commit` and `post-merge` print the same
+    report automatically after a commit or a merge on `main`, and never
+    block. `install.sh` sets `core.hooksPath` to point at them, which every
+    worktree of the clone then shares.
 
 ## Testing
 

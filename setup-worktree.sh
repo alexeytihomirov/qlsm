@@ -179,7 +179,4 @@ with app.app_context():
 "
 fi
 
-log "Installing git hooks (unpushed-commit reminder)."
-bash scripts/git-hooks/install.sh || warn "Could not install git hooks."
-
 log "Worktree setup complete. Run ./run-dev.sh to start development services."
