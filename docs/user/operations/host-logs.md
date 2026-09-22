@@ -69,5 +69,4 @@ When reporting a problem, copy the specific error lines rather than the whole lo
 
 - [Host Actions Menu](host-actions-menu.md)
 - [Server Logs](server-logs.md)
-- [Use Logs And Chat Logs](logs-and-chat.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)

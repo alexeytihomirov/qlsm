@@ -130,6 +130,21 @@ Any new instance-level playbook (one that acts on an already-deployed `QLInstanc
 ### LAN Rate Policy Mirrors
 `ui/lan_rate_policy.py` and `frontend-react/src/utils/lanRateCompatibility.js` implement the same 99k LAN Rate compatibility rules — currently: fixed on for minqlxtended hosts (`lan_rate_forced_on()` / `isLanRateForcedOn()`, a QLSM product decision, not engine behaviour), unrestricted for hosts migrated to the LD_PRELOAD hook mechanism, and Debian-only for the remaining legacy iptables hosts. They are deliberate mirrors, not a shared module: the frontend needs its own copy to render the toggle's on/off/disabled state and tooltip before any API round trip, while the backend enforces the same policy authoritatively on write. A rule change in one — a new runtime, a new supported OS, a new migration state — must be made in the other in the same change, or the toggle's rendered state and the backend's actual behavior can silently diverge.
 
+### Plugin Manifest Validation Mirrors
+`frontend-react/src/utils/pluginManifestValidation.js` backs the **Edit & Export Manifest** editor on a plugin repository card. It has no backend endpoint: it re-implements, client-side, what `ui/plugin_repositories.py` does to a fetched `qlsm-plugins.json` so the operator can see — before committing the file to their repository — what QLSM would silently discard from it.
+
+Three constants in it are deliberate copies and are commented as such:
+
+| Frontend | Mirrors | Effect if they drift |
+| --- | --- | --- |
+| `FILENAME_RE` | `_FILENAME_RE` in `ui/plugin_repositories.py` | The editor flags a filename QLSM would accept, or stays silent on one QLSM drops on sync |
+| `DOTTED_VERSION_RE` | `_parse_dotted_version()` in `ui/plugin_repositories.py` | A `requires_qlsm_version` the editor accepts is ignored by the version gate |
+| `KNOWN_CVAR_TYPES` | the `bool` / `number` / else-string branches in `PluginCvarsModal.jsx` | A cvar type the editor calls fine renders as a plain text box in the settings form |
+
+Change one and change its mirror in the same PR. Severity follows the consequence, and new rules should keep to it: `error` is reserved for the two things that actually lose data on the next sync (an entry dropped for a bad filename, a `cvars`/`commands` field dropped for not being a list); everything else — a missing label, an unrecognized cvar type — is `warning`, because `ui/plugin_manifest.py` treats that metadata as optional display enrichment and nothing enforces it server-side.
+
+The editor is authoring-only by design. `PluginRepository.manifest_json` is a verbatim cache of the last fetch and every sync overwrites it, so the editor's output is a **Download**, never a write back to the row — persisting it would look reverted on the next sync.
+
 ## Instance Config Folders
 
 Instance config directories (`configs/<host_name>/<instance_id>/`) support user-managed subfolders, nested up to 3 levels deep, for `.ent` files (entity overrides). This is in addition to the always-present `scripts/` and `factories/` reserved folders.
@@ -179,6 +194,17 @@ redis==4.5.1
 **Failure behavior:** If pip fails (e.g., a package name is wrong or the host has no internet access), QLSM logs a warning to the instance log but does not block the config sync or service restart. Review the instance log to diagnose the failure.
 
 **Creating the file:** Use the file manager in the instance's Config tab — click "New File", name it `requirements.txt`, and enter one package per line.
+
+## User Guide Navigation Has Two Independent Navs
+
+A page under `docs/user/` is reachable only if it is listed in **both** places, and neither falls back to the filesystem:
+
+- `mkdocs.yml`'s `nav:` — the published site at <https://dngrtech.github.io/qlsm/>
+- `docs/user/index.json` — the in-app **Documentation** sidebar (`DocsPage.jsx` fetches `/docs/index.json`; an article missing from it has no sidebar entry, and its route renders nothing)
+
+A new page added to only one of them 404s in the other, silently: `operations/plugin-repositories.md` shipped in `mkdocs.yml` but not in `index.json`, so `/docs/operations/plugin-repositories` was a dead route in the app while the public site served the page fine. Cross-page links make this worse — several pages already linked to it. Add both entries in the same PR, in the same position, and check `index.json` still parses.
+
+To list what has drifted, diff the two navs against the files on disk (`docs/user/**/*.md`, excluding `images/`). Known deliberate omissions from the in-app sidebar: `index.md` (the site's home page; the app has its own landing), `getting-started/installation.md` and `getting-started/uninstall.md` (you do not read them from inside a running install).
 
 ## File Size Guideline
 Keep source files under 300 lines of code (excluding comments/blanks). Files approaching 500 lines should be refactored into focused submodules. This guideline is aspirational — some high-complexity modules (e.g., `ansible_instance_mgmt.py`, `instance_routes.py`) currently exceed it and are candidates for future refactoring.

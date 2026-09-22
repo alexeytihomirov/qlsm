@@ -17,7 +17,7 @@ Host logs are stored by QLSM, so they are readable even when the host itself is 
 ## Problem: Instance stuck in deploying/restarting/configuring
 
 1. Wait a bit and refresh.
-2. Open **View Server Logs**: [Use Logs And Chat Logs](../operations/logs-and-chat.md)
+2. Open **View Server Logs**: [Server Logs](../operations/server-logs.md)
 3. Check for clear error lines.
 4. Retry once only after reading logs.
 
@@ -31,7 +31,7 @@ Host logs are stored by QLSM, so they are readable even when the host itself is 
 
 - Confirm you saved changes.
 - Restart instance.
-- Re-check with logs/live status: [Use Logs And Chat Logs](../operations/logs-and-chat.md)
+- Re-check with logs/live status: [Server Logs](../operations/server-logs.md), [Live Status](../operations/live-status.md)
 
 ## Problem: Workshop item updated in Steam, but server still runs old content
 

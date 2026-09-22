@@ -125,7 +125,8 @@ If a button is disabled, wait for the transitional state to finish, then try aga
 
 - [Deploy A New Instance](../getting-started/deploy-new-instance.md)
 - [Presets And Default Config](../presets/overview.md)
-- [Use Logs And Chat Logs](logs-and-chat.md)
+- [Server Logs](server-logs.md)
+- [Chat Logs](chat-logs.md)
 - [MinQLX Logs](minqlx-logs.md)
 - [RCON Console](rcon-console.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)

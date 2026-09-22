@@ -263,6 +263,13 @@
         - iptables-persistent/autosave_v6
       when: firewall_mode == 'full'
 
+    - name: Ensure gnupg is installed for keyring management
+      apt:
+        name: gnupg
+        state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
     - name: Check for Akamai repository
       stat:
         path: /etc/apt/sources.list.d/akamai-linux-team.list

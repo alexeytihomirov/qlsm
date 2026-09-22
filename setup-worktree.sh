@@ -166,7 +166,17 @@ if [[ "$first_run" -eq 1 ]]; then
     if ! python -m flask create-default-admin "$default_admin_user"; then
         warn "Could not create default admin user. It may already exist."
     fi
-    warn "Default credentials are $default_admin_user/admin; change the password after first login."
+    log "Clearing forced password-change flag for dev convenience (no change-password modal on login)."
+    python -c "
+from ui import create_app, db
+from ui.models import User
+app = create_app()
+with app.app_context():
+    user = User.query.filter_by(username='${default_admin_user}').first()
+    if user and user.password_change_required:
+        user.password_change_required = False
+        db.session.commit()
+"
 fi
 
 log "Worktree setup complete. Run ./run-dev.sh to start development services."

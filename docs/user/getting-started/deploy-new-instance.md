@@ -82,5 +82,5 @@ Next pages:
 - [Instance Actions Menu](../operations/instance-actions-menu.md)
 - [Host Actions Menu](../operations/host-actions-menu.md)
 - [RCON Console](../operations/rcon-console.md)
-- [Use Logs And Chat Logs](../operations/logs-and-chat.md)
+- [Server Logs](../operations/server-logs.md)
 - [Deployment Troubleshooting](../help/deployment-troubleshooting.md)
