@@ -119,7 +119,13 @@ def create_app(test_config=None):
         app.logger.warning(f"Redis client init failed — JWT blocklist and lockout disabled: {e}")
     cors_origins = app.config.get('CORS_ORIGINS', [])
     if cors_origins:
-        CORS(app, resources={r"/api/*": {"origins": cors_origins, "allow_headers": ["Content-Type", "X-CSRF-TOKEN"], "supports_credentials": True}})
+        # "Authorization" is required alongside the JWT-cookie routes'
+        # existing allowance — external_api_routes.py's Bearer-token API
+        # (require_api_key()) sends it on every request, and a browser drops
+        # that header from a cross-origin request whose preflight response
+        # doesn't explicitly allow it, regardless of the origin itself being
+        # allowed.
+        CORS(app, resources={r"/api/*": {"origins": cors_origins, "allow_headers": ["Content-Type", "X-CSRF-TOKEN", "Authorization"], "supports_credentials": True}})
     # When CORS_ORIGINS is empty, no CORS headers are added — browser enforces same-origin policy
     
     # Initialize Flask-SocketIO with Redis message queue (optional for RCON feature)
@@ -193,6 +199,14 @@ def create_app(test_config=None):
                 except Exception as e:
                     app.logger.warning(f'Failed to start RCON Redis listener: {e}')
 
+                try:
+                    from ui.job_events_listener import JobEventsListener
+                    job_events_listener = JobEventsListener(socketio, redis_url_with_auth)
+                    job_events_listener.start()
+                    app.logger.info('Job events listener started')
+                except Exception as e:
+                    app.logger.warning(f'Failed to start job events listener: {e}')
+
             app.logger.info(f'Flask-SocketIO initialized (async_mode={async_mode})')
         except Exception as e:
             app.logger.warning(f'Failed to initialize SocketIO for RCON: {e}')
@@ -259,12 +273,27 @@ def create_app(test_config=None):
     from ui.routes.plugin_repository_routes import plugin_repository_api_bp
     api_bp.register_blueprint(plugin_repository_api_bp, url_prefix='/plugin-repositories')
 
+    from ui.routes.addon_routes import addon_api_bp
+    api_bp.register_blueprint(addon_api_bp, url_prefix='/addons')
+
     app.register_blueprint(api_bp)
     app.register_blueprint(index_bp) # Register index_bp
 
     # External API (versioned, separate from internal UI API)
     from ui.routes.external_api_routes import external_api_bp
     app.register_blueprint(external_api_bp, url_prefix='/api/v1')
+
+    # Addons register their own blueprints under /api/addons/<id>/, so this
+    # must run after the core blueprints above: a core route always wins a
+    # collision, and mounting order is what guarantees it.
+    try:
+        from ui.addons import init_app as init_addons
+        init_addons(app)
+    except Exception as e:
+        # The addon system failing must never stop qlsm from serving. Losing
+        # addons degrades features; losing startup loses the control plane.
+        app.logger.error(f'Addon system failed to initialize: {e}', exc_info=True)
+        app.extensions.setdefault('addons', {})
 
 
     # Register database commands

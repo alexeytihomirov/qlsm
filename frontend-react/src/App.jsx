@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import { NotificationProvider } from './components/NotificationProvider';
 import { LoadingProvider } from './contexts/LoadingContext';
 import { AuthProvider } from './contexts/AuthContext';
+import { AddonsProvider } from './contexts/AddonsContext';
 import LoginPage from './pages/LoginPage';
 import PresetsPage from './pages/PresetsPage';
 import AddPresetPage from './pages/AddPresetPage';
@@ -18,6 +19,8 @@ import HostLogsPage from './pages/HostLogsPage';
 import DocsPage from './pages/DocsPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import BackupRestorePage from './pages/BackupRestorePage';
+import AddonsPage from './pages/AddonsPage';
+import AddonPage from './pages/AddonPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -25,6 +28,7 @@ function App() {
     <AuthProvider>
       <LoadingProvider>
         <NotificationProvider>
+          <AddonsProvider>
           {/* Main container uses CSS variable-based theme class */}
           <div className="app-shell flex flex-col min-h-screen bg-theme-base text-theme-primary">
             <Navbar />
@@ -47,11 +51,14 @@ function App() {
                   <Route path="/settings/plugin-repositories" element={<PluginRepositoriesPage />} />
                   <Route path="/settings/backup" element={<BackupRestorePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/addons" element={<AddonsPage />} />
+                  <Route path="/addons/:addonId" element={<AddonPage />} />
                 </Route>
               </Routes>
             </main>
             <AppFooter />
           </div>
+          </AddonsProvider>
         </NotificationProvider>
       </LoadingProvider>
     </AuthProvider>
