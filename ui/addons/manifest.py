@@ -29,7 +29,11 @@ RENDER_MODES = ('panel', 'modal')
 # Bumped when the contract a mounted component sees (ctx shape, ui kit) changes
 # in a way an already-built addon bundle cannot survive. An addon declaring a
 # higher value is listed but not mounted -- see ui/addons/registry.py.
-CURRENT_UI_API = 3
+# 4: adds the `live_status_columns` mount point and `icon_url` support.
+CURRENT_UI_API = 4
+
+LIVE_STATUS_COLUMN_ALIGNS = ('left', 'right')
+LIVE_STATUS_COLUMN_LABEL_MAX = 24
 
 
 class ManifestError(ValueError):
@@ -39,6 +43,25 @@ class ManifestError(ValueError):
 def _err(errors, msg):
     errors.append(msg)
     return errors
+
+
+def _validate_icon_ref(where, icon, icon_url, errors):
+    """`icon` (a name from the frontend's fixed allow-list) and `icon_url` (a
+    path inside the addon's own `ui/` directory) are mutually exclusive --
+    same traversal protection as a tier-2 `component` path, since icon_url is
+    served through the same `ui/<path>` route.
+    """
+    if icon is not None and icon_url is not None:
+        _err(errors, f'{where}: "icon" and "icon_url" are mutually exclusive')
+        return
+    if icon_url is not None:
+        if not isinstance(icon_url, str) or not icon_url.strip():
+            _err(errors, f'{where}: "icon_url" must be a non-empty string')
+        elif icon_url.startswith('/') or '..' in icon_url.split('/'):
+            _err(errors, f'{where}: "icon_url" must stay inside the addon')
+    elif icon is not None:
+        if not isinstance(icon, str) or not icon.strip():
+            _err(errors, f'{where}: "icon" must be a non-empty string')
 
 
 def _validate_field(field, where, errors):
@@ -66,6 +89,11 @@ def _validate_field(field, where, errors):
                 value = option.get('value') if isinstance(option, dict) else option
                 if not isinstance(value, str) or not value.strip():
                     _err(errors, f'{where}.{key}: each option must have a non-empty string value')
+                if isinstance(option, dict):
+                    _validate_icon_ref(
+                        f'{where}.{key}: option "{value}"',
+                        option.get('icon'), option.get('icon_url'), errors,
+                    )
     elif 'options' in field:
         _err(errors, f'{where}.{key}: "options" only applies to type "select"')
     return errors
@@ -119,12 +147,62 @@ def _validate_panel(name, panel, errors):
     return errors
 
 
+def _validate_live_status_column(item, errors):
+    if not isinstance(item, dict):
+        return _err(errors, 'ui.live_status_columns: entry must be an object')
+    col_id = item.get('id')
+    if not isinstance(col_id, str) or not col_id.strip():
+        _err(errors, 'ui.live_status_columns: entry is missing "id"')
+        col_id = '?'
+    label = item.get('label')
+    if not isinstance(label, str) or not label.strip():
+        _err(errors, f'ui.live_status_columns.{col_id}: "label" is required')
+    elif len(label) > LIVE_STATUS_COLUMN_LABEL_MAX:
+        _err(errors, f'ui.live_status_columns.{col_id}: "label" must be at most '
+                      f'{LIVE_STATUS_COLUMN_LABEL_MAX} characters')
+    align = item.get('align', 'left')
+    if align not in LIVE_STATUS_COLUMN_ALIGNS:
+        _err(errors, f'ui.live_status_columns.{col_id}: "align" must be one of '
+                      f'{", ".join(LIVE_STATUS_COLUMN_ALIGNS)}')
+    _validate_icon_ref(f'ui.live_status_columns.{col_id}', item.get('icon'), item.get('icon_url'), errors)
+    route = item.get('route')
+    if not isinstance(route, str) or not route.strip():
+        _err(errors, f'ui.live_status_columns.{col_id}: "route" is required')
+    else:
+        parts = route.split(' ', 1)
+        method, path = (parts[0], parts[1]) if len(parts) == 2 else ('GET', parts[0])
+        if method.upper() != 'GET':
+            _err(errors, f'ui.live_status_columns.{col_id}: "route" must be a GET route')
+        path = path.strip()
+        # Same rule as a panel route: relative to the addon's own prefix, so
+        # a column cannot be pointed at a core endpoint.
+        if path.startswith('/api/') or path.startswith('http://') or path.startswith('https://'):
+            _err(errors, f'ui.live_status_columns.{col_id}: "route" must be relative to the addon prefix, not absolute')
+    return col_id
+
+
+def _validate_live_status_columns(entries, errors):
+    if entries is None:
+        return
+    if not isinstance(entries, list):
+        return _err(errors, '"ui.live_status_columns" must be a list')
+    seen = set()
+    for item in entries:
+        col_id = _validate_live_status_column(item, errors)
+        if col_id in seen:
+            _err(errors, f'ui.live_status_columns: duplicate column id "{col_id}"')
+        seen.add(col_id)
+
+
 def _validate_ui(ui, errors):
     if ui is None:
         return {}
     if not isinstance(ui, dict):
         _err(errors, '"ui" must be an object')
         return {}
+
+    _validate_icon_ref('ui', ui.get('icon'), ui.get('icon_url'), errors)
+    _validate_live_status_columns(ui.get('live_status_columns'), errors)
 
     panels = ui.get('panels') or {}
     if not isinstance(panels, dict):

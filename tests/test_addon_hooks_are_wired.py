@@ -75,6 +75,7 @@ INDIRECT = {
 OUT_OF_TREE = {
     'demo_management.file_kinds',
     'demo_management.match_groups',
+    'player_ranks.providers',
 }
 
 
@@ -106,7 +107,9 @@ def test_out_of_tree_exemptions_stay_addon_owned():
     would silently excuse a future core hook with the same name."""
     for hook in OUT_OF_TREE:
         assert hook in HOOK_SCOPES, f'{hook} is exempted but no longer declared'
-    assert OUT_OF_TREE == {'demo_management.file_kinds', 'demo_management.match_groups'}, (
+    assert OUT_OF_TREE == {
+        'demo_management.file_kinds', 'demo_management.match_groups', 'player_ranks.providers',
+    }, (
         'a new out-of-tree exemption was added -- make sure it really is an '
         'addon-owned hook and not a core hook nobody wired'
     )

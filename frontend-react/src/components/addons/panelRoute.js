@@ -15,6 +15,7 @@ export const MOUNT_SCOPES = {
   instance_tabs: SCOPE_INSTANCE,
   settings_section: SCOPE_GLOBAL,
   page: SCOPE_GLOBAL,
+  live_status_columns: SCOPE_INSTANCE,
 };
 
 /**
