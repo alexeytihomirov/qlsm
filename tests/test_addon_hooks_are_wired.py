@@ -1,4 +1,4 @@
-"""Every declared lifecycle hook must actually be dispatched somewhere real.
+"""Every hook core declares must actually be dispatched by core.
 
 This exists because of a real miss: the whole hook set was declared in phase
 1 and core never called any of it until phase 6. Addons could subscribe to
@@ -6,19 +6,16 @@ This exists because of a real miss: the whole hook set was declared in phase
 reference addon. A hook nobody calls is worse than no hook, because it reads
 like a working contract.
 
-The check is deliberately crude (a text scan for the hook name under `ui/`
-plus `addons/`, excluding `ui/addons` itself -- where HOOK_SCOPES is
-declared, so the declaration line can never count as its own wiring). A
-precise call-graph analysis would be more correct and far more brittle; what
-matters is that adding a name to HOOK_SCOPES without wiring it fails the
-suite.
+The check is deliberately crude (a text scan for the hook name under `ui/`,
+excluding `ui/addons` itself -- where HOOK_SCOPES is declared, so the
+declaration line can never count as its own wiring). A precise call-graph
+analysis would be more correct and far more brittle; what matters is that
+adding a name to HOOK_SCOPES without wiring it fails the suite.
 
-Hooks core dispatches itself are checked that way. Addon-owned extension
-points (see hooks.py) are dispatched by the addon whose surface they extend,
-and every addon now lives outside this repo -- so their call site is
-unreachable from here and they are listed in OUT_OF_TREE instead. That list
-is itself pinned by a test, so it cannot quietly absorb a core hook nobody
-wired.
+There is no exemption list. An extension point an addon owns is declared in
+that addon's manifest and dispatched by that addon, never named here -- see
+tests/test_addon_owned_hooks.py. So everything in HOOK_SCOPES is core's, and
+core has to call it.
 """
 import os
 
@@ -28,22 +25,18 @@ from ui.addons.hooks import HOOK_SCOPES
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 UI_DIR = os.path.join(REPO_ROOT, 'ui')
-ADDONS_DIR = os.path.join(REPO_ROOT, 'addons')
 ADDON_PACKAGE = os.path.join(UI_DIR, 'addons')
 
 
 def _core_sources():
-    """Every .py under ui/ (except the addon package that declares the
-    hooks) plus every .py under addons/ (where an addon-owned hook is
-    legitimately dispatched)."""
-    for base, skip in ((UI_DIR, ADDON_PACKAGE), (ADDONS_DIR, None)):
-        for root, dirs, files in os.walk(base):
-            dirs[:] = [d for d in dirs if d != '__pycache__']
-            if skip and os.path.abspath(root).startswith(skip):
-                continue
-            for name in files:
-                if name.endswith('.py'):
-                    yield os.path.join(root, name)
+    """Every .py under ui/, except the addon package that declares the hooks."""
+    for root, dirs, files in os.walk(UI_DIR):
+        dirs[:] = [d for d in dirs if d != '__pycache__']
+        if os.path.abspath(root).startswith(ADDON_PACKAGE):
+            continue
+        for name in files:
+            if name.endswith('.py'):
+                yield os.path.join(root, name)
 
 
 CORE_TEXT = None
@@ -69,29 +62,16 @@ INDIRECT = {
     'instance.delete': "cleanup_scope('instance'",
 }
 
-# Addon-owned extension points: declared here because core owns the registry
-# of valid hook names (ctx.on() rejects anything not in HOOK_SCOPES at addon
-# load time), but dispatched from the addon that consumes the contribution --
-# demo-management, which lives in the qlsm-extra repo. There is no call site
-# in this repo to find, and adding a fake one would be worse than an explicit
-# exemption.
-OUT_OF_TREE = {
-    'demo_management.file_kinds',
-    'demo_management.match_groups',
-}
-
 
 @pytest.mark.parametrize('hook', sorted(HOOK_SCOPES))
 def test_every_declared_hook_is_referenced_by_core(hook):
-    if hook in OUT_OF_TREE:
-        pytest.skip('addon-owned hook, dispatched from an addon outside this repo')
     text = _core_text()
     needles = [f"'{hook}'", f'"{hook}"']
     if hook in INDIRECT:
         needles.append(INDIRECT[hook])
     assert any(n in text for n in needles), (
-        f'hook "{hook}" is declared in HOOK_SCOPES but nothing under ui/ or '
-        f'addons/ dispatches it -- an addon subscribing to it would be silently ignored'
+        f'hook "{hook}" is declared in HOOK_SCOPES but nothing under ui/ '
+        f'dispatches it -- an addon subscribing to it would be silently ignored'
     )
 
 
@@ -103,15 +83,16 @@ def test_core_dispatches_through_the_registry_at_all():
     assert 'from ui.addons import cleanup_scope' in text
 
 
-def test_out_of_tree_exemptions_stay_addon_owned():
-    """The exemption list is only for hooks an addon dispatches, and every
-    name on it must still be declared -- otherwise it is a stale entry that
-    would silently excuse a future core hook with the same name."""
-    for hook in OUT_OF_TREE:
-        assert hook in HOOK_SCOPES, f'{hook} is exempted but no longer declared'
-    assert OUT_OF_TREE == {'demo_management.file_kinds', 'demo_management.match_groups'}, (
-        'a new out-of-tree exemption was added -- make sure it really is an '
-        'addon-owned hook and not a core hook nobody wired'
+def test_no_hook_here_belongs_to_an_addon():
+    """Core's table is core's. An addon that wants to be extended declares
+    its points in its own manifest, so a name here with an addon's namespace
+    means a feature crept back into core."""
+    from ui.addons.hooks import hook_owner
+
+    offenders = {h: hook_owner(h) for h in HOOK_SCOPES if hook_owner(h) is not None}
+    assert offenders == {}, (
+        f'{offenders} belong to addons, not to core -- declare them in the '
+        f"addon's own manifest hooks block instead"
     )
 
 

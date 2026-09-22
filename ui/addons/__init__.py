@@ -21,6 +21,7 @@ from ui.addons.registry import (
     dispatch,
     get_addon,
     get_addons,
+    get_declared_hooks,
     init_app,
 )
 from ui.addons.settings import AddonSettings, AddonSettingsError
@@ -40,6 +41,7 @@ __all__ = [
     'dispatch',
     'get_addon',
     'get_addons',
+    'get_declared_hooks',
     'init_app',
     'install_addon_zip',
     'read_manifest',

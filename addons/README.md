@@ -64,7 +64,7 @@ different stats-hub instances; neither can see or overwrite the other's.
 
 ```
 <addon-id>/
-  qlsm-addon.json     # required: manifest
+  qlsm-addon.json     # required: manifest (settings, UI mounts, owned hooks)
   backend.py          # optional: register(ctx)
   ui/                 # optional: pre-built components (.js/.css/.map only)
   playbooks/          # optional: addon-owned Ansible
@@ -230,135 +230,162 @@ and out doesn't reload it. See `_examples/css-test-addon` for the smallest
 possible example, or `_examples/ui-kit-test-addon` for one that needs no CSS
 at all because every visual piece comes from `ctx.ui`.
 
-## Cross-addon UI contribution (addon-owned hooks)
+## Extension points an addon owns
 
-None of the tiers above cover one addon adding UI elements — actions,
-grouping rules, badges — to another addon's **hand-built** (tier 2)
-component. The first precedent is `demo_management.file_kinds`
-(qlmatch-packer's `backend.py` `contribute_file_kinds`, dispatched from
-demo-management's `ansible_instance_demos.py` `_demo_filename_re()`; both
-addons live in the qlsm-extra repo): it is a real, working addon-owned hook,
-but it is
-narrow (a flat list of filename extensions feeding a regex) and was never
-written up as a general pattern. The section below is that write-up, so the
-next case (e.g. a `demo_management.match_actions` hook letting
-qlmatch-packer add a per-row "Rebuild" button to `ViewDemosModal.jsx`) has
-something to follow instead of inventing its own shape.
+Core's hooks (`instance.launch_args`, `host.setup`, ...) are integration
+points *core* dispatches. An addon can also offer its own, so a second addon
+can extend it — add a file format it recognises, a row action, a badge —
+without either of them being part of QLSM.
 
-**This is a convention, not a mechanism QLSM enforces.** See "What
-`ctx.on`/`dispatch()` actually check" below for exactly where the line falls.
+**Core never learns the name.** The addon that is being extended declares its
+points in its own manifest; the registry collects those from every installed
+manifest at startup and validates subscriptions against them. There is no
+table in core to add a name to, and no QLSM release needed to ship a new
+extension point.
 
-### What makes a hook "addon-owned"
+### Declaring one
 
-An ordinary hook (`instance.launch_args`, `host.setup`, ...) is declared in
-`ui/addons/hooks.py` *and* dispatched from core (`ui/`). An addon-owned hook
-is declared in the same `HOOK_SCOPES` dict, but **dispatched from inside the
-addon that consumes the contribution**, not from core — `demo-management`
-calls `dispatch('demo_management.file_kinds', 0)` from its own module, the
-same way core calls `dispatch('instance.launch_args', instance_id)` from
-`ansible_instance_mgmt.py`. Nothing in the registry marks this distinction;
-it exists only because the call site lives in the addon instead of `ui/`. Say
-so explicitly in the `HOOK_SCOPES` comment for the entry, the way
-`demo_management.file_kinds` already does, and add the name to
-`tests/test_addon_hooks_are_wired.py`'s `OUT_OF_TREE` set — that test demands
-a real dispatch call site inside this repo, and an addon's is not in it.
+```json
+{
+  "id": "file-browser",
+  "hooks": {
+    "file_kinds": {
+      "scope": "global",
+      "list": true,
+      "description": "Extra filename extensions to list alongside the defaults"
+    }
+  }
+}
+```
 
-### Naming convention
+| Key | Meaning |
+|-----|---------|
+| `scope` | `global` / `host` / `instance` — the enable switch that gates a contributor, exactly like core's own hooks. `null` means always, even for a switched-off addon. Defaults to `global`. |
+| `list` | `true` for a contribution hook: every contributor's list is concatenated into one flat list. `false` (default) collects one value per addon. |
+| `description` | For humans reading the manifest. |
 
-`<consuming_addon_id_with_underscores>.<extension_point>` — the addon whose
-surface is being extended goes first, using its manifest `id` with hyphens
-turned into underscores (`demo-management` -> `demo_management`), then a
-short noun for what's being contributed (`file_kinds`, `match_actions`).
+The full hook name is `<your addon id, dashes as underscores>.<point>`, so
+the block above declares `file_browser.file_kinds`. **The namespace is built
+from your id, not taken from the manifest** — an addon physically cannot
+declare a point in core's namespace or another addon's, and a collision with
+a core hook name is refused with an error on the addon.
 
-The name deliberately does **not** include the contributing addon's id.
-`demo_management.file_kinds` has exactly one contributor today
-(qlmatch-packer), but the hook belongs to demo-management's surface, not to
-qlmatch-packer, and a second contributor (some other packed-demo format)
-would register the same hook name, not a new one.
+### Dispatching it
+
+The owner calls it from its own code, the same way core calls its own:
+
+```python
+from ui.addons import dispatch
+
+extra = dispatch('file_browser.file_kinds', 0)   # -> ['qlmatch', 'replay.json.gz']
+```
+
+The second argument is the scope id the gate is checked against (`0` for
+`global`). Contributions come back in addon-id alphabetical order.
+
+### Subscribing to someone else's
+
+```python
+def register(ctx):
+    @ctx.on('file_browser.file_kinds')
+    def contribute_file_kinds():
+        return ['qlmatch', 'replay.json.gz']
+```
+
+Three outcomes, and the difference is deliberate:
+
+- The point exists → subscribed.
+- The owner **is installed** but declares no such point → `UnknownHookError`
+  at load time, and your addon is listed as broken. It is a typo, and a typo
+  that only showed up as "my addon silently does nothing" is the worst
+  failure a plugin system has.
+- The owner is **not installed** → accepted, logged as dormant, never fires.
+  An optional integration must not turn into a hard dependency: shipping an
+  addon that extends another has to work whether or not the operator
+  installed that other one. Declare it in `depends` if you want the
+  relationship visible.
+
+Dispatching a point that nothing declares does not raise either — it logs an
+error and returns no contributions. That is the mixed-version case (an addon
+package whose code and manifest disagree), and a listing endpoint returning
+fewer rows beats it returning a 500.
+
+### Naming
+
+`<owner_addon_id_with_underscores>.<point>` is not a suggestion; it is how
+the name is built. Pick the point name for what is contributed
+(`file_kinds`, `match_groups`), and note that it does **not** name the
+contributor: a second addon contributing the same kind of thing subscribes to
+the same hook rather than getting one of its own.
 
 ### Expected return shape
 
-`file_kinds` gets away with a flat list of strings because the consumer only
+`list: true` with a flat list of strings is enough when the consumer only
 turns it into a regex. A UI contribution (row actions, bulk actions, badges,
 menu entries) needs a structured item instead. There is no schema QLSM
-validates — until a second real UI-contribution hook exists this is a
-recommendation, not code — but shape a contribution like:
+validates — this is convention between a hook's owner and its contributors —
+but shape a contribution like:
 
 ```python
-@ctx.on('demo_management.match_actions')
-def contribute_match_actions():
+@ctx.on('file_browser.row_actions')
+def contribute_row_actions():
     return [{
-        'id': 'qlmatch-packer.rebuild',   # unique, "<contributor_addon_id>.<action>"
+        'id': 'my-addon.rebuild',         # "<contributor addon id>.<action>"
         'label': 'Rebuild',
         'icon': 'refresh-cw',             # name from the ctx.ui icon vocabulary
-        'match': lambda demo: demo['name'].endswith('.qlmatch'),
-        'action': {'route': 'matches/{name}/rebuild', 'method': 'POST', 'confirm': 'Rebuild this match?'},
+        'addon_id': 'my-addon',           # whose prefix `route` is relative to
+        'action': {'route': 'items/{name}/rebuild', 'method': 'POST',
+                   'confirm': 'Rebuild this?'},
     }]
 ```
 
 - `id` is namespaced by the **contributing** addon's id (the mirror image of
-  the hook name itself, which is namespaced by the **consuming** addon) so
-  the consumer can key a React list and log which addon a broken contribution
-  came from.
-- `match` keeps the consumer format-agnostic — demo-management does not need
-  to know what `.qlmatch` means, only that qlmatch-packer's contribution
-  applies to rows for which `match(demo)` is true. This mirrors how
-  `file_kinds` already keeps demo-management ignorant of what a `.qlmatch`
-  file actually is.
+  the hook name itself, which is namespaced by the **owner**) so the consumer
+  can key a React list and log which addon a broken contribution came from.
+- `addon_id` says whose `/api/addons/<id>/` prefix `route` is relative to.
+  The consumer is a hand-built component, not a declarative panel, so nothing
+  resolves that prefix for it — `ctx.apiFor(addon_id)` is the call.
 - `action` reuses the tier-1 `row_actions` route/method/confirm shape
-  (`AddonTablePanel.jsx`) rather than inventing a second one, since the
-  consumer is likely to hand it to a similar route-caller.
+  (`AddonTablePanel.jsx`) rather than inventing a second one.
+
+Keep the payload JSON-safe if it is going to the browser. A callable (say, a
+`match(row)` predicate) cannot survive the trip, so a contribution that needs
+per-row logic has to resolve it on the Python side and send the result.
 
 ### Merge order and conflicts
 
-`dispatch()` (`ui/addons/registry.py`) iterates addons
-`sorted(get_addons().values(), key=lambda a: a.id)` — alphabetical by addon
-id, deterministic regardless of load/install order. For a hook in
-`LIST_HOOKS`, every contributor's return value is concatenated into one flat
-list in that order; a handler that raises is logged and dropped, it does not
-abort the others. For a UI-contribution hook this means: render contributed
-actions in addon-id alphabetical order, after the consumer's own hardcoded
-actions (if it has any).
+`dispatch()` iterates addons sorted by id — alphabetical, deterministic
+regardless of load or install order. For a `list: true` point every
+contributor's return value is concatenated in that order; a handler that
+raises is logged and dropped without aborting the others. Render contributed
+items in that same order, after the consumer's own.
 
-**Nothing dedupes or resolves conflicts.** `file_kinds` never needed
-conflict handling because duplicate extensions are harmless (a regex
-alternation with a repeated branch still matches the same set). A UI
-contribution does not get that for free — two addons contributing the same
-`id`, or two `match` predicates both claiming the same row, will both render
-unless the **consumer** guards against it. The consuming addon is
-responsible for de-duplicating by `id` (e.g. build a `dict` keyed by `id`
-before rendering, log-and-drop the later duplicate) — `dispatch()` gives you
-ordering and isolation from a throwing handler, nothing more.
+**Nothing dedupes or resolves conflicts.** Duplicate filename extensions are
+harmless (a regex alternation with a repeated branch matches the same set),
+but a UI contribution does not get that for free: two addons contributing the
+same `id`, or two claiming the same row, will both render unless the
+**consumer** guards against it. De-duplicate by `id` (build a dict, log and
+drop the later duplicate). `dispatch()` gives you ordering and isolation from
+a throwing handler, nothing more.
 
-### What `ctx.on`/`dispatch()` actually check (`ui/addons/context.py`, `ui/addons/hooks.py`, `ui/addons/registry.py`)
+### What is actually enforced
 
-- **Enforced:** the hook name must be a key in the `HOOK_SCOPES` dict —
-  `ctx.on()` calls `validate_hook_name()`, which raises `UnknownHookError` at
-  addon **load** time (not dispatch time), so a typo'd hook name breaks the
-  addon visibly instead of silently firing at nobody.
-- **Enforced:** every declared hook has a real dispatch call site somewhere
-  in core or an addon (`tests/test_addon_hooks_are_wired.py`) — a hook can't
-  be declared and then forgotten.
-- **Enforced:** the scope gate (`global`/`host`/`instance`/`None`) attached
-  to the hook in `HOOK_SCOPES` — `_gates_open()` skips a disabled addon's
-  handlers even if the hook fires.
-- **Enforced:** whether `dispatch()` flattens contributions into one list
-  (`LIST_HOOKS` membership) or collects one value per addon — the only
-  structural contract the registry knows about.
-- **Not enforced — naming convention.** `HOOK_SCOPES` is a flat dict of
-  strings; `instance.launch_args` and `demo_management.file_kinds` are
-  validated identically. The `<owner>.<point>` convention above is a human
-  discipline, not a mechanical rule — nothing stops a new hook from being
-  named inconsistently.
-- **Not enforced — return shape.** Beyond list-vs-single-value
-  (`LIST_HOOKS`), QLSM does not know or check what is inside a contribution.
-  The dict shape suggested above is convention between a hook's declarer and
-  its contributors, not a validated schema.
-- **Not enforced — who "owns" a hook.** `ctx.on()` (subscribe) and
-  `dispatch()` (fire) are symmetric from the registry's point of view; there
-  is no manifest field or registry table recording which addon dispatches a
-  given hook. "Addon-owned" is purely a fact about where the `dispatch(...)`
-  call site happens to live in the source tree, documented by convention
-  (the `HOOK_SCOPES` comment) and nothing else.
-- **Not enforced — conflict resolution across contributors.** See "Merge
-  order and conflicts" above; this is entirely on the consuming addon.
+- **Enforced:** the hook name exists — core's, or a point declared by an
+  installed addon. Checked by `ctx.on()` at addon **load** time, not at
+  dispatch time.
+- **Enforced:** an addon cannot declare a point outside its own namespace,
+  and cannot shadow a core hook.
+- **Enforced:** every hook in core's own table has a real dispatch call site
+  in core (`tests/test_addon_hooks_are_wired.py`).
+- **Enforced:** the scope gate attached to the point — a disabled addon's
+  handlers are skipped even when the hook fires.
+- **Enforced:** whether contributions are flattened into one list (`list`)
+  or collected one per addon.
+- **Not enforced — return shape.** Beyond list-vs-value, QLSM does not know
+  or check what is inside a contribution.
+- **Not enforced — who dispatches.** `ctx.on()` and `dispatch()` are
+  symmetric from the registry's point of view; nothing stops an addon from
+  dispatching a point it does not own. Ownership is a fact about the manifest
+  and a convention about the call site, not a runtime check.
+- **Not enforced — conflict resolution across contributors.** See above; that
+  is entirely on the consuming addon.

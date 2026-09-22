@@ -15,6 +15,10 @@ MANIFEST_FILENAME = 'qlsm-addon.json'
 MANIFEST_MAX_SIZE = 64 * 1024  # metadata only, not a data file
 
 ADDON_ID_RE = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
+# An extension point an addon owns. Underscores, not dashes: the full hook
+# name is "<addon_id with dashes as underscores>.<point>", and a dash there
+# would read as a minus in the dotted name.
+HOOK_POINT_RE = re.compile(r'^[a-z][a-z0-9_]*$')
 ADDON_ID_MAX = 64
 
 SCOPES = ('global', 'host', 'instance')
@@ -172,6 +176,49 @@ def _validate_ui(ui, errors):
     return ui
 
 
+def _validate_hooks(hooks, errors):
+    """The extension points this addon *owns* and dispatches itself.
+
+    An addon that wants other addons to extend it declares the points here
+    instead of getting them added to core's own hook table. That is the whole
+    difference between "core knows about this feature" and "this feature is an
+    addon like any other": core validates a subscription against what some
+    installed addon declared, and never has to carry another addon's name.
+
+    Keyed by the short point name; the full hook every subscriber uses is
+    "<this addon's id, dashes as underscores>.<key>".
+    """
+    if hooks is None:
+        return {}
+    if not isinstance(hooks, dict):
+        _err(errors, '"hooks" must be an object keyed by extension-point name')
+        return {}
+
+    out = {}
+    for name, spec in hooks.items():
+        where = f'hooks.{name}'
+        if not isinstance(name, str) or not HOOK_POINT_RE.match(name):
+            _err(errors, f'{where}: name must be lower_snake_case')
+            continue
+        if not isinstance(spec, dict):
+            _err(errors, f'{where}: must be an object')
+            continue
+        scope = spec.get('scope', 'global')
+        if scope is not None and scope not in SCOPES:
+            _err(errors, f'{where}.scope: must be null or one of {", ".join(SCOPES)}')
+            scope = 'global'
+        as_list = spec.get('list', False)
+        if not isinstance(as_list, bool):
+            _err(errors, f'{where}.list: must be true or false')
+            as_list = False
+        description = spec.get('description') or ''
+        if not isinstance(description, str):
+            _err(errors, f'{where}.description: must be a string')
+            description = ''
+        out[name] = {'scope': scope, 'list': as_list, 'description': description}
+    return out
+
+
 def validate_manifest(data):
     """Return (normalized_manifest, errors). `errors` empty means loadable."""
     errors = []
@@ -214,6 +261,7 @@ def validate_manifest(data):
         depends = []
 
     settings = _validate_settings(data.get('settings'), errors)
+    hooks = _validate_hooks(data.get('hooks'), errors)
     ui = _validate_ui(data.get('ui'), errors)
 
     manifest = {
@@ -225,6 +273,7 @@ def validate_manifest(data):
         'ui_api': ui_api,
         'depends': depends,
         'settings': settings,
+        'hooks': hooks,
         'ui': ui,
     }
     return manifest, errors

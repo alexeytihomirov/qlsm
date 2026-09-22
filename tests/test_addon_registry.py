@@ -301,29 +301,33 @@ def test_a_raising_hook_cannot_abort_the_operation(addon_app):
         assert registry.dispatch('backup.export') == ['addon-packages/calm']
 
 
-def test_demo_management_file_kinds_is_flattened_not_nested(addon_app):
-    """demo_management.file_kinds is a contribution hook: a handler returning
-    a list of extensions must come back out of dispatch() as those same
-    extensions, not as a one-element list wrapping the list. Regression for
-    a real bug where the hook was declared in HOOK_SCOPES but left out of
-    LIST_HOOKS, so ansible_instance_demos._demo_filename_re()'s per-string
-    isinstance() check silently dropped every contributed extension and
-    qlmatch files never showed up in Demos no matter what the operator
-    enabled."""
+def test_a_contribution_hook_is_flattened_not_nested(addon_app):
+    """A contribution hook ("list": true) returning a list of strings must
+    come back out of dispatch() as those same strings, not as a one-element
+    list wrapping the list. Regression for a real bug where a hook was
+    declared but left out of the list-hook set, so the consumer's per-string
+    isinstance() check silently dropped every contributed value and the
+    feature never showed up no matter what the operator enabled."""
     build, packages, _ = addon_app
+    # Manifest only: an addon that merely declares a point it dispatches from
+    # its own code needs no backend for this test to reach the point.
+    write_addon(packages, 'browser', manifest={
+        'id': 'browser', 'version': '1.0.0',
+        'hooks': {'file_kinds': {'scope': 'global', 'list': True}},
+    })
     write_addon(packages, 'packer', manifest={'id': 'packer', 'version': '1.0.0'}, backend='''
         def register(ctx):
-            @ctx.on('demo_management.file_kinds')
+            @ctx.on('browser.file_kinds')
             def kinds():
                 return ['qlmatch', 'packer.log']
     ''')
     app = build()
     with app.app_context():
         registry.get_addon('packer').ctx.settings.set_enabled('global', 0, True)
-        assert registry.dispatch('demo_management.file_kinds', 0) == ['qlmatch', 'packer.log']
+        assert registry.dispatch('browser.file_kinds', 0) == ['qlmatch', 'packer.log']
 
 
-def test_unknown_hook_name_raises_at_registration(addon_app):
+def test_unknown_core_hook_name_raises_at_registration(addon_app):
     build, packages, _ = addon_app
     write_addon(packages, 'typo', backend='''
         def register(ctx):
@@ -332,7 +336,7 @@ def test_unknown_hook_name_raises_at_registration(addon_app):
     app = build()
     bad = registry.get_addon('typo', app)
     assert bad.loaded is False
-    assert any('unknown hook' in e for e in bad.errors)
+    assert any('unknown core hook' in e for e in bad.errors)
 
 
 def test_dispatch_rejects_an_unknown_hook_name(addon_app):

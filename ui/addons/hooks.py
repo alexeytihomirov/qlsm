@@ -1,4 +1,4 @@
-"""Lifecycle hook names and the scope each one fires at.
+"""Core's own lifecycle hook names and the scope each one fires at.
 
 Every hook here generalizes an integration point core already had before the
 addon system existed (see the table in the design spec, section 4.2). New hooks
@@ -9,25 +9,24 @@ a call site in core that has to be maintained forever.
 to addons that are effectively enabled at that hook's scope. An addon switched
 off for one instance contributes nothing to that instance's launch args, with
 no per-addon `if enabled:` check to forget.
+
+**This table is core's, and only core's.** An addon that wants to be extended
+by other addons declares its own extension points in its manifest's `hooks`
+block; the registry collects those at load time and validates subscriptions
+against them (see `ui/addons/registry.py`). Nothing about a feature that lives
+in an addon belongs in this file -- that was the whole point of the addon
+system, and a name here would quietly make core depend on an addon it does not
+ship.
 """
 
 # hook name -> the scope whose enable state gates it, or None for "always"
 #
-# **Every name here must have a real dispatch call site.** They did not at
-# first: the whole set was declared in phase 1 and nothing called it until
-# phase 6, so addons could subscribe to hooks that never fired -- the
-# reference addon subscribed to instance.launch_args and would have been
-# silently ignored. tests/test_addon_hooks_are_wired.py now fails if a hook
-# is declared without a call site, so the contract cannot rot back. Most call
-# sites live in core (ui/). The exception is an addon-owned extension point
-# (see demo_management.file_kinds below), which is dispatched from inside the
-# addon that defines it -- and since every addon now lives outside this repo,
-# that call site is unreachable from here. Those names are listed explicitly
-# in the wiring test's OUT_OF_TREE set rather than silently skipped.
-#
-# Core still owns the *registry* of valid hook names even for those: ctx.on()
-# rejects anything not listed here at addon load time, so a typo in an addon
-# fails loudly instead of subscribing to nothing.
+# **Every name here must have a real dispatch call site in core.** They did not
+# at first: the whole set was declared in phase 1 and nothing called it until
+# phase 6, so addons could subscribe to hooks that never fired -- the reference
+# addon subscribed to instance.launch_args and would have been silently
+# ignored. tests/test_addon_hooks_are_wired.py now fails if a hook is declared
+# here without a call site under ui/, so the contract cannot rot back.
 HOOK_SCOPES = {
     # host lifecycle
     'host.setup': 'host',      # ansible_host_setup.py, contributes extra-vars
@@ -53,35 +52,6 @@ HOOK_SCOPES = {
     # the export and the restore, so a tree contributed once is handled in
     # both directions.
     'backup.export': None,
-    # Addon-owned extension point (dispatched by the demo-management addon
-    # itself, which lives in the qlsm-extra repo, not by core):
-    # demo-management only recognises raw .dm_91 by default; another
-    # addon contributes additional filename extensions it wants listed and
-    # downloadable alongside it (e.g. qlmatch-packer adds "qlmatch",
-    # "replay.json.gz", "packer.log"). Gated at 'global' scope, the same
-    # whole-addon on/off switch the Addons page toggle uses -- turning
-    # qlmatch-packer off there also stops its files showing up in Demos,
-    # consistent with "hidden from host/instance menus until switched on".
-    'demo_management.file_kinds': 'global',
-    # Addon-owned extension point (dispatched by the demo-management addon,
-    # not by core), same "global" gate as file_kinds. Consumer passes (instance_id, demos)
-    # -- the current flat file list it already built -- and a contributor
-    # returns fully-resolved groups: [{group_id, label, member_names,
-    # addon_id, actions: [{id, label, icon, danger, action: {route, method,
-    # confirm}}]}]. This differs from the `match_actions` shape sketched in
-    # addons/README.md's cross-addon-UI-contribution writeup (a per-row
-    # `match(demo)` predicate) because grouping genuinely needs whole-list
-    # context and its own I/O (qlmatch-packer opens one SFTP session to read
-    # every .qlmatch's manifest.json, the only place match_id/map live) --
-    # a per-row Python predicate could not do that without either re-opening
-    # SFTP per row or leaking a live session across the hook boundary. A
-    # `match(demo)` callable also cannot survive the hook's result reaching
-    # the browser as JSON, unlike this hook's plain, JSON-safe group dicts.
-    # `route` is relative to the CONTRIBUTING addon's own
-    # /api/addons/<addon_id>/ prefix (`addon_id` on the group says which),
-    # not demo-management's -- the consumer is a hand-built React component,
-    # not a declarative panel, so nothing resolves that prefix for it.
-    'demo_management.match_groups': 'global',
 }
 
 # Deliberately NOT declared until something needs them, because a hook nobody
@@ -98,9 +68,13 @@ LIST_HOOKS = frozenset({
     'instance.plugins',
     'instance.ld_preload',
     'backup.export',
-    'demo_management.file_kinds',
-    'demo_management.match_groups',
 })
+
+# The namespaces core owns. A name in one of these is core's business, so a
+# typo in it is a bug in core or in an addon subscribing to a core hook, and
+# must fail loudly. Anything else is an addon's own namespace -- see
+# validate_hook_name() for why those are treated differently.
+CORE_NAMESPACES = frozenset(name.split('.', 1)[0] for name in HOOK_SCOPES)
 
 
 class UnknownHookError(ValueError):
@@ -112,9 +86,51 @@ class UnknownHookError(ValueError):
     """
 
 
-def validate_hook_name(name):
-    if name not in HOOK_SCOPES:
+def hook_owner(name):
+    """The addon id that would own `name`, or None for a core hook.
+
+    "file_browser.file_kinds" -> "file-browser". The reverse of how a
+    manifest's `hooks` block builds its full names, and the only place that
+    mapping is spelled out.
+    """
+    namespace = str(name).split('.', 1)[0]
+    if namespace in CORE_NAMESPACES:
+        return None
+    return namespace.replace('_', '-')
+
+
+def validate_hook_name(name, declared=None):
+    """Check a subscription. Returns True if the hook will ever be dispatched.
+
+    `declared` is {hook name: spec} for the extension points the installed
+    addons declare in their manifests; the registry passes it in.
+
+    Three outcomes, and the difference matters:
+
+    * A core hook, or a point an installed addon declared -> fine.
+    * A name in a core namespace that core does not have, or a point an
+      *installed* addon does not declare -> `UnknownHookError`. Both are
+      typos, and both are catchable, so both fail loudly at load time.
+    * A point of an addon that is not installed -> accepted, returns False.
+      This is not a typo we can prove, and treating it as one would be wrong:
+      an addon that extends another legitimately ships whether or not the
+      operator installed the one it extends, and refusing to load it would
+      turn an optional integration into a hard dependency. The subscription
+      simply never fires, and the caller logs that it is dormant.
+    """
+    declared = declared or {}
+    if name in HOOK_SCOPES or name in declared:
+        return True
+
+    owner = hook_owner(name)
+    if owner is None:
         raise UnknownHookError(
-            f'unknown hook "{name}"; known hooks: {", ".join(sorted(HOOK_SCOPES))}'
+            f'unknown core hook "{name}"; core hooks: {", ".join(sorted(HOOK_SCOPES))}'
         )
-    return name
+    if any(hook_owner(d) == owner for d in declared):
+        points = sorted(d for d in declared if hook_owner(d) == owner)
+        raise UnknownHookError(
+            f'addon "{owner}" is installed but declares no extension point '
+            f'"{name}"; it declares: {", ".join(points)}'
+        )
+    return False

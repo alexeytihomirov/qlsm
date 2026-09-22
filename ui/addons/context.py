@@ -22,7 +22,8 @@ from ui.addons.settings import AddonSettings
 class AddonContext:
     """Handed to `register(ctx)` in an addon's backend.py."""
 
-    def __init__(self, addon_id, manifest, root_dir, module_name=None):
+    def __init__(self, addon_id, manifest, root_dir, module_name=None,
+                 declared_hooks=None):
         self.addon_id = addon_id
         self.manifest = manifest
         self.root_dir = root_dir
@@ -30,6 +31,10 @@ class AddonContext:
         # so registered tasks can be published as module attributes -- see
         # task() for why that is not optional.
         self.module_name = module_name
+        # Extension points the installed addons own, collected from their
+        # manifests before any backend runs. Used only to validate what this
+        # addon subscribes to -- see on().
+        self.declared_hooks = declared_hooks or {}
         self.settings = AddonSettings(addon_id, manifest)
         self.logger = logging.getLogger(f'qlsm.addon.{addon_id}')
 
@@ -148,8 +153,20 @@ class AddonContext:
         return decorator(func) if func is not None else decorator
 
     def on(self, hook, func=None):
-        """Subscribe to a lifecycle hook. Unknown names raise immediately."""
-        validate_hook_name(hook)
+        """Subscribe to a hook: one of core's, or one another addon declares.
+
+        A name nobody could ever dispatch raises immediately -- a typo that
+        only showed up as "my addon silently does nothing" is the worst
+        failure a plugin system has. The one case that does not raise is
+        subscribing to an extension point of an addon that is not installed:
+        that is a normal optional integration, not a mistake, so the handler
+        is kept (dormant) and the reason is logged once.
+        """
+        if not validate_hook_name(hook, self.declared_hooks):
+            self.logger.info(
+                'Subscribed to "%s", but no installed addon declares it -- '
+                'the handler stays dormant until that addon is installed.', hook,
+            )
 
         def decorator(fn):
             self.handlers.setdefault(hook, []).append(fn)

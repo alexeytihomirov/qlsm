@@ -19,13 +19,18 @@ import sys
 import traceback
 
 from ui.addons.context import AddonContext
-from ui.addons.hooks import HOOK_SCOPES, LIST_HOOKS
+from ui.addons.hooks import HOOK_SCOPES, LIST_HOOKS, hook_owner
 from ui.addons.manifest import CURRENT_UI_API, MANIFEST_FILENAME, read_manifest
 
 log = logging.getLogger(__name__)
 
 BUNDLED_ADDONS_DIRNAME = 'addons'
 EXTENSION_KEY = 'addons'
+# Extension points the installed addons declare, collected once at load time:
+# {full hook name: {'scope', 'list', 'description', 'owner'}}. Kept beside the
+# addons rather than in hooks.py because it is per-install state, not a
+# constant -- what exists depends on what the operator installed.
+HOOKS_EXTENSION_KEY = 'addon_hooks'
 
 
 class LoadedAddon:
@@ -124,11 +129,39 @@ def _scan(app):
     return found
 
 
-def _import_backend(addon):
+def _declared_hooks(addons):
+    """Extension points every scanned addon owns, keyed by full hook name.
+
+    Read from manifests, which are all parsed before any backend is imported,
+    so load order does not decide whether a subscription validates. An addon
+    cannot declare a point in a namespace that is not its own: the name is
+    built from its id here rather than taken from the manifest, so a manifest
+    physically cannot claim someone else's namespace -- or core's.
+    """
+    declared = {}
+    for addon in addons.values():
+        points = (addon.manifest or {}).get('hooks') or {}
+        namespace = addon.id.replace('-', '_')
+        for point, spec in points.items():
+            name = f'{namespace}.{point}'
+            if name in HOOK_SCOPES:
+                # Would shadow a core hook. Refuse rather than let an addon
+                # redefine the gating of something core dispatches.
+                addon.errors.append(
+                    f'hooks.{point}: "{name}" collides with a core hook name')
+                log.warning('Addon %s declares %s, a core hook name -- ignored',
+                            addon.id, name)
+                continue
+            declared[name] = dict(spec, owner=addon.id)
+    return declared
+
+
+def _import_backend(addon, declared_hooks=None):
     """Import the addon's backend.py and run register(ctx). Never raises."""
     backend_path = os.path.join(addon.root_dir, 'backend.py')
     module_name = f'qlsm_addon_{addon.id.replace("-", "_")}'
-    ctx = AddonContext(addon.id, addon.manifest, addon.root_dir, module_name=module_name)
+    ctx = AddonContext(addon.id, addon.manifest, addon.root_dir,
+                       module_name=module_name, declared_hooks=declared_hooks)
     if not os.path.isfile(backend_path):
         # A UI-only addon is legitimate: declarative panels against another
         # addon's API, or a page that only reads core endpoints.
@@ -174,11 +207,16 @@ def _mount_blueprints(app, addon):
 def init_app(app):
     """Discover + load every addon. Called once from the app factory."""
     addons = {}
-    for addon_id, addon in _scan(app).items():
+    scanned = _scan(app)
+    # Every manifest is read before any backend runs, so an addon can subscribe
+    # to a point declared by an addon that loads after it.
+    declared = _declared_hooks(scanned)
+    app.extensions[HOOKS_EXTENSION_KEY] = declared
+    for addon_id, addon in scanned.items():
         if addon.errors and addon.manifest is None:
             addons[addon_id] = addon      # unusable, but still visible in the catalog
             continue
-        _import_backend(addon)
+        _import_backend(addon, declared_hooks=declared)
         if addon.loaded and addon.ctx is not None:
             _mount_blueprints(app, addon)
         addons[addon_id] = addon
@@ -201,18 +239,34 @@ def get_addon(addon_id, app=None):
     return get_addons(app).get(addon_id)
 
 
+def get_declared_hooks(app=None):
+    """Extension points the installed addons own. Empty before init_app()."""
+    from flask import current_app
+    app = app or current_app
+    return app.extensions.get(HOOKS_EXTENSION_KEY, {})
+
+
+def _hook_spec(hook, declared=None):
+    """(scope, is_list) for a hook, or None if nothing declares it."""
+    if hook in HOOK_SCOPES:
+        return HOOK_SCOPES[hook], hook in LIST_HOOKS
+    spec = (declared if declared is not None else get_declared_hooks()).get(hook)
+    if spec is None:
+        return None
+    return spec.get('scope', 'global'), bool(spec.get('list'))
+
+
 def catalog(app=None):
     return [a.to_dict() for a in sorted(get_addons(app).values(), key=lambda a: a.id)]
 
 
-def _gates_open(addon, hook, scope_id):
-    scope = HOOK_SCOPES[hook]
+def _gates_open(addon, scope, scope_id):
     if scope is None:
         return True
     try:
         return addon.ctx.settings.is_enabled(scope, scope_id)
     except Exception as e:
-        log.warning('Addon %s enable check failed for %s: %s', addon.id, hook, e)
+        log.warning('Addon %s enable check failed at %s scope: %s', addon.id, scope, e)
         return False
 
 
@@ -223,8 +277,19 @@ def dispatch(hook, scope_id=0, *args, **kwargs):
     per-addon return values otherwise. A handler that raises is logged and
     skipped: an addon must not be able to abort a deploy it merely decorates.
     """
-    if hook not in HOOK_SCOPES:
-        raise ValueError(f'unknown hook "{hook}"')
+    spec = _hook_spec(hook)
+    if spec is None:
+        if hook_owner(hook) is None:
+            # A core hook core does not have: a bug in core, fail loudly.
+            raise ValueError(f'unknown core hook "{hook}"')
+        # An addon dispatching its own extension point on a core (or against a
+        # manifest) that does not know it. Degrading to "nobody contributed"
+        # keeps the feature working: the alternative is a 500 out of a listing
+        # endpoint because an addon's manifest and its code disagree.
+        log.error('Addon hook "%s" was dispatched but no installed addon '
+                  'declares it; treating it as having no contributors', hook)
+        return []
+    scope, is_list = spec
     results = []
     for addon in sorted(get_addons().values(), key=lambda a: a.id):
         if not addon.loaded or addon.ctx is None:
@@ -232,7 +297,7 @@ def dispatch(hook, scope_id=0, *args, **kwargs):
         handlers = addon.ctx.handlers.get(hook) or []
         if not handlers:
             continue
-        if not _gates_open(addon, hook, scope_id):
+        if not _gates_open(addon, scope, scope_id):
             continue
         for handler in handlers:
             try:
@@ -241,7 +306,7 @@ def dispatch(hook, scope_id=0, *args, **kwargs):
                 log.error('Addon %s hook %s failed: %s\n%s',
                           addon.id, hook, e, traceback.format_exc())
                 continue
-            if hook in LIST_HOOKS:
+            if is_list:
                 if value:
                     results.extend(value if isinstance(value, (list, tuple)) else [value])
             else:
