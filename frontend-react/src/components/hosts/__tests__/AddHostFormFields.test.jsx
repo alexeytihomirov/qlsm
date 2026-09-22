@@ -140,7 +140,7 @@ describe('AddHostFormFields runtime tooltips', () => {
 
   it.each([
     ['minqlx', 'https://github.com/MinoMino/minqlx'],
-    ['minqlxtended', 'https://github.com/tjone270/minqlxtended'],
+    ['minqlxtended', 'https://github.com/alexeytihomirov/minqlxtended'],
   ])('links %s to its upstream repo', (runtimeId, repoUrl) => {
     // One render per runtime: InfoTooltip's close is debounced, so opening both
     // in a single render leaves two bubbles mounted at once.

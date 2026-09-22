@@ -36,6 +36,17 @@ def test_runtime_normalisation_is_case_and_space_insensitive(value):
     assert normalize_runtime(value) == MINQLXTENDED
 
 
+def test_retired_minqlxtended_patched_value_maps_to_minqlxtended():
+    """A host created while 'minqlxtended-patched' was a selectable runtime
+    (2026-09-18 through 2026-09-22) can still carry that literal string in its
+    DB column. It must keep resolving to the fork build it was actually set up
+    with, not fall through to minqlx."""
+    assert normalize_runtime("minqlxtended-patched") == MINQLXTENDED
+    assert normalize_runtime("MinQLXtended-Patched") == MINQLXTENDED
+    # But it is no longer an option a caller may pick going forward.
+    assert is_valid_runtime("minqlxtended-patched") is False
+
+
 def test_is_valid_runtime_rejects_non_strings_and_unknowns():
     assert is_valid_runtime("minqlx") is True
     assert is_valid_runtime("MINQLXTENDED") is True
@@ -44,17 +55,13 @@ def test_is_valid_runtime_rejects_non_strings_and_unknowns():
     assert is_valid_runtime(3) is False
 
 
-def test_every_binary_key_differs_between_runtimes():
-    """If one of these keys ever matched across runtimes it would be a shared
-    binary path, and the two runtimes would overwrite each other on the same
-    host. plugins_dirname/asset_plugins_dir/shared_dir are deliberately NOT
-    checked here: minqlxtended shares minqlx's plugin pool and shared dir on
-    purpose, because that is what host "germany" has actually been running
-    since this flavor was ported -- see the _RUNTIME_PATHS comment."""
+def test_every_path_key_differs_between_runtimes():
+    """If a key ever matched across runtimes it would be a shared path, and the
+    two runtimes would overwrite each other on the same host."""
     a = runtime_paths(MINQLX)
     b = runtime_paths(MINQLXTENDED)
-    for key in ("engine_so", "launch_script", "log_filename", "git_repo",
-                "git_version", "os_name"):
+    for key in ("plugins_dirname", "shared_dir", "engine_so", "launch_script",
+                "log_filename", "git_repo", "git_version", "os_name"):
         assert a[key] != b[key], f"{key} is identical across runtimes"
 
 
@@ -74,21 +81,22 @@ def test_minqlx_paths_match_what_is_deployed_today():
     assert paths["excluded_system_hooks"] == frozenset()
 
 
-def test_minqlxtended_paths_match_what_is_deployed_today():
-    """host "germany" runs this today (see ui/runtime.py's module comment) --
-    it must keep resolving to minqlx's pool/dir, not get a pool of its own that
-    was never populated for it."""
+def test_minqlxtended_paths_match_the_p0_spike():
     paths = runtime_paths(MINQLXTENDED)
-    assert paths["plugins_dirname"] == "minqlx-plugins"
-    assert paths["asset_plugins_dir"] == "minqlx-plugins"
-    assert paths["shared_dir"] == "/home/ql/minqlx-shared"
+    assert paths["plugins_dirname"] == "minqlxtended-plugins"
+    assert paths["shared_dir"] == "/home/ql/minqlxtended-shared"
     assert paths["engine_so"] == "minqlxtended.x64.so"
     assert paths["launch_script"] == "run_server_x64_minqlxtended.sh"
     assert paths["log_filename"] == "minqlxtended.log"
     assert paths["min_python"] == (3, 12)
     assert "force_rate.so" in paths["excluded_system_hooks"]
+    # QLSM builds minqlxtended from its own fork, not tjone270's original --
+    # see the module docstring.
     assert paths["git_repo"] == "https://github.com/alexeytihomirov/minqlxtended.git"
     assert paths["git_version"] != "HEAD"
+    assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
+    assert paths["os_family"] == "ubuntu"
+    assert paths["os_type"] == "ubuntu"
     assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
     assert paths["os_family"] == "ubuntu"
     assert paths["os_type"] == "ubuntu"
@@ -147,8 +155,8 @@ def test_runtime_extravars_shape():
 
     assert runtime_extravars(FakeHost()) == {
         "runtime": "minqlxtended",
-        "runtime_plugins_dirname": "minqlx-plugins",
-        "runtime_shared_dir": "/home/ql/minqlx-shared",
+        "runtime_plugins_dirname": "minqlxtended-plugins",
+        "runtime_shared_dir": "/home/ql/minqlxtended-shared",
         "launch_script": "run_server_x64_minqlxtended.sh",
     }
 

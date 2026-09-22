@@ -11,9 +11,9 @@
     runtime: "minqlx"
     # QLSM's own build: alexeytihomirov/minqlxtended fork (upstream +
     # per-match demo capture under sv_demoRecord/sv_demoCut), not tjone270's
-    # original -- see ui/runtime.py. Shares minqlx's plugin pool/shared dir
-    # on purpose.
+    # original -- see ui/runtime.py.
     minqlxtended_git_version: "d0719268d4aa4d9c0f2f05c9524f2a87fa733bc5"
+    minqlxtended_shared_dir: "/home/ql/minqlxtended-shared"
 
   tasks:
     - name: Clean up old minqlx build directory
@@ -124,9 +124,9 @@
         mode: '0755'
       when: runtime == 'minqlxtended'
 
-    - name: Ensure minqlx shared directory exists (minqlxtended)
+    - name: Ensure minqlxtended shared directory exists
       file:
-        path: "{{ minqlx_shared_dir }}"
+        path: "{{ minqlxtended_shared_dir }}"
         state: directory
         owner: ql
         group: ql
@@ -153,7 +153,7 @@
     - name: Copy minqlxtended compiled files to shared location
       copy:
         src: "{{ minqlx_build_dir }}/{{ item.src }}"
-        dest: "{{ minqlx_shared_dir }}/{{ item.dest }}"
+        dest: "{{ minqlxtended_shared_dir }}/{{ item.dest }}"
         remote_src: yes
         owner: ql
         group: ql
