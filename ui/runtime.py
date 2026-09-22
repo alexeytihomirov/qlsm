@@ -6,16 +6,18 @@ hardcoded 'minqlx-plugins' / 'minqlx.log' / '/home/ql/minqlx-shared' string in
 the backend, the playbooks and the Terraform roots resolves through here, so
 the two runtimes cannot drift apart.
 
-minqlxtended (github.com/tjone270/minqlxtended) is a hard fork of minqlx with
-no backwards compatibility: plugins written for one do not run on the other.
+minqlxtended is a hard fork of minqlx with no backwards compatibility: plugins
+written for one do not run on the other. QLSM builds it from
+github.com/alexeytihomirov/minqlxtended (upstream tjone270/minqlxtended plus
+QLSM's own per-match demo-capture commits) rather than tjone270's original,
+until those commits land upstream via PR.
 """
 import re
 
 MINQLX = 'minqlx'
 MINQLXTENDED = 'minqlxtended'
-MINQLXTENDED_PATCHED = 'minqlxtended-patched'
 
-VALID_RUNTIMES = (MINQLX, MINQLXTENDED, MINQLXTENDED_PATCHED)
+VALID_RUNTIMES = (MINQLX, MINQLXTENDED)
 
 # Nothing ever "flips" this: the Add Host form pre-selects no runtime at all,
 # because the choice is irreversible and QLSM will not make it on an operator's
@@ -45,41 +47,15 @@ _RUNTIME_PATHS = {
         'min_python': None,
         'excluded_system_hooks': frozenset(),
     },
+    # Built from QLSM's own fork (alexeytihomirov/minqlxtended), not
+    # tjone270's original -- see the module docstring. No patch chain is
+    # applied at deploy time; the fork is built directly from its own
+    # git_repo/git_version. Shares minqlx's plugin pool and shared dir rather
+    # than a dedicated minqlxtended one, because that is what host "germany"
+    # has actually been running -- changing either here would silently
+    # re-point that host's next rerun-setup at an empty/foreign location.
     MINQLXTENDED: {
         'runtime': MINQLXTENDED,
-        'plugins_dirname': 'minqlxtended-plugins',
-        'asset_plugins_dir': 'minqlxtended-plugins',
-        'shared_dir': '/home/ql/minqlxtended-shared',
-        'engine_so': 'minqlxtended.x64.so',
-        'launch_script': 'run_server_x64_minqlxtended.sh',
-        'log_filename': 'minqlxtended.log',
-        'git_repo': 'https://github.com/tjone270/minqlxtended.git',
-        'git_version': '411591a2f6f8ad26949ee4c83758149d5b95f7ab',
-        'os_name': 'Ubuntu 24.04 LTS x64',
-        'os_family': 'ubuntu',
-        'os_type': 'ubuntu',
-        # The build links -lpython3.12 explicitly.
-        'min_python': (3, 12),
-        # minqlxtended hooks Sys_IsLANAddress itself, unconditionally
-        # (src/server/hooks.c:142). force_rate.so overwrites the same prologue
-        # at 0x004518d0, and a failed STATIC_SEARCH exits the server
-        # (dllmain.c:294-297). Whether that fires depends on glibc constructor
-        # order, which QLSM does not control -- so never load it here. The
-        # runtime provides the behaviour natively.
-        'excluded_system_hooks': frozenset({'force_rate.so'}),
-    },
-    # QLSM's own build: the alexeytihomirov/minqlxtended fork, i.e. upstream
-    # tjone270/minqlxtended plus QLSM-specific engine work landed as real
-    # commits (per-match demo capture driven from game_events.c, under
-    # sv_demoRecord/sv_demoCut). No patch chain is applied at deploy time --
-    # the fork is built directly from its own git_repo/git_version.
-    #
-    # Shares minqlx's plugin pool and shared dir rather than minqlxtended's,
-    # because that is what host "germany" has actually been running since
-    # this flavor was introduced -- changing either here would silently
-    # re-point that host's next rerun-setup at an empty/foreign location.
-    MINQLXTENDED_PATCHED: {
-        'runtime': MINQLXTENDED_PATCHED,
         'plugins_dirname': 'minqlx-plugins',
         'asset_plugins_dir': 'minqlx-plugins',
         'shared_dir': '/home/ql/minqlx-shared',
@@ -91,7 +67,14 @@ _RUNTIME_PATHS = {
         'os_name': 'Ubuntu 24.04 LTS x64',
         'os_family': 'ubuntu',
         'os_type': 'ubuntu',
+        # The build links -lpython3.12 explicitly.
         'min_python': (3, 12),
+        # minqlxtended hooks Sys_IsLANAddress itself, unconditionally
+        # (src/server/hooks.c:142). force_rate.so overwrites the same prologue
+        # at 0x004518d0, and a failed STATIC_SEARCH exits the server
+        # (dllmain.c:294-297). Whether that fires depends on glibc constructor
+        # order, which QLSM does not control -- so never load it here. The
+        # runtime provides the behaviour natively.
         'excluded_system_hooks': frozenset({'force_rate.so'}),
     },
 }

@@ -8,7 +8,6 @@ from ui.runtime import (
     DEFAULT_RUNTIME,
     MINQLX,
     MINQLXTENDED,
-    MINQLXTENDED_PATCHED,
     VALID_RUNTIMES,
     host_runtime,
     is_valid_runtime,
@@ -22,7 +21,7 @@ from ui.runtime import (
 def test_default_runtime_is_minqlx():
     """P1 must never change what an existing host resolves to."""
     assert DEFAULT_RUNTIME == MINQLX
-    assert VALID_RUNTIMES == (MINQLX, MINQLXTENDED, MINQLXTENDED_PATCHED)
+    assert VALID_RUNTIMES == (MINQLX, MINQLXTENDED)
 
 
 @pytest.mark.parametrize("value", [None, "", "  ", "nonsense", "MINQLX-2", 0, object()])
@@ -45,13 +44,17 @@ def test_is_valid_runtime_rejects_non_strings_and_unknowns():
     assert is_valid_runtime(3) is False
 
 
-def test_every_path_key_differs_between_runtimes():
-    """If a key ever matched across runtimes it would be a shared path, and the
-    two runtimes would overwrite each other on the same host."""
+def test_every_binary_key_differs_between_runtimes():
+    """If one of these keys ever matched across runtimes it would be a shared
+    binary path, and the two runtimes would overwrite each other on the same
+    host. plugins_dirname/asset_plugins_dir/shared_dir are deliberately NOT
+    checked here: minqlxtended shares minqlx's plugin pool and shared dir on
+    purpose, because that is what host "germany" has actually been running
+    since this flavor was ported -- see the _RUNTIME_PATHS comment."""
     a = runtime_paths(MINQLX)
     b = runtime_paths(MINQLXTENDED)
-    for key in ("plugins_dirname", "shared_dir", "engine_so", "launch_script",
-                "log_filename", "git_repo", "git_version", "os_name"):
+    for key in ("engine_so", "launch_script", "log_filename", "git_repo",
+                "git_version", "os_name"):
         assert a[key] != b[key], f"{key} is identical across runtimes"
 
 
@@ -71,26 +74,11 @@ def test_minqlx_paths_match_what_is_deployed_today():
     assert paths["excluded_system_hooks"] == frozenset()
 
 
-def test_minqlxtended_paths_match_the_p0_spike():
-    paths = runtime_paths(MINQLXTENDED)
-    assert paths["plugins_dirname"] == "minqlxtended-plugins"
-    assert paths["shared_dir"] == "/home/ql/minqlxtended-shared"
-    assert paths["engine_so"] == "minqlxtended.x64.so"
-    assert paths["launch_script"] == "run_server_x64_minqlxtended.sh"
-    assert paths["log_filename"] == "minqlxtended.log"
-    assert paths["git_repo"] == "https://github.com/tjone270/minqlxtended.git"
-    assert paths["git_version"] == "411591a2f6f8ad26949ee4c83758149d5b95f7ab"
-    assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
-    assert paths["os_family"] == "ubuntu"
-    assert paths["os_type"] == "ubuntu"
-    assert paths["min_python"] == (3, 12)
-
-
-def test_minqlxtended_patched_shares_minqlx_pool_and_shared_dir():
+def test_minqlxtended_paths_match_what_is_deployed_today():
     """host "germany" runs this today (see ui/runtime.py's module comment) --
     it must keep resolving to minqlx's pool/dir, not get a pool of its own that
     was never populated for it."""
-    paths = runtime_paths(MINQLXTENDED_PATCHED)
+    paths = runtime_paths(MINQLXTENDED)
     assert paths["plugins_dirname"] == "minqlx-plugins"
     assert paths["asset_plugins_dir"] == "minqlx-plugins"
     assert paths["shared_dir"] == "/home/ql/minqlx-shared"
@@ -101,6 +89,9 @@ def test_minqlxtended_patched_shares_minqlx_pool_and_shared_dir():
     assert "force_rate.so" in paths["excluded_system_hooks"]
     assert paths["git_repo"] == "https://github.com/alexeytihomirov/minqlxtended.git"
     assert paths["git_version"] != "HEAD"
+    assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
+    assert paths["os_family"] == "ubuntu"
+    assert paths["os_type"] == "ubuntu"
 
 
 def test_force_rate_is_excluded_only_on_minqlxtended():
@@ -156,8 +147,8 @@ def test_runtime_extravars_shape():
 
     assert runtime_extravars(FakeHost()) == {
         "runtime": "minqlxtended",
-        "runtime_plugins_dirname": "minqlxtended-plugins",
-        "runtime_shared_dir": "/home/ql/minqlxtended-shared",
+        "runtime_plugins_dirname": "minqlx-plugins",
+        "runtime_shared_dir": "/home/ql/minqlx-shared",
         "launch_script": "run_server_x64_minqlxtended.sh",
     }
 
