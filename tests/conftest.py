@@ -2,6 +2,10 @@ import os
 import sys
 import tempfile
 import pytest
+import redis as redis_lib
+from redis import exceptions as redis_exceptions
+from werkzeug.security import generate_password_hash
+import ui.models
 from ui import create_app, db
 
 @pytest.fixture
@@ -85,6 +89,55 @@ def app_context(app):
     """An application context for the app."""
     with app.app_context() as ctx:
         yield ctx
+
+
+class _OfflineRedis:
+    """Stands in for the shared Redis client create_app() installs.
+
+    Every command raises ConnectionError, which is exactly what the real client
+    does when no Redis is listening -- the blocklist check fails open, logout's
+    setex is swallowed, the lockout counter never trips. What it does not do is
+    spend two seconds per socket finding that out: on Windows a refused connect
+    to localhost costs a flat 2.0s, redis-py tries twice, and every
+    JWT-authenticated request in the suite runs one blocklist GET. That is
+    ~1460 commands x ~4s -- about an hour and a half of the suite's wall clock,
+    against roughly three minutes of actual work.
+
+    Tests that want blocklist/lockout behaviour keep overriding
+    app.extensions['redis'] with their own mock, as they already do.
+    """
+
+    def __getattr__(self, name):
+        def _refused(*args, **kwargs):
+            raise redis_exceptions.ConnectionError(
+                'Error 10061 connecting to localhost:6379. '
+                '(tests: no Redis, see _OfflineRedis in tests/conftest.py)')
+        return _refused
+
+
+@pytest.fixture(autouse=True)
+def _offline_redis(monkeypatch):
+    """Keep create_app() from handing out a client that dials a real Redis."""
+    monkeypatch.setattr(redis_lib, 'from_url', lambda *a, **kw: _OfflineRedis())
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _fast_password_hashing(monkeypatch):
+    """Hash test passwords with a cheap KDF.
+
+    werkzeug's default is scrypt, ~120ms per call by design. The suite calls
+    set_password() a few hundred times to get a user it can log in as, which is
+    a minute of wall clock spent proving that scrypt is slow. Nothing asserts on
+    the stored algorithm, and check_password_hash reads the method out of the
+    hash itself, so the round trip still works.
+    """
+    monkeypatch.setattr(
+        ui.models, 'generate_password_hash',
+        lambda password, **kwargs: generate_password_hash(
+            password, method='pbkdf2:sha256:1'),
+    )
+    yield
 
 
 @pytest.fixture(autouse=True)
