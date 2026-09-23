@@ -61,8 +61,9 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
 
   const [state, setState] = useState({});
   // "configured: false"/404 means the source genuinely has nothing to say
-  // for this instance -- stop asking until the instance changes. A transient
-  // error (timeout, 500) does not set this; the next poll tries again.
+  // for this instance -- stop asking until the instance changes or the
+  // operator looks again. A transient error (timeout, 500) does not set
+  // this; the next poll tries again.
   const stoppedRef = useRef({});
   const instanceRef = useRef(instanceId);
 
@@ -71,6 +72,23 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
     stoppedRef.current = {};
     setState({});
   }, [instanceId]);
+
+  // Re-arm the latch on every isOpen false->true transition, not just on an
+  // instanceId change. LiveServerStatusModal is mounted unconditionally (see
+  // its own comment), so closing and reopening it does not remount this
+  // hook -- without this, an operator who fixes an instance's rating source
+  // while that instance's Live Status has ever been open would never see
+  // the column start working without a full page reload: the first poll
+  // already latched every column "stopped" and nothing here asked again.
+  // One extra request per modal-open is cheap; the 30s interval below still
+  // only runs while the modal stays open.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (isOpen && !wasOpenRef.current) {
+      stoppedRef.current = {};
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !instanceId || !columnsKey) return undefined;

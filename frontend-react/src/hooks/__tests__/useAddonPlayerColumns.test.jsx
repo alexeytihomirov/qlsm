@@ -103,6 +103,34 @@ describe('useAddonPlayerColumns', () => {
     expect(result.current).toEqual([]);
   });
 
+  it('retries a previously-unconfigured column on reopen, same instance', async () => {
+    // Real incident: an operator fixed an instance's rating source while its
+    // Live Status modal had ever been opened. The modal never unmounts on
+    // close (see LiveServerStatusModal), so without a re-arm on reopen the
+    // column would stay hidden forever despite the fix.
+    listAddons.mockResolvedValue([RATING_ADDON]);
+    addonRequest.mockResolvedValue({ data: {}, configured: false });
+
+    const { result, rerender } = renderHook(
+      ({ isOpen }) => useAddonPlayerColumns(isOpen, 1, players),
+      { wrapper, initialProps: { isOpen: true } },
+    );
+
+    await waitFor(() => expect(addonRequest).toHaveBeenCalledTimes(1));
+    expect(result.current).toEqual([]);
+
+    // Operator closes the modal, fixes the source server-side, reopens it.
+    act(() => rerender({ isOpen: false }));
+    addonRequest.mockResolvedValue({
+      data: { '76561197993968023': { display: '2181' } },
+      configured: true,
+    });
+    act(() => rerender({ isOpen: true }));
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    expect(result.current[0].data['76561197993968023'].display).toBe('2181');
+  });
+
   it('passes steam_ids as a sorted, deduplicated comma-joined string', async () => {
     listAddons.mockResolvedValue([RATING_ADDON]);
     addonRequest.mockResolvedValue({ data: {}, configured: true });
