@@ -76,9 +76,9 @@ function AddonInstallModal({ isOpen, onClose, onInstalled }) {
                 </p>
 
                 <div className="mt-4">
-                  <label htmlFor="addon-zip" className="block text-sm text-theme-primary mb-1">
+                  <span className="block text-sm text-theme-primary mb-1">
                     Addon package (.zip)
-                  </label>
+                  </span>
                   <input
                     id="addon-zip"
                     ref={inputRef}
@@ -86,8 +86,17 @@ function AddonInstallModal({ isOpen, onClose, onInstalled }) {
                     accept=".zip,application/zip"
                     disabled={installing}
                     onChange={(e) => { setFile(e.target.files?.[0] || null); setError(null); }}
-                    className="block w-full text-sm text-theme-secondary"
+                    className="hidden"
                   />
+                  <button
+                    type="button"
+                    className="btn btn-secondary w-full"
+                    disabled={installing}
+                    onClick={() => inputRef.current?.click()}
+                  >
+                    <Upload className="mr-1 h-4 w-4" />
+                    {file ? file.name : 'Choose Addon Package'}
+                  </button>
                 </div>
 
                 <label className="mt-4 flex items-start gap-2 text-sm text-theme-primary">

@@ -40,13 +40,13 @@ echo "[restart-watcher] watching $STAMP_FILE (signal=SIG$SIGNAL, interval=${INTE
 while sleep "$INTERVAL"; do
     now="$(stamp_mtime)"
     [ "$now" = "$seen" ] && continue
-    seen="$now"
 
     echo "[restart-watcher] restart requested -- sending SIG$SIGNAL to PID 1"
     if ! kill -"$SIGNAL" 1; then
-        echo "[restart-watcher] ERROR: failed to signal PID 1" >&2
+        echo "[restart-watcher] ERROR: failed to signal PID 1, will retry next poll" >&2
         continue
     fi
+    seen="$now"
 
     # SIGTERM takes the whole container down; nothing left to watch. SIGHUP
     # leaves it running, so keep going and stay ready for the next request.
