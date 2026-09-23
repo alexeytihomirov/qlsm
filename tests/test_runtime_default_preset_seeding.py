@@ -28,9 +28,10 @@ def _write(path, content):
 def _seed_builtin_presets(root):
     """Two builtin presets whose scripts/ share a filename but not its content.
 
-    The shared filename is the point: the on-host baseline backfill runs with
-    --ignore-existing, so a wrong-runtime file of the same name is never
-    corrected afterwards.
+    The shared filename is the point: the on-host baseline backfill excludes
+    every file the instance's scripts/ already selected, so a wrong-runtime
+    file of the same name that the operator (or a cross-runtime preset load)
+    deliberately placed is never corrected afterwards from the common pool.
     """
     for name, runtime, marker in (
         ('default', MINQLX, 'import minqlx'),
