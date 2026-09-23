@@ -175,10 +175,14 @@ capped, comma-joined) and expects
 column entirely for that instance -- this is the normal state for an
 instance the addon has no opinion about, not an error. Any other failure
 (timeout, non-2xx, malformed body) also just hides the column; the players
-table itself never breaks over this. At most 3 contributed columns are
-rendered (across every addon that declares one), in the same
-addon-id-alphabetical order `dispatch()` uses elsewhere; the rest are dropped
-with a console warning.
+table itself never breaks over this. An addon may declare more columns than
+fit -- e.g. one column per rating source, only some enabled per instance --
+every declared column is still fetched, since whether it ends up configured
+for a given instance is only known after that fetch. At most 3 columns that
+come back `configured: true` are rendered (across every addon that declares
+one), in the same addon-id-alphabetical order `dispatch()` uses elsewhere,
+declaration order within one addon; the rest are dropped with a console
+warning.
 
 Requires `"ui_api": 4`.
 

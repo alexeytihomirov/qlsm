@@ -12,6 +12,14 @@ const POLL_INTERVAL_MS = 30000;
 // "не более 3 contributing columns" -- past that the narrow players table
 // turns into noise. Extras are dropped with a console warning, not an error:
 // the table still works, just without the overflow columns.
+//
+// This caps what's actually *shown* (columns that came back configured:
+// true), not what's declared. An addon may declare more columns than fit
+// (e.g. one per rating source, only some enabled per instance) -- every
+// declared column is still fetched, since whether a given instance has it
+// configured is only known after that fetch; capping the declared list
+// upfront would make an addon's 4th-declared column permanently invisible
+// regardless of which ones an operator actually turned on.
 const MAX_COLUMNS = 3;
 
 function playerSteamId(player) {
@@ -46,16 +54,6 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
   );
   const columnsRef = useRef(rawColumns);
   columnsRef.current = rawColumns;
-
-  useEffect(() => {
-    if (rawColumns.length > MAX_COLUMNS) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[live_status_columns] ${rawColumns.length} addon-contributed columns declared, `
-        + `only the first ${MAX_COLUMNS} are shown: ${rawColumns.map((c) => c.key).join(', ')}`,
-      );
-    }
-  }, [columnsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const idsKey = useMemo(() => steamIdsKey(players), [players]);
 
@@ -95,7 +93,7 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
     let cancelled = false;
 
     const fetchAll = async () => {
-      const columns = columnsRef.current.slice(0, MAX_COLUMNS);
+      const columns = columnsRef.current;
       await Promise.all(columns.map(async (col) => {
         if (stoppedRef.current[col.key]) return;
         const resolved = resolveRoute(col.entry.route, {
@@ -132,8 +130,8 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
     };
   }, [isOpen, instanceId, idsKey, columnsKey]);
 
-  return useMemo(() => (
-    rawColumns.slice(0, MAX_COLUMNS)
+  return useMemo(() => {
+    const configuredColumns = rawColumns
       .map((col) => ({
         key: col.key,
         label: col.entry.label,
@@ -144,6 +142,16 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
         configured: state[col.key]?.configured ?? false,
         data: state[col.key]?.data ?? {},
       }))
-      .filter((col) => col.configured)
-  ), [rawColumns, state]);
+      .filter((col) => col.configured);
+
+    if (configuredColumns.length > MAX_COLUMNS) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[live_status_columns] ${configuredColumns.length} columns configured, `
+        + `only the first ${MAX_COLUMNS} are shown: ${configuredColumns.map((c) => c.key).join(', ')}`,
+      );
+    }
+
+    return configuredColumns.slice(0, MAX_COLUMNS);
+  }, [rawColumns, state]);
 }

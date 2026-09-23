@@ -131,6 +131,65 @@ describe('useAddonPlayerColumns', () => {
     expect(result.current[0].data['76561197993968023'].display).toBe('2181');
   });
 
+  it('shows a later-declared column even when earlier ones are unconfigured', async () => {
+    // Real bug this guards against: one addon declaring more columns than
+    // MAX_COLUMNS fit (e.g. one per rating source, only some enabled per
+    // instance). Capping the *declared* list before fetching would make the
+    // 4th-declared column permanently invisible no matter what an operator
+    // actually turns on -- it must be capped by what comes back configured.
+    const FOUR_COLUMN_ADDON = {
+      id: 'player-ranks', name: 'Player Ranks', version: '1.0.0',
+      loaded: true, ui_mountable: true, enabled: true,
+      ui: {
+        live_status_columns: [
+          { id: 'qlstats', label: 'qlstats', align: 'right', route: 'GET instances/{instance_id}/ranks/qlstats' },
+          { id: 'slipgate', label: 'Slipgate', align: 'right', route: 'GET instances/{instance_id}/ranks/slipgate' },
+          { id: 'elo_service', label: 'ELO', align: 'right', route: 'GET instances/{instance_id}/ranks/elo_service' },
+          { id: 'server_status', label: 'Status', align: 'right', route: 'GET instances/{instance_id}/ranks/server_status' },
+        ],
+      },
+    };
+    listAddons.mockResolvedValue([FOUR_COLUMN_ADDON]);
+    addonRequest.mockImplementation((addonId, method, path) => {
+      if (path.endsWith('/server_status')) {
+        return Promise.resolve({ data: { '1': { display: '42' } }, configured: true });
+      }
+      return Promise.resolve({ data: {}, configured: false });
+    });
+
+    const { result } = renderHook(
+      () => useAddonPlayerColumns(true, 1, players),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    expect(result.current[0].key).toBe('player-ranks:live_status_columns:server_status');
+  });
+
+  it('caps at 3 shown columns by actually-configured count, not declaration order', async () => {
+    const FOUR_COLUMN_ADDON = {
+      id: 'player-ranks', name: 'Player Ranks', version: '1.0.0',
+      loaded: true, ui_mountable: true, enabled: true,
+      ui: {
+        live_status_columns: [
+          { id: 'qlstats', label: 'qlstats', align: 'right', route: 'GET instances/{instance_id}/ranks/qlstats' },
+          { id: 'slipgate', label: 'Slipgate', align: 'right', route: 'GET instances/{instance_id}/ranks/slipgate' },
+          { id: 'elo_service', label: 'ELO', align: 'right', route: 'GET instances/{instance_id}/ranks/elo_service' },
+          { id: 'server_status', label: 'Status', align: 'right', route: 'GET instances/{instance_id}/ranks/server_status' },
+        ],
+      },
+    };
+    listAddons.mockResolvedValue([FOUR_COLUMN_ADDON]);
+    addonRequest.mockResolvedValue({ data: {}, configured: true });
+
+    const { result } = renderHook(
+      () => useAddonPlayerColumns(true, 1, players),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current).toHaveLength(3));
+  });
+
   it('passes steam_ids as a sorted, deduplicated comma-joined string', async () => {
     listAddons.mockResolvedValue([RATING_ADDON]);
     addonRequest.mockResolvedValue({ data: {}, configured: true });
