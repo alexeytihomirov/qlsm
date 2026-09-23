@@ -10,6 +10,7 @@
 !requirements.txt
 !VERSION
 !entrypoint.sh
+!restart-watcher.sh
 !gunicorn.conf.py
 !rcon_service/
 !vultr-startup-ubuntu22.sh
