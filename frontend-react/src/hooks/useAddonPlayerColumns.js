@@ -93,6 +93,15 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
     let cancelled = false;
 
     const fetchAll = async () => {
+      // An empty roster (nobody connected, or `players` hasn't caught up
+      // with a fresh instance/status poll yet -- serverStatus for this
+      // instance briefly missing from useServerStatus's replace-not-merge
+      // map is a known source of this) is not the same as "the source has
+      // nothing to say about these players". Skip the round entirely rather
+      // than asking with `steam_ids=''`: every provider answers that with
+      // `configured: true, data: {}` (addons/README.md contract), which
+      // would blank out an already-shown value for the span of one poll.
+      if (!idsKey) return;
       const columns = columnsRef.current;
       await Promise.all(columns.map(async (col) => {
         if (stoppedRef.current[col.key]) return;

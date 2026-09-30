@@ -190,6 +190,37 @@ describe('useAddonPlayerColumns', () => {
     await waitFor(() => expect(result.current).toHaveLength(3));
   });
 
+  it('does not fetch, and keeps showing the last value, when the roster is momentarily empty', async () => {
+    // Real incident: useServerStatus replaces its whole map on every 15s
+    // poll rather than merging it, so an instance briefly missing from one
+    // poll response makes `players` empty for a render or two. Without this
+    // guard, that blip sends steam_ids='', every provider answers with
+    // `configured: true, data: {}` (addons/README.md contract), and the
+    // hook would blank out an already-shown value for a poll cycle.
+    listAddons.mockResolvedValue([RATING_ADDON]);
+    addonRequest.mockResolvedValue({
+      data: { '76561197993968023': { display: '2181' } },
+      configured: true,
+    });
+
+    const { result, rerender } = renderHook(
+      ({ roster }) => useAddonPlayerColumns(true, 1, roster),
+      { wrapper, initialProps: { roster: players } },
+    );
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    expect(result.current[0].data['76561197993968023'].display).toBe('2181');
+
+    const callsBeforeBlip = addonRequest.mock.calls.length;
+    act(() => rerender({ roster: [] }));
+
+    // No roster -> no request at all, and the value from the last good
+    // fetch is still there instead of being replaced with a dash.
+    expect(addonRequest.mock.calls.length).toBe(callsBeforeBlip);
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0].data['76561197993968023'].display).toBe('2181');
+  });
+
   it('passes steam_ids as a sorted, deduplicated comma-joined string', async () => {
     listAddons.mockResolvedValue([RATING_ADDON]);
     addonRequest.mockResolvedValue({ data: {}, configured: true });
