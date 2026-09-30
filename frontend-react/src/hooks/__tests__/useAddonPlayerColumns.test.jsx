@@ -202,8 +202,16 @@ describe('useAddonPlayerColumns', () => {
     );
 
     await waitFor(() => expect(addonRequest).toHaveBeenCalled());
+    // raw: true matters here -- this route's body carries `configured`
+    // alongside `data`, not nested under it. addonRequest's default unwrap
+    // (services/addons.test.js) strips to response.data.data, which would
+    // silently drop `configured` and leave `data` undefined: every column
+    // would read as "configured" (undefined !== false) with an empty cell
+    // regardless of what the source actually reported -- the exact bug a
+    // live operator hit (qlstats returning a real rating, every cell still
+    // showing a dash).
     expect(addonRequest).toHaveBeenCalledWith(
-      'player-ranks', 'GET', 'instances/1/ranks', { params: { steam_ids: '1,2' } },
+      'player-ranks', 'GET', 'instances/1/ranks', { params: { steam_ids: '1,2' }, raw: true },
     );
   });
 });

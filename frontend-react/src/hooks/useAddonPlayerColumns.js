@@ -101,8 +101,12 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
         });
         if (!resolved) return;
         try {
+          // raw: true -- this route's body carries `configured` alongside
+          // `data`, not nested under it (addons/README.md's
+          // live_status_columns contract); the default unwrap would drop
+          // `configured` entirely.
           const result = await addonRequest(col.addon.id, resolved.method, resolved.path, {
-            params: { steam_ids: idsKey },
+            params: { steam_ids: idsKey }, raw: true,
           });
           if (cancelled || instanceRef.current !== instanceId) return;
           const configured = result?.configured !== false;
