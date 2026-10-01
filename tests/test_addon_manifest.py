@@ -426,3 +426,82 @@ def test_a_live_status_column_route_may_not_carry_a_query_string():
         'live_status_columns': [_column(route='GET ranks?scope=all')],
     }))
     assert any('core appends its own' in e for e in errors), errors
+
+
+# ---- control/whitespace characters hide a dot segment from the parser ----
+
+@pytest.mark.parametrize('path', ['.\t./.\t./hosts', '..\r/hosts', '..\n/hosts', '.. /hosts'])
+def test_control_characters_in_a_route_are_refused(path):
+    """A URL parser strips tabs/CR/LF/space before looking at dot segments,
+    so ".\\t." reaches it as "..": reject the raw characters instead of
+    trying to out-guess every parser's idea of whitespace."""
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form', 'load': f'GET {path}'}},
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+@pytest.mark.parametrize('icon_url', ['.\t./.\t./x.svg', 'a\r/../b.svg'])
+def test_control_characters_in_an_icon_url_are_refused(icon_url):
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(icon_url=icon_url)]}))
+    assert any('must stay inside the addon' in e for e in errors), errors
+
+
+# ---- route declarations beyond panel load/submit must validate too ------
+
+def test_status_load_route_may_not_escape_the_addon_prefix():
+    """A managed form's status.load bypassed _validate_relative_route
+    entirely -- only load/submit were ever checked."""
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form', 'status': {'load': 'GET ../../hosts'}}},
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+def test_row_action_route_may_not_escape_the_addon_prefix():
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {
+            'kind': 'table',
+            'load': 'GET files',
+            'row_actions': [{'id': 'dl', 'label': 'Download', 'route': 'GET ../../hosts'}],
+        }},
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+def test_bulk_action_route_may_not_escape_the_addon_prefix():
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {
+            'kind': 'table',
+            'load': 'GET files',
+            'bulk_actions': [{'id': 'dl', 'label': 'Download selected', 'route': 'POST ../../hosts'}],
+        }},
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+def test_row_action_route_may_not_be_absolute():
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {
+            'kind': 'table',
+            'load': 'GET files',
+            'row_actions': [{'id': 'dl', 'label': 'Download', 'route': 'GET /api/hosts'}],
+        }},
+    }))
+    assert any('must be relative to the addon prefix' in e for e in errors), errors
+
+
+def test_status_load_and_actions_still_accept_ordinary_routes():
+    manifest, errors = validate_manifest(_minimal(ui={
+        'panels': {
+            'managed': {'kind': 'form', 'status': {'load': 'GET status'}},
+            'files_table': {
+                'kind': 'table',
+                'load': 'GET files?instance_id={instance_id}',
+                'row_actions': [{'id': 'dl', 'label': 'Download', 'route': 'GET files/download?filename={name}'}],
+                'bulk_actions': [{'id': 'dlb', 'label': 'Download selected', 'route': 'POST files/download-batch'}],
+            },
+        },
+    }))
+    assert errors == []
+    assert manifest['ui']['panels']['files_table']['row_actions'][0]['route'] == 'GET files/download?filename={name}'
