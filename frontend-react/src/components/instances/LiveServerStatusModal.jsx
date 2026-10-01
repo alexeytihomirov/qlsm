@@ -79,8 +79,12 @@ const teamColor = (team) => TEAM_COLORS[normalizeTeam(team)] || 'text-theme-mute
 // boundary's default box cannot live in a table cell.
 
 const AddonColumnIcon = ({ addonId, icon, iconUrl }) => {
-    if (iconUrl) {
-        return <img src={addonAssetUrl(addonId, iconUrl)} alt="" className="h-3 w-3 flex-shrink-0" />;
+    // null when the path tries to leave the addon's ui/ directory. A cell's
+    // icon_url comes from the addon's response, not its manifest, so this is
+    // the only place that check happens for it.
+    const src = iconUrl ? addonAssetUrl(addonId, iconUrl) : null;
+    if (src) {
+        return <img src={src} alt="" className="h-3 w-3 flex-shrink-0" />;
     }
     if (icon) {
         return React.createElement(resolveAddonIcon(icon), { size: 12, className: 'flex-shrink-0' });
