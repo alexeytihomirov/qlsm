@@ -12,6 +12,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import jwt_required
 
 from ui.addons import catalog, get_addon
+from ui.addons.manifest import IMAGE_EXTENSIONS
 from ui.addons.settings import AddonSettingsError
 from ui.models import Host, QLInstance
 
@@ -24,7 +25,9 @@ _SCOPES = ('global', 'host', 'instance')
 # the addon's own icon) -- everything else in the addon directory (backend.py,
 # playbooks, plugin sources) must never be reachable over this route.
 _CODE_EXTENSIONS = ('.js', '.css', '.map')
-_IMAGE_EXTENSIONS = ('.svg', '.png', '.webp')
+# One list, shared with the manifest validator so "what a manifest may declare"
+# and "what this route will serve" cannot drift apart.
+_IMAGE_EXTENSIONS = IMAGE_EXTENSIONS
 
 
 def _resolve(addon_id):

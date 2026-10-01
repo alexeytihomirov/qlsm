@@ -266,4 +266,69 @@ describe('LiveServerStatusModal addon-contributed player columns', () => {
         await waitFor(() => expect(addonRequest).toHaveBeenCalled());
         expect(screen.queryByText('Rating')).not.toBeInTheDocument();
     });
+
+    it('survives a malformed cell instead of taking the drawer down', async () => {
+        // `entries: [null]` used to reach JSX and throw "Cannot read
+        // properties of null (reading 'title')", which unmounted the whole
+        // Live Status drawer -- addon-driven content renders inside a
+        // component core owns here, so a bad payload must stay a bad cell.
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            configured: true,
+            data: {
+                '76561197993968023': { entries: [null, { display: '1357' }] },
+                '76561197960287930': 'not an object at all',
+            },
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [
+                            { name: 'Player1', steam: '76561197993968023', team: 'free' },
+                            { name: 'Player2', steam: '76561197960287930', team: 'free' },
+                        ],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('1357')).toBeInTheDocument();
+        // the table as a whole is still there, with both rows
+        expect(screen.getByText('Player1')).toBeInTheDocument();
+        expect(screen.getByText('Player2')).toBeInTheDocument();
+    });
+
+    it('looks a player up under the same key the hook asked about', async () => {
+        // The hook skips an empty `steam` and falls through to `steamid`; the
+        // table used to do the same with `||` but the hook used `??`, so a
+        // player with steam: '' was requested under no key and read under
+        // another, and the cell stayed a dash forever.
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            data: { '76561197993968023': { display: '2181' } },
+            configured: true,
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '', steamid: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('2181')).toBeInTheDocument();
+    });
 });

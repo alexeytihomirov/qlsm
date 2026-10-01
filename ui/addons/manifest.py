@@ -35,6 +35,12 @@ CURRENT_UI_API = 4
 LIVE_STATUS_COLUMN_ALIGNS = ('left', 'right')
 LIVE_STATUS_COLUMN_LABEL_MAX = 24
 
+# Extensions ui/routes/addon_routes.py is willing to serve as an image. Checked
+# here too so a manifest pointing `icon_url` at something the route refuses
+# (`backend.py`, a `.gif`) is an install-time error with a reason, rather than
+# a broken image the operator has to open devtools to explain.
+IMAGE_EXTENSIONS = ('.svg', '.png', '.webp')
+
 
 class ManifestError(ValueError):
     """Only raised by parse_manifest_strict(); the normal path collects errors."""
@@ -43,6 +49,20 @@ class ManifestError(ValueError):
 def _err(errors, msg):
     errors.append(msg)
     return errors
+
+
+def _escapes_addon_dir(path):
+    """True when a manifest-declared relative path could leave the addon's ui/.
+
+    Both separators are checked, not just `/`: the route that serves these
+    paths resolves them with `os.path.join`, so on Windows `..\\x.svg` is a
+    real traversal attempt that a `/`-only split reads as one harmless
+    filename. The route re-checks the resolved path anyway -- this is so the
+    manifest is rejected at install time instead of at first request.
+    """
+    if path.startswith('/') or path.startswith('\\'):
+        return True
+    return '..' in path.replace('\\', '/').split('/')
 
 
 def _validate_icon_ref(where, icon, icon_url, errors):
@@ -57,8 +77,10 @@ def _validate_icon_ref(where, icon, icon_url, errors):
     if icon_url is not None:
         if not isinstance(icon_url, str) or not icon_url.strip():
             _err(errors, f'{where}: "icon_url" must be a non-empty string')
-        elif icon_url.startswith('/') or '..' in icon_url.split('/'):
+        elif _escapes_addon_dir(icon_url):
             _err(errors, f'{where}: "icon_url" must stay inside the addon')
+        elif os.path.splitext(icon_url)[1].lower() not in IMAGE_EXTENSIONS:
+            _err(errors, f'{where}: "icon_url" must be one of {", ".join(IMAGE_EXTENSIONS)}')
     elif icon is not None:
         if not isinstance(icon, str) or not icon.strip():
             _err(errors, f'{where}: "icon" must be a non-empty string')
@@ -148,36 +170,47 @@ def _validate_panel(name, panel, errors):
 
 
 def _validate_live_status_column(item, errors):
+    """Validate one entry; returns its id, or None when there isn't a usable one.
+
+    Returning None rather than a placeholder matters: the caller feeds this
+    into a `set` for the duplicate check, so handing back anything unhashable
+    (which `_err`'s return value is -- it returns the error *list*) turned a
+    malformed entry into a TypeError out of `read_manifest()`, and from there
+    out of `create_app()`, since the registry scan reads manifests during app
+    construction. A bad manifest must stay a validation error.
+    """
     if not isinstance(item, dict):
-        return _err(errors, 'ui.live_status_columns: entry must be an object')
+        _err(errors, 'ui.live_status_columns: entry must be an object')
+        return None
     col_id = item.get('id')
     if not isinstance(col_id, str) or not col_id.strip():
         _err(errors, 'ui.live_status_columns: entry is missing "id"')
-        col_id = '?'
+        col_id = None
+    where = f'ui.live_status_columns.{col_id}' if col_id else 'ui.live_status_columns'
     label = item.get('label')
     if not isinstance(label, str) or not label.strip():
-        _err(errors, f'ui.live_status_columns.{col_id}: "label" is required')
+        _err(errors, f'{where}: "label" is required')
     elif len(label) > LIVE_STATUS_COLUMN_LABEL_MAX:
-        _err(errors, f'ui.live_status_columns.{col_id}: "label" must be at most '
-                      f'{LIVE_STATUS_COLUMN_LABEL_MAX} characters')
+        _err(errors, f'{where}: "label" must be at most '
+                     f'{LIVE_STATUS_COLUMN_LABEL_MAX} characters')
     align = item.get('align', 'left')
     if align not in LIVE_STATUS_COLUMN_ALIGNS:
-        _err(errors, f'ui.live_status_columns.{col_id}: "align" must be one of '
-                      f'{", ".join(LIVE_STATUS_COLUMN_ALIGNS)}')
-    _validate_icon_ref(f'ui.live_status_columns.{col_id}', item.get('icon'), item.get('icon_url'), errors)
+        _err(errors, f'{where}: "align" must be one of '
+                     f'{", ".join(LIVE_STATUS_COLUMN_ALIGNS)}')
+    _validate_icon_ref(where, item.get('icon'), item.get('icon_url'), errors)
     route = item.get('route')
     if not isinstance(route, str) or not route.strip():
-        _err(errors, f'ui.live_status_columns.{col_id}: "route" is required')
+        _err(errors, f'{where}: "route" is required')
     else:
         parts = route.split(' ', 1)
         method, path = (parts[0], parts[1]) if len(parts) == 2 else ('GET', parts[0])
         if method.upper() != 'GET':
-            _err(errors, f'ui.live_status_columns.{col_id}: "route" must be a GET route')
+            _err(errors, f'{where}: "route" must be a GET route')
         path = path.strip()
         # Same rule as a panel route: relative to the addon's own prefix, so
         # a column cannot be pointed at a core endpoint.
         if path.startswith('/api/') or path.startswith('http://') or path.startswith('https://'):
-            _err(errors, f'ui.live_status_columns.{col_id}: "route" must be relative to the addon prefix, not absolute')
+            _err(errors, f'{where}: "route" must be relative to the addon prefix, not absolute')
     return col_id
 
 
@@ -185,10 +218,16 @@ def _validate_live_status_columns(entries, errors):
     if entries is None:
         return
     if not isinstance(entries, list):
-        return _err(errors, '"ui.live_status_columns" must be a list')
+        _err(errors, '"ui.live_status_columns" must be a list')
+        return
     seen = set()
     for item in entries:
         col_id = _validate_live_status_column(item, errors)
+        # A missing id is already reported; skipping it here keeps the
+        # duplicate check from adding a second, confusing error about an
+        # id that does not exist.
+        if col_id is None:
+            continue
         if col_id in seen:
             _err(errors, f'ui.live_status_columns: duplicate column id "{col_id}"')
         seen.add(col_id)
@@ -233,7 +272,7 @@ def _validate_ui(ui, errors):
                 # A component is served from the addon's own ui/ directory;
                 # anything escaping it is a path-traversal attempt.
                 comp = item['component']
-                if comp.startswith('/') or '..' in comp.split('/'):
+                if _escapes_addon_dir(comp):
                     _err(errors, f'ui.{mount}: component path "{comp}" must stay inside the addon')
             renders = item.get('renders')
             if renders is not None and renders not in RENDER_MODES:

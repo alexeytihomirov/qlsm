@@ -294,5 +294,46 @@ def test_addon_level_icon_and_icon_url_are_mutually_exclusive():
     assert any('mutually exclusive' in e for e in errors)
 
 
-def test_current_ui_api_is_4():
-    assert CURRENT_UI_API == 4
+def test_live_status_columns_must_be_a_list():
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': {'id': 'rating'}}))
+    assert any('must be a list' in e for e in errors)
+
+
+@pytest.mark.parametrize('entry', ['rating', 42, None, ['rating']])
+def test_live_status_column_entry_must_be_an_object(entry):
+    """A non-object entry used to raise TypeError out of validate_manifest()
+    (the duplicate-id check fed it an unhashable value), and since the registry
+    reads manifests inside create_app(), that took qlsm's startup down over one
+    malformed third-party addon."""
+    manifest, errors = validate_manifest(_minimal(ui={'live_status_columns': [entry]}))
+    assert any('entry must be an object' in e for e in errors)
+    # and exactly one error: no bogus duplicate-id noise on top of it
+    assert not any('duplicate column id' in e for e in errors)
+
+
+def test_live_status_columns_missing_ids_do_not_report_a_duplicate():
+    _, errors = validate_manifest(_minimal(ui={
+        'live_status_columns': [_column(id=''), _column(id='')],
+    }))
+    assert not any('duplicate column id' in e for e in errors)
+
+
+@pytest.mark.parametrize('icon_url', [r'..\backend.py', r'\etc\passwd', r'a\..\..\b.svg'])
+def test_icon_url_backslash_traversal_is_refused(icon_url):
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(icon_url=icon_url)]}))
+    assert any('must stay inside the addon' in e for e in errors)
+
+
+@pytest.mark.parametrize('icon_url', ['backend.py', 'logo.gif', 'logo'])
+def test_icon_url_must_be_a_servable_image(icon_url):
+    """The asset route only serves .svg/.png/.webp, so anything else is a
+    broken image the operator cannot explain -- reject it at install time."""
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(icon_url=icon_url)]}))
+    assert any('"icon_url" must be one of' in e for e in errors)
+
+
+def test_component_backslash_traversal_is_refused():
+    _, errors = validate_manifest(_minimal(ui={
+        'page': {'id': 'p', 'component': r'..\..\backend.py'},
+    }))
+    assert any('must stay inside the addon' in e for e in errors)

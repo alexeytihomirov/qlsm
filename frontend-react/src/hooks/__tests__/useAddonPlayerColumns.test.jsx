@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/addons', async () => {
   const actual = await vi.importActual('../../services/addons');
@@ -10,7 +10,7 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ isAuthenticated
 
 import { listAddons, addonRequest } from '../../services/addons';
 import { AddonsProvider } from '../../contexts/AddonsContext';
-import { useAddonPlayerColumns } from '../useAddonPlayerColumns';
+import { useAddonPlayerColumns, playerSteamId, normalizeCell } from '../useAddonPlayerColumns';
 
 const RATING_ADDON = {
   id: 'player-ranks', name: 'Player Ranks', version: '1.0.0',
@@ -26,8 +26,18 @@ const wrapper = ({ children }) => <AddonsProvider>{children}</AddonsProvider>;
 
 const players = [{ steam: '76561197993968023' }, { steam: '76561197960287930' }];
 
+// Matches the hook's own constants; the debounce/interval assertions below
+// drive them through fake timers rather than waiting in real time.
+const POLL_INTERVAL_MS = 30000;
+const ROSTER_DEBOUNCE_MS = 3000;
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('useAddonPlayerColumns', () => {
@@ -244,5 +254,114 @@ describe('useAddonPlayerColumns', () => {
     expect(addonRequest).toHaveBeenCalledWith(
       'player-ranks', 'GET', 'instances/1/ranks', { params: { steam_ids: '1,2' }, raw: true },
     );
+  });
+
+  it('keeps the column and its last values when a poll fails transiently', async () => {
+    // A 500/timeout is not the source saying "nothing to report": marking it
+    // unconfigured pulled the whole column -- header included -- out of the
+    // table for a full 30s poll interval on a single hiccup, which is exactly
+    // what the empty-roster guard above exists to avoid.
+    listAddons.mockResolvedValue([RATING_ADDON]);
+    addonRequest.mockResolvedValue({
+      data: { '76561197993968023': { display: '2181' } },
+      configured: true,
+    });
+
+    const { result, rerender } = renderHook(
+      ({ roster }) => useAddonPlayerColumns(true, 1, roster),
+      { wrapper, initialProps: { roster: players } },
+    );
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+
+    const boom = new Error('gateway timeout');
+    boom.response = { status: 500 };
+    addonRequest.mockRejectedValue(boom);
+    act(() => rerender({ roster: [...players, { steam: '76561197000000001' }] }));
+    await act(() => vi.advanceTimersByTimeAsync(ROSTER_DEBOUNCE_MS + 10));
+
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0].data['76561197993968023'].display).toBe('2181');
+  });
+
+  it('drops the column on a 404 and stops asking', async () => {
+    listAddons.mockResolvedValue([RATING_ADDON]);
+    const gone = new Error('not found');
+    gone.response = { status: 404 };
+    addonRequest.mockRejectedValue(gone);
+
+    const { result } = renderHook(() => useAddonPlayerColumns(true, 1, players), { wrapper });
+
+    await waitFor(() => expect(addonRequest).toHaveBeenCalledTimes(1));
+    expect(result.current).toEqual([]);
+
+    await act(() => vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 10));
+    expect(addonRequest).toHaveBeenCalledTimes(1);   // latched, not re-asked
+  });
+
+  it('coalesces roster churn into one fetch and does not restart the interval', async () => {
+    listAddons.mockResolvedValue([RATING_ADDON]);
+    addonRequest.mockResolvedValue({ data: {}, configured: true });
+
+    const { rerender } = renderHook(
+      ({ roster }) => useAddonPlayerColumns(true, 1, roster),
+      { wrapper, initialProps: { roster: players } },
+    );
+
+    await waitFor(() => expect(addonRequest).toHaveBeenCalledTimes(1));
+
+    // Four joins inside the debounce window -> one extra fetch, not four.
+    for (let i = 0; i < 4; i += 1) {
+      act(() => rerender({ roster: [...players, ...Array.from({ length: i + 1 }, (_, n) => ({ steam: `900${n}` }))] }));
+      await act(() => vi.advanceTimersByTimeAsync(ROSTER_DEBOUNCE_MS / 4));
+    }
+    await act(() => vi.advanceTimersByTimeAsync(ROSTER_DEBOUNCE_MS + 10));
+    expect(addonRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('normalizes a malformed cell instead of handing it to the renderer', async () => {
+    // entries: [null] used to reach JSX and crash the Live Status drawer with
+    // "Cannot read properties of null (reading 'title')".
+    listAddons.mockResolvedValue([RATING_ADDON]);
+    addonRequest.mockResolvedValue({
+      configured: true,
+      data: {
+        '76561197993968023': { entries: [null, 'nope', { display: '1357', icon_url: 'a.svg' }] },
+        '76561197960287930': 'not an object',
+      },
+    });
+
+    const { result } = renderHook(() => useAddonPlayerColumns(true, 1, players), { wrapper });
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    const data = result.current[0].data;
+    expect(data['76561197993968023'].entries).toEqual([
+      { display: '1357', title: '', icon: null, iconUrl: 'a.svg' },
+    ]);
+    expect(data['76561197960287930']).toBeUndefined();
+  });
+});
+
+describe('playerSteamId', () => {
+  it('skips an empty value and falls through to the next key', () => {
+    // The hook and the players table must agree exactly: when they did not,
+    // a player with steam: '' was asked about under no key at all and looked
+    // up under steamid, so the cell stayed empty forever.
+    expect(playerSteamId({ steam: '', steamid: '765' })).toBe('765');
+    expect(playerSteamId({ steam: '  ', steam_id: 765 })).toBe('765');
+    expect(playerSteamId({})).toBeNull();
+    expect(playerSteamId(null)).toBeNull();
+  });
+});
+
+describe('normalizeCell', () => {
+  it('reduces a cell to renderable text and drops unusable entries', () => {
+    expect(normalizeCell(null)).toBeNull();
+    expect(normalizeCell('1802')).toBeNull();
+    expect(normalizeCell({ display: 1802 })).toEqual({ display: '1802', title: '', entries: null });
+    expect(normalizeCell({ entries: [] })).toEqual({ display: '', title: '', entries: null });
+    expect(normalizeCell({ entries: [{ display: 'a', icon: 'gauge' }] })).toEqual({
+      display: '', title: '', entries: [{ display: 'a', title: '', icon: 'gauge', iconUrl: null }],
+    });
   });
 });

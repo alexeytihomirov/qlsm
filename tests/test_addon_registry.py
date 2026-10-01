@@ -205,6 +205,44 @@ def test_addon_declaring_a_future_ui_api_loads_but_is_not_mountable(addon_app):
     assert addon.mountable_ui is False   # components withheld
 
 
+def test_addon_declaring_an_older_ui_api_still_mounts(addon_app):
+    """The bundled examples all track CURRENT_UI_API, so nothing else in the
+    tree proves an addon written against an older contract keeps working."""
+    build, packages, _ = addon_app
+    write_addon(packages, 'from-the-past',
+                manifest={'id': 'from-the-past', 'version': '1.0.0', 'ui_api': 1})
+    app = build()
+    addon = registry.get_addon('from-the-past', app)
+    assert addon.loaded is True
+    assert addon.mountable_ui is True
+
+
+def test_a_validator_crash_is_contained_instead_of_killing_startup(addon_app, monkeypatch):
+    """read_manifest() is contracted never to raise. If a bug ever breaks that
+    contract, the scan runs inside create_app(), so without this guard one
+    malformed third-party addon stops qlsm from starting at all."""
+    build, packages, _ = addon_app
+    write_addon(packages, 'exploding-manifest')
+    write_addon(packages, 'innocent-addon')
+
+    real = registry.read_manifest
+
+    def _boom(root):
+        if root.endswith('exploding-manifest'):
+            raise TypeError('unhashable type: something')
+        return real(root)
+
+    monkeypatch.setattr(registry, 'read_manifest', _boom)
+
+    app = build()
+    broken = registry.get_addon('exploding-manifest', app)
+    assert broken is not None
+    assert broken.loaded is False
+    assert any('manifest could not be read' in e for e in broken.errors)
+    # the rest of the catalog is unaffected
+    assert registry.get_addon('innocent-addon', app).loaded is True
+
+
 # ---- precedence -------------------------------------------------------
 
 def test_installed_copy_overrides_the_bundled_one(addon_app):

@@ -168,10 +168,16 @@ to and adding one felt like the wrong tradeoff for a single column.
 - `route` -- required, `GET` only, relative to the addon's own prefix like
   any panel route; `{instance_id}` is substituted by core.
 
-Core calls `GET /api/addons/<id>/<route>?steam_ids=a,b,c` (deduplicated,
-capped, comma-joined) and expects
+Core calls `GET /api/addons/<id>/<route>?steam_ids=a,b,c` (every connected
+player, deduplicated, sorted, comma-joined) and expects
 `{"data": {"<steam_id>": {"display": "1802", "title": "optional tooltip"}}, "configured": true}`.
 `display` is rendered as-is, never parsed.
+
+Polled every 30s while the drawer is open, deliberately not on core's own
+15s status tick. A roster change also triggers a fetch, but only once the
+roster has been stable for 3s and without restarting that 30s interval -- on
+a filling server people connect every few seconds, and a round per join would
+turn a slow source into a fast one.
 
 A cell may instead carry `"entries": [{"display": "1357", "title": "...",
 "icon": "...", "icon_url": "..."}, ...]` -- each entry is rendered stacked
@@ -182,12 +188,15 @@ sources) -- `entries` wins over `display`/`title` when both are present.
 `icon`/`icon_url` per entry follow the same rule as the column's own
 `icon`/`icon_url` above.
 
-`configured: false` hides the
+`configured: false` (or a 404) hides the
 column entirely for that instance -- this is the normal state for an
-instance the addon has no opinion about, not an error. Any other failure
-(timeout, non-2xx, malformed body) also just hides the column; the players
-table itself never breaks over this. An addon may declare more columns than
-fit -- e.g. one column per rating source, only some enabled per instance --
+instance the addon has no opinion about, not an error, and core stops asking
+until the drawer is reopened. Any *other* failure (timeout, 500, a backend
+mid-restart) is treated as transient: the column keeps whatever it last
+showed and stays in the table, and the next poll tries again. Core also
+normalizes the payload before rendering, so a malformed body costs at most
+one empty cell -- the players table itself never breaks over this. An addon
+may declare more columns than fit -- e.g. one column per rating source, only some enabled per instance --
 every declared column is still fetched, since whether it ends up configured
 for a given instance is only known after that fetch. At most 3 columns that
 come back `configured: true` are rendered (across every addon that declares

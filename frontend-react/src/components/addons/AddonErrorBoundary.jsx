@@ -10,6 +10,11 @@ import { AlertTriangle } from 'lucide-react';
  * labelled box in the addon's own slot and the rest of qlsm keeps working.
  *
  * A class component because React only supports error boundaries as classes.
+ *
+ * `fallback` replaces the labelled box for slots where it physically does not
+ * fit -- a table cell inside core's own players table, for instance, where a
+ * bordered paragraph would wreck the row. The console.error still fires, so
+ * the addon is still identifiable.
  */
 class AddonErrorBoundary extends React.Component {
   constructor(props) {
@@ -28,6 +33,7 @@ class AddonErrorBoundary extends React.Component {
 
   render() {
     if (!this.state.error) return this.props.children;
+    if (this.props.fallback !== undefined) return this.props.fallback;
     return (
       <div
         className="rounded-lg border p-4 text-sm"

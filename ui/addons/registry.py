@@ -111,7 +111,17 @@ def _scan(app):
                 continue
             if not os.path.isfile(os.path.join(root, MANIFEST_FILENAME)):
                 continue  # not an addon directory at all, not an error
-            manifest, errors = read_manifest(root)
+            try:
+                manifest, errors = read_manifest(root)
+            except Exception as e:
+                # read_manifest() is contracted never to raise -- a bad
+                # manifest is supposed to come back as an error list. It is
+                # called from init_app(), i.e. during create_app(), so a bug
+                # in the validator would otherwise stop qlsm from starting at
+                # all over one malformed third-party addon. Belt and braces.
+                manifest, errors = None, [f'manifest could not be read -- {type(e).__name__}: {e}']
+                log.error('Addon manifest at %s raised during validation: %s\n%s',
+                          root, e, traceback.format_exc())
             addon_id = (manifest or {}).get('id') or entry
             addon = LoadedAddon(addon_id, manifest, root, source)
             addon.errors = list(errors)
