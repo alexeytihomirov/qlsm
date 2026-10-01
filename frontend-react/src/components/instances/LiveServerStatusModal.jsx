@@ -297,7 +297,7 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
                                             </div>
 
                                             {sortedPlayers.length > 0 ? (
-                                                <div className="border border-theme-strong rounded overflow-hidden">
+                                                <div className="border border-theme-strong rounded overflow-x-auto">
                                                     <table className="w-full text-left text-[13px]">
                                                         <thead className="bg-theme-elevated text-[11px] font-mono text-theme-muted uppercase tracking-wider">
                                                             <tr>
