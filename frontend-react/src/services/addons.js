@@ -87,6 +87,7 @@ export const addonRequest = async (addonId, method, path, { params, data, raw } 
  */
 export function isSafeAddonAssetPath(filename) {
   if (typeof filename !== 'string' || !filename.trim()) return false;
+  // eslint-disable-next-line no-control-regex
   if (/[%?#\\\x00-\x20\x7f]/.test(filename)) return false;
   const path = filename.replace(/^\/+/, '');
   if (!path) return false;
