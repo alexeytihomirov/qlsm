@@ -188,15 +188,15 @@ sources) -- `entries` wins over `display`/`title` when both are present.
 `icon`/`icon_url` per entry follow the same rule as the column's own
 `icon`/`icon_url` above.
 
-`configured: false` (or a 404) hides the
-column entirely for that instance -- this is the normal state for an
-instance the addon has no opinion about, not an error, and core stops asking
-until the drawer is reopened. Any *other* failure (timeout, 500, a backend
-mid-restart) is treated as transient: the column keeps whatever it last
-showed and stays in the table, and the next poll tries again. Core also
-normalizes the payload before rendering, so a malformed body costs at most
-one empty cell -- the players table itself never breaks over this. An addon
-may declare more columns than fit -- e.g. one column per rating source, only some enabled per instance --
+`configured: false` (or a 404) hides the column entirely for that instance
+-- this is the normal state for an instance the addon has no opinion about,
+not an error, and core stops asking until the drawer is reopened. Any
+*other* failure (timeout, 500, a backend mid-restart) is treated as
+transient: the column keeps whatever it last showed and stays in the table,
+and the next poll tries again. Core also normalizes the payload before
+rendering, so a malformed body costs at most one empty cell -- the players
+table itself never breaks over this. An addon may declare more columns than
+fit -- e.g. one column per rating source, only some enabled per instance --
 every declared column is still fetched, since whether it ends up configured
 for a given instance is only known after that fetch. At most 3 columns that
 come back `configured: true` are rendered (across every addon that declares
