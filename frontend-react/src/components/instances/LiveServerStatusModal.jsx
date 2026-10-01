@@ -6,6 +6,7 @@ import { useWorkshopPreview } from '../../hooks/useWorkshopPreview';
 import { useAddonPlayerColumns, playerSteamId } from '../../hooks/useAddonPlayerColumns';
 import { addonAssetUrl } from '../../services/addons';
 import { resolveAddonIcon } from '../addons/addonIcons';
+import { addonCellColorClass } from '../addons/addonCellColors';
 import AddonErrorBoundary from '../addons/AddonErrorBoundary';
 import standardMapPreviews from '../../constants/standardMapPreviews';
 
@@ -115,13 +116,19 @@ const AddonColumnCell = ({ col, steamId }) => {
                 {entries ? (
                     <div className={`flex flex-col gap-0.5 ${col.align === 'right' ? 'items-end' : 'items-start'}`}>
                         {entries.map((entry, idx) => (
-                            <span key={idx} className="inline-flex items-center gap-1" title={entry.title || undefined}>
+                            <span
+                                key={idx}
+                                className={`inline-flex items-center gap-1 ${addonCellColorClass(entry.color)}`}
+                                title={entry.title || undefined}
+                            >
                                 <AddonColumnIcon addonId={col.addonId} icon={entry.icon} iconUrl={entry.iconUrl} />
                                 {entry.display}
                             </span>
                         ))}
                     </div>
-                ) : (cell?.display || '—')}
+                ) : (
+                    <span className={addonCellColorClass(cell?.color)}>{cell?.display || '—'}</span>
+                )}
             </AddonErrorBoundary>
         </td>
     );

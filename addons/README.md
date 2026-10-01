@@ -199,6 +199,13 @@ sources) -- `entries` wins over `display`/`title` when both are present.
 `icon`/`icon_url` per entry follow the same rule as the column's own
 `icon`/`icon_url` above.
 
+A cell, or any one entry, may also carry `"color"`: one of `white`,
+`yellow`, `cyan`, `blue`, `magenta`, `green` (Quake Live's own `^N` colors --
+the first use is a rank tier shown in its in-game color). It is a name from
+that fixed list, not a CSS value: core picks the actual shade, a different one
+per theme so yellow and cyan stay readable on a light background. Anything
+else is ignored and the value renders in the default color.
+
 `configured: false` (or a 404) hides the column entirely for that instance
 -- this is the normal state for an instance the addon has no opinion about,
 not an error, and core stops asking until the drawer is reopened. Any

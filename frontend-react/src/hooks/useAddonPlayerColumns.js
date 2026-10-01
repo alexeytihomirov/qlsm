@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAddonMounts } from '../contexts/AddonsContext';
+import { addonCellColor } from '../components/addons/addonCellColors';
 import { resolveRoute } from '../components/addons/panelRoute';
 import { addonRequest } from '../services/addons';
 
@@ -58,7 +59,7 @@ function asText(value) {
   return value === undefined || value === null ? '' : String(value);
 }
 
-/** One `entries` item, reduced to the four fields the table renders. */
+/** One `entries` item, reduced to the fields the table renders. */
 function normalizeEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
   return {
@@ -66,6 +67,7 @@ function normalizeEntry(entry) {
     title: asText(entry.title),
     icon: typeof entry.icon === 'string' ? entry.icon : null,
     iconUrl: typeof entry.icon_url === 'string' ? entry.icon_url : null,
+    color: addonCellColor(entry.color),
   };
 }
 
@@ -86,6 +88,7 @@ export function normalizeCell(raw) {
   return {
     display: asText(raw.display),
     title: asText(raw.title),
+    color: addonCellColor(raw.color),
     entries: entries && entries.length > 0 ? entries : null,
   };
 }

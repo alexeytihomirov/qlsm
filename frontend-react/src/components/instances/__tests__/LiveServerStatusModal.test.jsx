@@ -245,6 +245,38 @@ describe('LiveServerStatusModal addon-contributed player columns', () => {
         expect(screen.getByText('1387')).toBeInTheDocument();
     });
 
+    it('tints a value with the palette color the addon names, and ignores any other', async () => {
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            data: {
+                '76561197993968023': {
+                    entries: [
+                        { display: 'Gold III', color: 'yellow' },
+                        { display: '1387', color: 'text-red-500' },
+                    ],
+                },
+            },
+            configured: true,
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('Gold III')).toHaveClass('dark:text-[#ffff44]');
+        expect(screen.getByText('1387')).not.toHaveClass('text-red-500');
+    });
+
     it('does not render a column the addon reports as unconfigured', async () => {
         listAddons.mockResolvedValue([RATING_ADDON]);
         addonRequest.mockResolvedValue({ data: {}, configured: false });

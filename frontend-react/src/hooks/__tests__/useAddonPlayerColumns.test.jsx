@@ -336,7 +336,7 @@ describe('useAddonPlayerColumns', () => {
     await waitFor(() => expect(result.current).toHaveLength(1));
     const data = result.current[0].data;
     expect(data['76561197993968023'].entries).toEqual([
-      { display: '1357', title: '', icon: null, iconUrl: 'a.svg' },
+      { display: '1357', title: '', icon: null, iconUrl: 'a.svg', color: null },
     ]);
     expect(data['76561197960287930']).toBeUndefined();
   });
@@ -358,10 +358,22 @@ describe('normalizeCell', () => {
   it('reduces a cell to renderable text and drops unusable entries', () => {
     expect(normalizeCell(null)).toBeNull();
     expect(normalizeCell('1802')).toBeNull();
-    expect(normalizeCell({ display: 1802 })).toEqual({ display: '1802', title: '', entries: null });
-    expect(normalizeCell({ entries: [] })).toEqual({ display: '', title: '', entries: null });
+    expect(normalizeCell({ display: 1802 })).toEqual({ display: '1802', title: '', color: null, entries: null });
+    expect(normalizeCell({ entries: [] })).toEqual({ display: '', title: '', color: null, entries: null });
     expect(normalizeCell({ entries: [{ display: 'a', icon: 'gauge' }] })).toEqual({
-      display: '', title: '', entries: [{ display: 'a', title: '', icon: 'gauge', iconUrl: null }],
+      display: '', title: '', color: null,
+      entries: [{ display: 'a', title: '', icon: 'gauge', iconUrl: null, color: null }],
     });
+  });
+
+  it('keeps a color from the fixed palette and drops anything else', () => {
+    expect(normalizeCell({ display: 'Gold III', color: 'yellow' }).color).toBe('yellow');
+    expect(normalizeCell({ entries: [{ display: 'Gold III', color: 'yellow' }] }).entries[0].color).toBe('yellow');
+    // Not a palette name: a raw CSS value, a class name, a non-string.
+    expect(normalizeCell({ display: 'x', color: '#ff0000' }).color).toBeNull();
+    expect(normalizeCell({ display: 'x', color: 'text-red-500' }).color).toBeNull();
+    expect(normalizeCell({ entries: [{ display: 'x', color: { a: 1 } }] }).entries[0].color).toBeNull();
+    // An Object.prototype key must not pass as a palette name.
+    expect(normalizeCell({ display: 'x', color: 'constructor' }).color).toBeNull();
   });
 });
