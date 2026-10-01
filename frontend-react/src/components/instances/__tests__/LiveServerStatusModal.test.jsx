@@ -331,4 +331,40 @@ describe('LiveServerStatusModal addon-contributed player columns', () => {
 
         expect(await screen.findByText('2181')).toBeInTheDocument();
     });
+
+    it('does not turn an escaping icon_url from the response into a request', async () => {
+        // icon_url inside a cell comes from the addon's own JSON response, so
+        // the manifest validator never sees it. The browser collapses dot
+        // segments, so rendering it unchecked made
+        // <img src="/api/addons/x/ui/../../../hosts/1/x"> a credentialed
+        // same-origin GET on a core endpoint, once per player per poll.
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            configured: true,
+            data: {
+                '76561197993968023': {
+                    entries: [{ display: '1357', icon_url: '../../../hosts/1/x' }],
+                },
+            },
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('1357')).toBeInTheDocument();
+        const addonImages = screen.queryAllByRole('img')
+            .filter((img) => img.getAttribute('src')?.includes('/api/addons/'));
+        expect(addonImages).toEqual([]);
+    });
 });

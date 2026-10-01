@@ -19,7 +19,7 @@ vi.mock('axios', () => ({
   },
 }));
 
-import { addonRequest } from '../addons';
+import { addonRequest, addonAssetUrl, isSafeAddonAssetPath } from '../addons';
 
 describe('addonRequest', () => {
   beforeEach(() => {
@@ -51,5 +51,39 @@ describe('addonRequest', () => {
     const result = await addonRequest('player-ranks', 'GET', 'instances/1/ranks/qlstats', { raw: true });
 
     expect(result).toEqual({ configured: false, data: { '123': { display: '1357' } } });
+  });
+});
+
+describe('addonAssetUrl', () => {
+  it('builds a URL under the addon own ui/ directory', () => {
+    expect(addonAssetUrl('player-ranks', 'logos/qlstats.svg'))
+      .toBe('/api/addons/player-ranks/ui/logos/qlstats.svg');
+    expect(addonAssetUrl('player-ranks', '/logos/qlstats.svg'))
+      .toBe('/api/addons/player-ranks/ui/logos/qlstats.svg');
+  });
+
+  it.each([
+    '../../../hosts/1/x',
+    'a/../../../hosts',
+    '%2e%2e/%2e%2e/hosts',
+    '..%2fx.svg',
+    '..\\x.svg',
+    './x.svg',
+    'a//b.svg',
+    'x.svg?a=1',
+    'x.svg#f',
+    '',
+    '   ',
+    null,
+    undefined,
+    42,
+  ])('refuses a path that could leave the addon: %p', (path) => {
+    // A live_status_columns cell's icon_url comes from the addon's JSON
+    // response, which the manifest validator never sees, so this is the only
+    // check it gets. The browser collapses dot segments, so without it
+    // `../../../hosts/1/x` became a credentialed same-origin GET on a core
+    // endpoint -- once per player, on every poll.
+    expect(isSafeAddonAssetPath(path)).toBe(false);
+    expect(addonAssetUrl('player-ranks', path)).toBeNull();
   });
 });

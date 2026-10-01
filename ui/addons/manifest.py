@@ -51,18 +51,45 @@ def _err(errors, msg):
     return errors
 
 
-def _escapes_addon_dir(path):
-    """True when a manifest-declared relative path could leave the addon's ui/.
+# Characters that have no business in a manifest-declared relative path and
+# that are exactly what turns one into an escape:
+#   %  -- `%2e%2e` and `..%2f` are a `..` segment as far as a URL parser is
+#         concerned, so a `..`-only check does not see them; nothing legitimate
+#         here needs percent-encoding, since `{placeholders}` cover the
+#         variable parts
+#   ?  -- starts a query string, which both detaches the rest of the path from
+#         this check and swallows the `?steam_ids=` core appends
+#   #  -- same, as a fragment
+#   \  -- a path separator on Windows, where these are resolved with
+#         os.path.join, so `..\x` is a real traversal a `/`-only split reads
+#         as one harmless filename
+_UNSAFE_PATH_CHARS = ('%', '?', '#', '\\')
 
-    Both separators are checked, not just `/`: the route that serves these
-    paths resolves them with `os.path.join`, so on Windows `..\\x.svg` is a
-    real traversal attempt that a `/`-only split reads as one harmless
-    filename. The route re-checks the resolved path anyway -- this is so the
-    manifest is rejected at install time instead of at first request.
+
+def _escapes_addon_dir(path):
+    """True when a manifest-declared relative path could leave its own base.
+
+    Used for both halves of the same promise: an `icon_url`/`component` must
+    stay inside the addon's `ui/` directory, and a panel or column `route`
+    must stay under the addon's own `/api/addons/<id>/` prefix. Both are
+    resolved by something that collapses dot segments -- `os.path.join` on
+    the server, the URL parser in the browser -- so `..` has to be rejected
+    here, in every spelling, rather than relied on to fail later.
+
+    The asset route does re-check the resolved path, but a `route` has no
+    such second line: the browser normalizes `/api/addons/x/../../hosts` to
+    `/api/hosts` and sends it with the operator's cookie before any qlsm code
+    sees it.
     """
-    if path.startswith('/') or path.startswith('\\'):
+    candidate = path.replace('\\', '/')
+    if candidate.startswith('/'):
         return True
-    return '..' in path.replace('\\', '/').split('/')
+    if any(ch in path for ch in _UNSAFE_PATH_CHARS):
+        return True
+    # A single trailing slash is fine (some endpoints are declared that way);
+    # an empty segment anywhere else, or any dot segment, is not.
+    segments = candidate[:-1].split('/') if candidate.endswith('/') else candidate.split('/')
+    return any(segment in ('', '.', '..') for segment in segments)
 
 
 def _validate_icon_ref(where, icon, icon_url, errors):
@@ -145,6 +172,43 @@ def _validate_settings(settings, errors):
     return settings
 
 
+def _validate_relative_route(where, path, errors, allow_query=True):
+    """A panel/column route must stay under the addon's own API prefix.
+
+    This is the whole of the "an addon cannot point a declarative route at a
+    core endpoint" guarantee: the frontend builds the URL as
+    `/api/addons/<id>/<path>`, and nothing downstream re-checks it. Rejecting
+    only `/api/`-style absolute paths was not enough -- `../../hosts` resolves
+    to `/api/hosts` in the browser, with the operator's cookie attached, and
+    a panel `submit` route carries a verb, so a mutating core call was
+    reachable the same way.
+
+    A panel route may carry a query string (`files?instance_id={instance_id}`
+    is what the bundled example does); only the path part in front of it is
+    subject to the escape rules, since a URL parser does not collapse dot
+    segments inside a query. `allow_query=False` is for the
+    `live_status_columns` route, where core appends its own `?steam_ids=` and
+    a declared `?` would swallow it.
+    """
+    if path.startswith('/') or '://' in path:
+        _err(errors, f'{where}: must be relative to the addon prefix, not absolute')
+        return
+    if '#' in path:
+        # Never reaches the server, and silently truncates whatever follows.
+        _err(errors, f'{where}: must not contain a fragment ("#")')
+        return
+    head, separator, query = path.partition('?')
+    if separator:
+        if not allow_query:
+            _err(errors, f'{where}: must not carry a query string -- core appends its own')
+            return
+        if '?' in query:
+            _err(errors, f'{where}: must not contain more than one "?"')
+            return
+    if _escapes_addon_dir(head):
+        _err(errors, f'{where}: must stay inside the addon prefix')
+
+
 def _validate_panel(name, panel, errors):
     if not isinstance(panel, dict):
         return _err(errors, f'panels.{name}: must be an object')
@@ -161,9 +225,8 @@ def _validate_panel(name, panel, errors):
         # Routes are relative to the addon's own /api/addons/<id>/ prefix.
         # Rejecting absolute paths here is what stops a panel from being
         # pointed at a core endpoint (see spec 5.1).
-        path = route.split(' ', 1)[-1]
-        if path.startswith('/api/') or path.startswith('http://') or path.startswith('https://'):
-            _err(errors, f'panels.{name}.{route_key}: must be relative to the addon prefix, not absolute')
+        path = route.split(' ', 1)[-1].strip()
+        _validate_relative_route(f'panels.{name}.{route_key}', path, errors)
     for field in panel.get('fields') or []:
         _validate_field(field, f'panels.{name}', errors)
     return errors
@@ -206,11 +269,9 @@ def _validate_live_status_column(item, errors):
         method, path = (parts[0], parts[1]) if len(parts) == 2 else ('GET', parts[0])
         if method.upper() != 'GET':
             _err(errors, f'{where}: "route" must be a GET route')
-        path = path.strip()
         # Same rule as a panel route: relative to the addon's own prefix, so
         # a column cannot be pointed at a core endpoint.
-        if path.startswith('/api/') or path.startswith('http://') or path.startswith('https://'):
-            _err(errors, f'{where}: "route" must be relative to the addon prefix, not absolute')
+        _validate_relative_route(f'{where}: "route"', path.strip(), errors, allow_query=False)
     return col_id
 
 

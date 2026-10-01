@@ -337,3 +337,92 @@ def test_component_backslash_traversal_is_refused():
         'page': {'id': 'p', 'component': r'..\..\backend.py'},
     }))
     assert any('must stay inside the addon' in e for e in errors)
+
+# ---- a declarative route may not leave the addon's own API prefix --------
+
+@pytest.mark.parametrize('path', ['../../hosts', 'a/../../../hosts', '%2e%2e/%2e%2e/hosts', r'..\..\hosts', './hosts', 'a//hosts'])
+def test_live_status_column_route_may_not_escape_the_addon_prefix(path):
+    """The frontend builds the URL as /api/addons/<id>/<path> and nothing
+    downstream re-checks it, so `../../hosts` resolves to /api/hosts in the
+    browser with the operator's cookie attached. `%2e%2e` and `..%5c` are the
+    same `..` segment to a URL parser, and `?`/`#` detach the rest of the
+    path (and swallow the ?steam_ids= core appends)."""
+    _, errors = validate_manifest(_minimal(ui={
+        'live_status_columns': [_column(route=f'GET {path}')],
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+@pytest.mark.parametrize('path', ['../../hosts', 'a/../../../hosts', '%2e%2e/%2e%2e/hosts', r'..\..\hosts', './hosts', 'a//hosts'])
+def test_panel_load_route_may_not_escape_the_addon_prefix(path):
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form', 'load': f'GET {path}'}},
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+@pytest.mark.parametrize('path', ['../../hosts', 'a/../../../hosts', '%2e%2e/%2e%2e/hosts', r'..\..\hosts', './hosts', 'a//hosts'])
+def test_panel_submit_route_may_not_escape_the_addon_prefix(path):
+    """submit carries a verb, so the same escape reached mutating core calls."""
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form', 'submit': f'POST {path}'}},
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+@pytest.mark.parametrize('route', [
+    'GET instances/{instance_id}/ranks',
+    'instances/{instance_id}/ranks',
+    'GET items/',
+    'GET a/b/c',
+])
+def test_an_ordinary_relative_route_is_still_accepted(route):
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(route=route)]}))
+    assert errors == []
+
+
+@pytest.mark.parametrize('icon_url', ['%2e%2e/x.svg', '..%2fx.svg', '%2e/x.svg'])
+def test_percent_encoded_traversal_in_icon_url_is_refused(icon_url):
+    """`%2e%2e` is a `..` segment as far as the URL parser is concerned, so a
+    `..`-only check let it through to another addon's ui/ directory."""
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(icon_url=icon_url)]}))
+    assert any('must stay inside the addon' in e for e in errors), errors
+
+
+@pytest.mark.parametrize('component', ['%2e%2e/Panel.js', 'a/../../backend.py', './Panel.js'])
+def test_percent_encoded_traversal_in_a_component_path_is_refused(component):
+    _, errors = validate_manifest(_minimal(ui={'page': {'id': 'p', 'component': component}}))
+    assert any('must stay inside the addon' in e for e in errors), errors
+
+@pytest.mark.parametrize('path', ['hosts#f', 'hosts?a=1#f'])
+def test_a_route_may_not_carry_a_fragment(path):
+    """A fragment never reaches the server and silently truncates the path."""
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form', 'load': f'GET {path}'}},
+    }))
+    assert any('fragment' in e for e in errors), errors
+
+
+def test_a_panel_route_may_carry_a_query_string():
+    """The bundled hello-addon declares GET files?instance_id={instance_id};
+    a URL parser does not collapse dot segments inside a query, so only the
+    path in front of the "?" is subject to the escape rules."""
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'table', 'load': 'GET files?instance_id={instance_id}'}},
+    }))
+    assert errors == []
+
+
+def test_a_query_string_does_not_excuse_an_escaping_path():
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form', 'load': 'GET ../../hosts?a=1'}},
+    }))
+    assert any('must stay inside the addon prefix' in e for e in errors), errors
+
+
+def test_a_live_status_column_route_may_not_carry_a_query_string():
+    """Core appends its own ?steam_ids=, so a declared "?" swallows it."""
+    _, errors = validate_manifest(_minimal(ui={
+        'live_status_columns': [_column(route='GET ranks?scope=all')],
+    }))
+    assert any('core appends its own' in e for e in errors), errors

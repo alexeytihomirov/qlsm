@@ -65,11 +65,37 @@ export const addonRequest = async (addonId, method, path, { params, data, raw } 
   return raw ? response.data : response.data?.data;
 };
 
-// URL for a tier-2 component bundle. Not fetched through axios: the browser's
-// dynamic import() needs a real URL, and the JWT travels as an HttpOnly cookie
-// on the same origin anyway.
-export const addonAssetUrl = (addonId, filename) =>
-  `/api/addons/${addonId}/ui/${String(filename).replace(/^\/+/, '')}`;
+/**
+ * True when an asset path stays inside the addon's own `ui/` directory.
+ *
+ * Mirrors the backend's `_escapes_addon_dir` (ui/addons/manifest.py), and is
+ * needed separately from it because not every path that reaches
+ * `addonAssetUrl` comes from a manifest: a `live_status_columns` cell's
+ * `icon_url` arrives in the addon's own JSON *response*, which the manifest
+ * validator never sees. Stripping leading slashes was not enough -- the
+ * browser collapses dot segments, so `../../../hosts/1/x` from a response
+ * became a credentialed same-origin GET on a core endpoint, once per player
+ * on every poll.
+ *
+ * `%` is rejected outright: `%2e%2e` and `..%2f` are a `..` segment to a URL
+ * parser, and no legitimate asset filename here needs percent-encoding.
+ */
+export function isSafeAddonAssetPath(filename) {
+  if (typeof filename !== 'string' || !filename.trim()) return false;
+  if (/[%?#\\]/.test(filename)) return false;
+  const path = filename.replace(/^\/+/, '');
+  if (!path) return false;
+  return !path.split('/').some((segment) => segment === '' || segment === '.' || segment === '..');
+}
+
+// URL for a tier-2 component bundle or a manifest/response-declared icon, or
+// null when the path is not one the addon is allowed to ask for. Not fetched
+// through axios: the browser's dynamic import() needs a real URL, and the JWT
+// travels as an HttpOnly cookie on the same origin anyway.
+export const addonAssetUrl = (addonId, filename) => {
+  if (!isSafeAddonAssetPath(filename)) return null;
+  return `/api/addons/${addonId}/ui/${String(filename).replace(/^\/+/, '')}`;
+};
 
 /** Filename from a Content-Disposition header, or null. */
 export function filenameFromDisposition(disposition) {
