@@ -37,6 +37,10 @@ function AddonComponentHost({ addon, entry, scope, scopeId, modal }) {
     publishAddonRuntime();
     ensureAddonCss(addon.id, entry.component);
     const url = addonAssetUrl(addon.id, entry.component);
+    if (!url) {
+      setError('The component path must stay inside the addon’s ui/ directory.');
+      return undefined;
+    }
 
     import(/* @vite-ignore */ url)
       .then((module) => {

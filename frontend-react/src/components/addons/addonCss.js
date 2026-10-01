@@ -23,12 +23,14 @@ export function ensureAddonCss(addonId, component) {
   if (typeof document === 'undefined') return;
   const cssPath = addonCssPathFor(component);
   if (!cssPath) return;
+  const href = addonAssetUrl(addonId, cssPath);
+  if (!href) return;   // path escapes the addon's ui/ directory
   const linkId = `qlsm-addon-css--${addonId}--${cssPath}`;
   if (document.getElementById(linkId)) return;
   const link = document.createElement('link');
   link.id = linkId;
   link.rel = 'stylesheet';
-  link.href = addonAssetUrl(addonId, cssPath);
+  link.href = href;
   // No CSS next to this component is the common case, not an error -- drop
   // the tag quietly instead of leaving a permanently-failed request in head.
   link.onerror = () => link.remove();

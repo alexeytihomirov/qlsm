@@ -140,8 +140,17 @@ keep the field name its API already uses.
 
 Mount points: `host_menu`, `instance_menu`, `instance_tabs`,
 `settings_section`, `page`. Routes in a panel are always relative to the
-addon's own `/api/addons/<id>/` prefix; absolute paths are rejected at
-manifest validation, so a panel cannot point at a core endpoint.
+addon's own `/api/addons/<id>/` prefix, so a panel cannot point at a core
+endpoint. Manifest validation enforces that, and rejects more than an
+absolute path: a declared route may not contain a `.` or `..` segment, an
+empty segment, a `%`, a `#`, or a backslash. The frontend builds the URL by
+string concatenation and the browser then collapses dot segments, so
+`../../hosts` would resolve to `/api/hosts` with the operator's cookie
+attached, and `%2e%2e` is the same `..` segment to a URL parser.
+`{placeholders}` cover every variable part, so nothing legitimate here needs
+percent-encoding. A query string is allowed (`files?instance_id={instance_id}`
+-- see `_examples/hello-addon`); only the path in front of the `?` is subject
+to those rules.
 
 ### `live_status_columns` -- a column in core's own players table
 
@@ -165,8 +174,10 @@ to and adding one felt like the wrong tradeoff for a single column.
 - `icon` / `icon_url` -- optional, mutually exclusive. `icon` is a name from
   the frontend's fixed icon list; `icon_url` is a path inside the addon's own
   `ui/` directory (see "Icons and other images" below).
-- `route` -- required, `GET` only, relative to the addon's own prefix like
-  any panel route; `{instance_id}` is substituted by core.
+- `route` -- required, `GET` only, relative to the addon's own prefix and
+  subject to the same escape rules as any panel route (see above);
+  `{instance_id}` is substituted by core. Unlike a panel route it may not
+  carry a query string of its own -- core appends `?steam_ids=`.
 
 Core calls `GET /api/addons/<id>/<route>?steam_ids=a,b,c` (every connected
 player, deduplicated, sorted, comma-joined) and expects
@@ -288,12 +299,18 @@ A select field option, a `live_status_columns` entry, and the addon's own
 ```
 
 `icon_url` is a path relative to the addon's own `ui/` directory, served
-through the same `/api/addons/<id>/ui/<path>` route as a tier-2 component --
+through the same `/api/addons/<id>/ui/<path>` route as a tier-2 component;
 `.svg`, `.png` and `.webp` are allowed there alongside `.js`/`.css`/`.map`. An
 `.svg` response carries `X-Content-Type-Options: nosniff` and a restrictive
 `Content-Security-Policy`, since it is served from the same origin as the
 rest of the app and can otherwise carry a script. `icon` and `icon_url` are
 mutually exclusive on anything that accepts either.
+
+The same escape rules as a route apply to the path, and the frontend
+re-checks them whenever the value arrives in a response rather than in a
+manifest -- a `live_status_columns` cell's `icon_url` does, and the manifest
+validator never sees it. An escaping path renders no image at all, rather
+than becoming a credentialed same-origin request to wherever it points.
 
 ## Cross-addon UI contribution (addon-owned hooks)
 
