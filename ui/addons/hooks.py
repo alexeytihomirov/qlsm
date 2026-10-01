@@ -77,6 +77,14 @@ HOOK_SCOPES = {
     # not the consumer's -- the consumer is a hand-built React component, not
     # a declarative panel, so nothing resolves that prefix for it.
     'demo_management.match_groups': 'global',
+    # Addon-owned extension point, dispatched by the player-ranks addon
+    # rather than by core, same "global" gate as the demo_management ones
+    # above. player-ranks contributes a `live_status_columns` entry of its
+    # own (its built-in rank sources); this hook lets a separately
+    # distributed addon add a further source (id, label, factory) without
+    # touching player-ranks' code. Contributions are merged into player-ranks'
+    # own provider registry, after its built-in ones, deduped by `id`.
+    'player_ranks.providers': 'global',
 }
 
 # Deliberately NOT declared until something needs them, because a hook nobody
@@ -95,6 +103,7 @@ LIST_HOOKS = frozenset({
     'backup.export',
     'demo_management.file_kinds',
     'demo_management.match_groups',
+    'player_ranks.providers',
 })
 
 
