@@ -349,13 +349,35 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
                                                                     </td>
                                                                     {playerColumns.map((col) => {
                                                                         const cell = col.data[steamId];
+                                                                        const entries = Array.isArray(cell?.entries) ? cell.entries : null;
                                                                         return (
                                                                             <td
                                                                                 key={col.key}
-                                                                                className={`px-3 py-2 font-mono text-theme-secondary ${col.align === 'right' ? 'text-right' : 'text-left'}`}
-                                                                                title={cell?.title || undefined}
+                                                                                className={`px-3 py-2 font-mono text-theme-secondary align-top ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                                                                                title={entries ? undefined : (cell?.title || undefined)}
                                                                             >
-                                                                                {cell?.display ?? '—'}
+                                                                                {entries && entries.length > 0 ? (
+                                                                                    <div className={`flex flex-col gap-0.5 ${col.align === 'right' ? 'items-end' : 'items-start'}`}>
+                                                                                        {entries.map((entry, idx) => (
+                                                                                            <span
+                                                                                                key={idx}
+                                                                                                className="inline-flex items-center gap-1"
+                                                                                                title={entry.title || undefined}
+                                                                                            >
+                                                                                                {entry.icon_url ? (
+                                                                                                    <img
+                                                                                                        src={addonAssetUrl(col.addonId, entry.icon_url)}
+                                                                                                        alt=""
+                                                                                                        className="h-3 w-3 flex-shrink-0"
+                                                                                                    />
+                                                                                                ) : entry.icon ? (
+                                                                                                    React.createElement(resolveAddonIcon(entry.icon), { size: 12, className: 'flex-shrink-0' })
+                                                                                                ) : null}
+                                                                                                {entry.display}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                ) : (cell?.display ?? '—')}
                                                                             </td>
                                                                         );
                                                                     })}
