@@ -17,6 +17,11 @@ describe('parseRoute', () => {
     expect(parseRoute('put hosts/1').method).toBe('PUT');
   });
 
+  it('splits on plain spaces only, as the manifest validator does', () => {
+    expect(parseRoute('DELETE\u00a0../other')).toEqual({ method: 'GET', path: 'DELETE\u00a0../other' });
+    expect(parseRoute('POST  items')).toEqual({ method: 'POST', path: 'items' });
+  });
+
   it('returns null for an empty route', () => {
     expect(parseRoute('')).toBeNull();
     expect(parseRoute(undefined)).toBeNull();

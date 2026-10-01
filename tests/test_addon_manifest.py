@@ -438,7 +438,8 @@ def test_control_characters_in_a_route_are_refused(path):
     _, errors = validate_manifest(_minimal(ui={
         'panels': {'p': {'kind': 'form', 'load': f'GET {path}'}},
     }))
-    assert any('must stay inside the addon prefix' in e for e in errors), errors
+    assert any('must stay inside the addon prefix' in e or 'must not contain whitespace' in e
+               for e in errors), errors
 
 
 @pytest.mark.parametrize('icon_url', ['.\t./.\t./x.svg', 'a\r/../b.svg'])
@@ -505,3 +506,44 @@ def test_status_load_and_actions_still_accept_ordinary_routes():
     }))
     assert errors == []
     assert manifest['ui']['panels']['files_table']['row_actions'][0]['route'] == 'GET files/download?filename={name}'
+
+
+# ---- the verb/path split must agree with the frontend's parseRoute -------
+
+_SPLIT_ESCAPES = [
+    'DELETE ../../hosts/1?_= x',   # NBSP is the frontend's separator, the space hid the path
+    '../../hosts/1?_= x',               # no verb: the whole string is the path
+    'DELETE ../other-addon',
+    'POST ../install',
+    'PUT　../other/state',
+    'DELETE﻿../other-addon',
+    'PUT ../../hosts/1 x',
+]
+
+
+@pytest.mark.parametrize('route', _SPLIT_ESCAPES)
+def test_panel_route_split_matches_the_frontend(route):
+    """The frontend splits `METHOD path` on the verb list, and anything else is
+    a GET path. Validating only the text after the first space let a route
+    whose real path came before it through unchecked."""
+    for panel in (
+        {'kind': 'form', 'load': route},
+        {'kind': 'form', 'submit': route},
+        {'kind': 'form', 'status': {'load': route}},
+        {'kind': 'table', 'row_actions': [{'id': 'a', 'label': 'A', 'route': route}]},
+        {'kind': 'table', 'bulk_actions': [{'id': 'a', 'label': 'A', 'route': route}]},
+    ):
+        _, errors = validate_manifest(_minimal(ui={'panels': {'p': panel}}))
+        assert errors, panel
+
+
+@pytest.mark.parametrize('route', _SPLIT_ESCAPES + ['FOO instances/{instance_id}/ranks'])
+def test_live_status_column_route_split_matches_the_frontend(route):
+    _, errors = validate_manifest(_minimal(ui={'live_status_columns': [_column(route=route)]}))
+    assert errors
+
+
+@pytest.mark.parametrize('route', ['get items', 'POST  items', ' GET items ', 'GET items?q=a b'])
+def test_route_split_still_accepts_what_the_frontend_parses(route):
+    _, errors = validate_manifest(_minimal(ui={'panels': {'p': {'kind': 'form', 'load': route}}}))
+    assert errors == []
