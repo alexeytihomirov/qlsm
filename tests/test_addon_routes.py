@@ -225,7 +225,7 @@ def test_missing_asset_is_404(addon_app, auth):
     assert resp.status_code == 404
 
 
-def test_svg_icon_is_served_with_hardening_headers(addon_app, auth, tmp_path):
+def test_svg_icon_is_served_with_hardening_headers(addon_app, auth):
     packages = addon_app.config['ADDON_PACKAGES_DIR']
     with open(os.path.join(packages, 'sample-addon', 'ui', 'logo.svg'), 'w', encoding='utf-8') as f:
         f.write('<svg></svg>')

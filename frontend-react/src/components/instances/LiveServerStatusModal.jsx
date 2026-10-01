@@ -3,9 +3,10 @@ import { Transition } from '@headlessui/react';
 import { X, Users } from 'lucide-react';
 import QlColorString from '../common/QlColorString';
 import { useWorkshopPreview } from '../../hooks/useWorkshopPreview';
-import { useAddonPlayerColumns } from '../../hooks/useAddonPlayerColumns';
+import { useAddonPlayerColumns, playerSteamId } from '../../hooks/useAddonPlayerColumns';
 import { addonAssetUrl } from '../../services/addons';
 import { resolveAddonIcon } from '../addons/addonIcons';
+import AddonErrorBoundary from '../addons/AddonErrorBoundary';
 import standardMapPreviews from '../../constants/standardMapPreviews';
 
 // Team mapping — minqlx sends string values ('red', 'blue', 'free', 'spectator')
@@ -67,6 +68,60 @@ const teamName = (team) => {
 };
 
 const teamColor = (team) => TEAM_COLORS[normalizeTeam(team)] || 'text-theme-muted';
+
+// --- addon-contributed columns (see addons/README.md live_status_columns) ---
+//
+// The values come from a third-party addon's own endpoint, and this is the one
+// place where addon-driven content renders inside a component core owns rather
+// than in an addon slot. The hook normalizes the payload so nothing malformed
+// reaches JSX; AddonErrorBoundary below is the second line, for anything the
+// normalizer doesn't anticipate -- with a tiny inline fallback, because the
+// boundary's default box cannot live in a table cell.
+
+const AddonColumnIcon = ({ addonId, icon, iconUrl }) => {
+    if (iconUrl) {
+        return <img src={addonAssetUrl(addonId, iconUrl)} alt="" className="h-3 w-3 flex-shrink-0" />;
+    }
+    if (icon) {
+        return React.createElement(resolveAddonIcon(icon), { size: 12, className: 'flex-shrink-0' });
+    }
+    return null;
+};
+
+const AddonColumnHeader = ({ col }) => (
+    <th className={`px-3 py-2 font-medium ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
+        <AddonErrorBoundary addonId={col.addonId} fallback={<span>?</span>}>
+            <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : 'justify-start'}`}>
+                <AddonColumnIcon addonId={col.addonId} icon={col.icon} iconUrl={col.iconUrl} />
+                {col.label}
+            </span>
+        </AddonErrorBoundary>
+    </th>
+);
+
+const AddonColumnCell = ({ col, steamId }) => {
+    const cell = col.data[steamId];
+    const entries = cell?.entries || null;
+    return (
+        <td
+            className={`px-3 py-2 font-mono text-theme-secondary align-top ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+            title={entries ? undefined : (cell?.title || undefined)}
+        >
+            <AddonErrorBoundary addonId={col.addonId} fallback={<span className="text-theme-muted">—</span>}>
+                {entries ? (
+                    <div className={`flex flex-col gap-0.5 ${col.align === 'right' ? 'items-end' : 'items-start'}`}>
+                        {entries.map((entry, idx) => (
+                            <span key={idx} className="inline-flex items-center gap-1" title={entry.title || undefined}>
+                                <AddonColumnIcon addonId={col.addonId} icon={entry.icon} iconUrl={entry.iconUrl} />
+                                {entry.display}
+                            </span>
+                        ))}
+                    </div>
+                ) : (cell?.display || '—')}
+            </AddonErrorBoundary>
+        </td>
+    );
+};
 
 export default function LiveServerStatusModal({ isOpen, onClose, instance, serverStatus }) {
     const panelRef = useRef(null);
@@ -307,29 +362,13 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
                                                                 <th className="px-3 py-2 font-medium text-right">Score</th>
                                                                 <th className="px-3 py-2 font-medium text-right">Ping</th>
                                                                 {playerColumns.map((col) => (
-                                                                    <th
-                                                                        key={col.key}
-                                                                        className={`px-3 py-2 font-medium ${col.align === 'right' ? 'text-right' : 'text-left'}`}
-                                                                    >
-                                                                        <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : 'justify-start'}`}>
-                                                                            {col.iconUrl ? (
-                                                                                <img
-                                                                                    src={addonAssetUrl(col.addonId, col.iconUrl)}
-                                                                                    alt=""
-                                                                                    className="h-3 w-3 flex-shrink-0"
-                                                                                />
-                                                                            ) : col.icon ? (
-                                                                                React.createElement(resolveAddonIcon(col.icon), { size: 12, className: 'flex-shrink-0' })
-                                                                            ) : null}
-                                                                            {col.label}
-                                                                        </span>
-                                                                    </th>
+                                                                    <AddonColumnHeader key={col.key} col={col} />
                                                                 ))}
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-theme border-t border-theme-strong">
                                                             {sortedPlayers.map((p, i) => {
-                                                                const steamId = String(p.steam || p.steamid || p.steam_id || '');
+                                                                const steamId = playerSteamId(p) || '';
                                                                 return (
                                                                 <tr key={i} className="hover:bg-theme-elevated/50 transition-colors">
                                                                     <td className="px-3 py-2 font-medium truncate max-w-[150px]" title={p.name}>
@@ -347,40 +386,9 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
                                                                     <td className="px-3 py-2 font-mono text-theme-secondary text-right">
                                                                         {p.ping ?? '?'}
                                                                     </td>
-                                                                    {playerColumns.map((col) => {
-                                                                        const cell = col.data[steamId];
-                                                                        const entries = Array.isArray(cell?.entries) ? cell.entries : null;
-                                                                        return (
-                                                                            <td
-                                                                                key={col.key}
-                                                                                className={`px-3 py-2 font-mono text-theme-secondary align-top ${col.align === 'right' ? 'text-right' : 'text-left'}`}
-                                                                                title={entries ? undefined : (cell?.title || undefined)}
-                                                                            >
-                                                                                {entries && entries.length > 0 ? (
-                                                                                    <div className={`flex flex-col gap-0.5 ${col.align === 'right' ? 'items-end' : 'items-start'}`}>
-                                                                                        {entries.map((entry, idx) => (
-                                                                                            <span
-                                                                                                key={idx}
-                                                                                                className="inline-flex items-center gap-1"
-                                                                                                title={entry.title || undefined}
-                                                                                            >
-                                                                                                {entry.icon_url ? (
-                                                                                                    <img
-                                                                                                        src={addonAssetUrl(col.addonId, entry.icon_url)}
-                                                                                                        alt=""
-                                                                                                        className="h-3 w-3 flex-shrink-0"
-                                                                                                    />
-                                                                                                ) : entry.icon ? (
-                                                                                                    React.createElement(resolveAddonIcon(entry.icon), { size: 12, className: 'flex-shrink-0' })
-                                                                                                ) : null}
-                                                                                                {entry.display}
-                                                                                            </span>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                ) : (cell?.display ?? '—')}
-                                                                            </td>
-                                                                        );
-                                                                    })}
+                                                                    {playerColumns.map((col) => (
+                                                                        <AddonColumnCell key={col.key} col={col} steamId={steamId} />
+                                                                    ))}
                                                                 </tr>
                                                                 );
                                                             })}

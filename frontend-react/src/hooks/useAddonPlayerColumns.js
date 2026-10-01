@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAddonMounts } from '../contexts/AddonsContext';
 import { resolveRoute } from '../components/addons/panelRoute';
 import { addonRequest } from '../services/addons';
@@ -8,6 +8,14 @@ import { addonRequest } from '../services/addons';
 // the match state, and coupling the two would mean re-fetching ratings on
 // every status tick for no reason.
 const POLL_INTERVAL_MS = 30000;
+
+// A roster change does need a fetch (a player who just connected has no cell
+// yet), but it must not become a second poll channel: on a filling server
+// people connect every few seconds, and firing a round per join would undo
+// the whole point of the slow interval above. So roster changes are coalesced
+// into one fetch once the roster has been stable for this long, and they
+// deliberately do NOT restart the interval.
+const ROSTER_DEBOUNCE_MS = 3000;
 
 // "не более 3 contributing columns" -- past that the narrow players table
 // turns into noise. Extras are dropped with a console warning, not an error:
@@ -22,9 +30,20 @@ const POLL_INTERVAL_MS = 30000;
 // regardless of which ones an operator actually turned on.
 const MAX_COLUMNS = 3;
 
-function playerSteamId(player) {
-  const raw = player?.steam ?? player?.steamid ?? player?.steam_id;
-  return raw === undefined || raw === null ? null : String(raw);
+/** First non-empty steam id on a player record, or null.
+ *
+ * Exported and used by the players table too: the two must agree exactly, or
+ * a player whose `steam` is an empty string gets asked about under one key
+ * and looked up under another, and the cell stays empty forever.
+ */
+export function playerSteamId(player) {
+  for (const key of ['steam', 'steamid', 'steam_id']) {
+    const raw = player?.[key];
+    if (raw === undefined || raw === null) continue;
+    const value = String(raw).trim();
+    if (value) return value;
+  }
+  return null;
 }
 
 /** Sorted, joined steam_id string -- a stable primitive, not an array, so it
@@ -33,6 +52,53 @@ function playerSteamId(player) {
 function steamIdsKey(players) {
   const ids = new Set((players || []).map(playerSteamId).filter(Boolean));
   return Array.from(ids).sort().join(',');
+}
+
+function asText(value) {
+  return value === undefined || value === null ? '' : String(value);
+}
+
+/** One `entries` item, reduced to the four fields the table renders. */
+function normalizeEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  return {
+    display: asText(entry.display),
+    title: asText(entry.title),
+    icon: typeof entry.icon === 'string' ? entry.icon : null,
+    iconUrl: typeof entry.icon_url === 'string' ? entry.icon_url : null,
+  };
+}
+
+/** One player's cell, reduced to a shape the table can render blindly.
+ *
+ * Core does not interpret an addon's values, but it does have to survive
+ * them: the payload is third-party, so `entries: [null]` must not reach JSX
+ * (it used to, and `entry.title` on a null took the whole Live Status drawer
+ * down with a TypeError). Normalizing once here -- rather than guarding at
+ * every read site -- is also what keeps the README's "the players table
+ * itself never breaks over this" true.
+ */
+export function normalizeCell(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const entries = Array.isArray(raw.entries)
+    ? raw.entries.map(normalizeEntry).filter(Boolean)
+    : null;
+  return {
+    display: asText(raw.display),
+    title: asText(raw.title),
+    entries: entries && entries.length > 0 ? entries : null,
+  };
+}
+
+/** `{steam_id: cell}` from a route response, with unusable values dropped. */
+function normalizeData(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const [steamId, value] of Object.entries(raw)) {
+    const cell = normalizeCell(value);
+    if (cell) out[steamId] = cell;
+  }
+  return out;
 }
 
 /**
@@ -56,6 +122,8 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
   columnsRef.current = rawColumns;
 
   const idsKey = useMemo(() => steamIdsKey(players), [players]);
+  const idsRef = useRef(idsKey);
+  idsRef.current = idsKey;
 
   const [state, setState] = useState({});
   // "configured: false"/404 means the source genuinely has nothing to say
@@ -64,10 +132,17 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
   // this; the next poll tries again.
   const stoppedRef = useRef({});
   const instanceRef = useRef(instanceId);
+  const aliveRef = useRef(true);
+  // Which roster the last started round asked about, so the debounced effect
+  // below can tell a real roster change from its own first run.
+  const fetchedIdsRef = useRef(null);
+
+  useEffect(() => () => { aliveRef.current = false; }, []);
 
   useEffect(() => {
     instanceRef.current = instanceId;
     stoppedRef.current = {};
+    fetchedIdsRef.current = null;
     setState({});
   }, [instanceId]);
 
@@ -84,66 +159,87 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
   useEffect(() => {
     if (isOpen && !wasOpenRef.current) {
       stoppedRef.current = {};
+      fetchedIdsRef.current = null;
     }
     wasOpenRef.current = isOpen;
   }, [isOpen]);
 
+  const fetchAll = useCallback(async () => {
+    // An empty roster (nobody connected, or `players` hasn't caught up
+    // with a fresh instance/status poll yet -- serverStatus for this
+    // instance briefly missing from useServerStatus's replace-not-merge
+    // map is a known source of this) is not the same as "the source has
+    // nothing to say about these players". Skip the round entirely rather
+    // than asking with `steam_ids=''`: every provider answers that with
+    // `configured: true, data: {}` (addons/README.md contract), which
+    // would blank out an already-shown value for the span of one poll.
+    const ids = idsRef.current;
+    if (!ids) return;
+    fetchedIdsRef.current = ids;
+    const columns = columnsRef.current;
+    const stillCurrent = () => aliveRef.current && instanceRef.current === instanceId;
+    await Promise.all(columns.map(async (col) => {
+      if (stoppedRef.current[col.key]) return;
+      const resolved = resolveRoute(col.entry.route, {
+        scope: col.scope, scopeId: instanceId, addonId: col.addon.id,
+      });
+      if (!resolved) return;
+      try {
+        // raw: true -- this route's body carries `configured` alongside
+        // `data`, not nested under it (addons/README.md's
+        // live_status_columns contract); the default unwrap would drop
+        // `configured` entirely.
+        const result = await addonRequest(col.addon.id, resolved.method, resolved.path, {
+          params: { steam_ids: ids }, raw: true,
+        });
+        if (!stillCurrent()) return;
+        const configured = result?.configured !== false;
+        if (!configured) stoppedRef.current[col.key] = true;
+        setState((prev) => ({
+          ...prev,
+          [col.key]: { data: normalizeData(result?.data), configured },
+        }));
+      } catch (err) {
+        if (!stillCurrent()) return;
+        if (err?.response?.status === 404) {
+          // 404 is the source saying "not here" -- same meaning as
+          // configured: false, so latch it and drop the column.
+          stoppedRef.current[col.key] = true;
+          setState((prev) => ({ ...prev, [col.key]: { data: {}, configured: false } }));
+          return;
+        }
+        // Any other failure is transient by assumption (timeout, 500, a
+        // restarting backend). Leave the previous round's state alone: the
+        // column keeps its last values and stays in the table, and the next
+        // poll tries again. Marking it unconfigured here used to pull the
+        // whole column -- header included -- out of the table for 30s on a
+        // single hiccup, which is exactly what the empty-roster skip above
+        // exists to avoid.
+      }
+    }));
+  }, [instanceId]);
+
+  // A ref so the interval below is created once per (isOpen, instanceId,
+  // columnsKey) and never restarted by a roster change.
+  const fetchRef = useRef(fetchAll);
+  fetchRef.current = fetchAll;
+
   useEffect(() => {
     if (!isOpen || !instanceId || !columnsKey) return undefined;
-    let cancelled = false;
+    fetchRef.current();
+    const interval = setInterval(() => fetchRef.current(), POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [isOpen, instanceId, columnsKey]);
 
-    const fetchAll = async () => {
-      // An empty roster (nobody connected, or `players` hasn't caught up
-      // with a fresh instance/status poll yet -- serverStatus for this
-      // instance briefly missing from useServerStatus's replace-not-merge
-      // map is a known source of this) is not the same as "the source has
-      // nothing to say about these players". Skip the round entirely rather
-      // than asking with `steam_ids=''`: every provider answers that with
-      // `configured: true, data: {}` (addons/README.md contract), which
-      // would blank out an already-shown value for the span of one poll.
-      if (!idsKey) return;
-      const columns = columnsRef.current;
-      await Promise.all(columns.map(async (col) => {
-        if (stoppedRef.current[col.key]) return;
-        const resolved = resolveRoute(col.entry.route, {
-          scope: col.scope, scopeId: instanceId, addonId: col.addon.id,
-        });
-        if (!resolved) return;
-        try {
-          // raw: true -- this route's body carries `configured` alongside
-          // `data`, not nested under it (addons/README.md's
-          // live_status_columns contract); the default unwrap would drop
-          // `configured` entirely.
-          const result = await addonRequest(col.addon.id, resolved.method, resolved.path, {
-            params: { steam_ids: idsKey }, raw: true,
-          });
-          if (cancelled || instanceRef.current !== instanceId) return;
-          const configured = result?.configured !== false;
-          if (!configured) stoppedRef.current[col.key] = true;
-          setState((prev) => ({
-            ...prev,
-            [col.key]: { data: result?.data || {}, configured },
-          }));
-        } catch (err) {
-          if (cancelled || instanceRef.current !== instanceId) return;
-          if (err?.response?.status === 404) stoppedRef.current[col.key] = true;
-          setState((prev) => ({
-            ...prev,
-            [col.key]: { data: prev[col.key]?.data || {}, configured: false },
-          }));
-        }
-      }));
-    };
+  useEffect(() => {
+    if (!isOpen || !instanceId || !columnsKey || !idsKey) return undefined;
+    // The round started by the effect above already covers this roster.
+    if (fetchedIdsRef.current === idsKey) return undefined;
+    const timer = setTimeout(() => fetchRef.current(), ROSTER_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [isOpen, instanceId, columnsKey, idsKey]);
 
-    fetchAll();
-    const interval = setInterval(fetchAll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [isOpen, instanceId, idsKey, columnsKey]);
-
-  return useMemo(() => {
+  const { columns, droppedKeys } = useMemo(() => {
     const configuredColumns = rawColumns
       .map((col) => ({
         key: col.key,
@@ -157,14 +253,21 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
       }))
       .filter((col) => col.configured);
 
-    if (configuredColumns.length > MAX_COLUMNS) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[live_status_columns] ${configuredColumns.length} columns configured, `
-        + `only the first ${MAX_COLUMNS} are shown: ${configuredColumns.map((c) => c.key).join(', ')}`,
-      );
-    }
-
-    return configuredColumns.slice(0, MAX_COLUMNS);
+    return {
+      columns: configuredColumns.slice(0, MAX_COLUMNS),
+      droppedKeys: configuredColumns.slice(MAX_COLUMNS).map((c) => c.key).join(', '),
+    };
   }, [rawColumns, state]);
+
+  // Warned from an effect keyed on the dropped set, not from the memo above:
+  // the memo re-runs on every poll, so warning there meant the same message
+  // every 30 seconds for as long as the modal stayed open.
+  useEffect(() => {
+    if (!droppedKeys) return;
+    console.warn(
+      `[live_status_columns] at most ${MAX_COLUMNS} columns are shown; dropped: ${droppedKeys}`,
+    );
+  }, [droppedKeys]);
+
+  return columns;
 }
