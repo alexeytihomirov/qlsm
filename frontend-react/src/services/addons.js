@@ -40,6 +40,23 @@ export const updateAddonState = async (addonId, scope, scopeId, body) => {
   return response.data.data;
 };
 
+// The path part of an addon request, or a throw when it would leave
+// /addons/<id>/. Manifest validation already refuses such a route, but a
+// table's row placeholders are filled in later from the addon's own response
+// (and encodeURIComponent leaves ".." as it is), so this is the one place
+// every declarative request passes through after its path is final. Only the
+// part before "?" matters: a URL parser does not collapse dot segments inside
+// a query. A single trailing slash is allowed, as in the manifest.
+function addonRelativePath(path) {
+  const clean = String(path || '').replace(/^\/+/, '');
+  const head = clean.split('?')[0].replace(/\/$/, '');
+  const escapes = head !== '' && head.split('/').some(
+    (segment) => segment === '' || /^(\.|%2e){1,2}$/i.test(segment),
+  );
+  if (escapes) throw new Error('An addon route must stay inside the addon prefix.');
+  return clean;
+}
+
 // Generic call to an addon's own endpoint, used by declarative panels.
 // `path` is always relative to /addons/<id>/ -- the manifest validator
 // already rejects absolute paths, and building the URL here rather than
@@ -55,7 +72,7 @@ export const updateAddonState = async (addonId, scope, scopeId, body) => {
 // and made every column look configured with empty data regardless of what
 // the source actually reported).
 export const addonRequest = async (addonId, method, path, { params, data, raw } = {}) => {
-  const clean = String(path || '').replace(/^\/+/, '');
+  const clean = addonRelativePath(path);
   const response = await apiClient.request({
     url: `/addons/${addonId}/${clean}`,
     method: (method || 'GET').toLowerCase(),
@@ -130,7 +147,7 @@ export function filenameFromDisposition(disposition) {
  * otherwise a failed download shows "[object Blob]" instead of the reason.
  */
 export const addonDownload = async (addonId, method, path, { params, data, fallbackName } = {}) => {
-  const clean = String(path || '').replace(/^\/+/, '');
+  const clean = addonRelativePath(path);
   try {
     const response = await apiClient.request({
       url: `/addons/${addonId}/${clean}`,

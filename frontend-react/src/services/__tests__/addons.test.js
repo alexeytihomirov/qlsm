@@ -19,7 +19,7 @@ vi.mock('axios', () => ({
   },
 }));
 
-import { addonRequest, addonAssetUrl, isSafeAddonAssetPath } from '../addons';
+import { addonDownload, addonRequest, addonAssetUrl, isSafeAddonAssetPath } from '../addons';
 
 describe('addonRequest', () => {
   beforeEach(() => {
@@ -51,6 +51,35 @@ describe('addonRequest', () => {
     const result = await addonRequest('player-ranks', 'GET', 'instances/1/ranks/qlstats', { raw: true });
 
     expect(result).toEqual({ configured: false, data: { '123': { display: '1357' } } });
+  });
+});
+
+describe('a request path stays under the addon prefix', () => {
+  beforeEach(() => {
+    mocks.request.mockReset();
+    mocks.request.mockResolvedValue({ data: { data: null }, headers: {} });
+  });
+
+  // A row placeholder is filled from the addon's own response after the
+  // manifest was validated, and encodeURIComponent leaves ".." alone, so
+  // "{a}/{b}/hosts/1" can arrive here as "../../hosts/1".
+  it.each([
+    '../../hosts/1', 'files/../../hosts', './hosts', 'a//hosts', '%2e%2e/hosts', '../x?name=a',
+  ])('addonRequest refuses %s without sending anything', async (path) => {
+    await expect(addonRequest('x', 'DELETE', path)).rejects.toThrow(/addon prefix/);
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it('addonDownload refuses an escaping path too', async () => {
+    await expect(addonDownload('x', 'GET', '../../hosts/1')).rejects.toThrow(/addon prefix/);
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'files', 'items/', 'files/a%20b.dm_73', 'files/download?filename=../x', '/files',
+  ])('addonRequest still sends %s', async (path) => {
+    await addonRequest('x', 'GET', path);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 });
 
