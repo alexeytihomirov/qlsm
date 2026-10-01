@@ -213,6 +213,38 @@ describe('LiveServerStatusModal addon-contributed player columns', () => {
         expect(await screen.findByText('2181')).toBeInTheDocument();
     });
 
+    it('stacks multiple sources inside one cell when the response carries entries', async () => {
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            data: {
+                '76561197993968023': {
+                    entries: [
+                        { display: '1357', title: 'duel, 310 games', icon_url: 'logos/qlstats.svg' },
+                        { display: '1387', title: 'Skilled', icon_url: 'logos/slipgate.svg' },
+                    ],
+                },
+            },
+            configured: true,
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('1357')).toBeInTheDocument();
+        expect(screen.getByText('1387')).toBeInTheDocument();
+    });
+
     it('does not render a column the addon reports as unconfigured', async () => {
         listAddons.mockResolvedValue([RATING_ADDON]);
         addonRequest.mockResolvedValue({ data: {}, configured: false });

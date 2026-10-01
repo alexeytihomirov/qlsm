@@ -171,7 +171,18 @@ to and adding one felt like the wrong tradeoff for a single column.
 Core calls `GET /api/addons/<id>/<route>?steam_ids=a,b,c` (deduplicated,
 capped, comma-joined) and expects
 `{"data": {"<steam_id>": {"display": "1802", "title": "optional tooltip"}}, "configured": true}`.
-`display` is rendered as-is, never parsed. `configured: false` hides the
+`display` is rendered as-is, never parsed.
+
+A cell may instead carry `"entries": [{"display": "1357", "title": "...",
+"icon": "...", "icon_url": "..."}, ...]` -- each entry is rendered stacked
+(icon above/beside value, one per line) inside the single `<td>`, instead of
+the flat `display`/`title` pair. This is for one column that bundles several
+sub-values that would otherwise need one column each (e.g. several rating
+sources) -- `entries` wins over `display`/`title` when both are present.
+`icon`/`icon_url` per entry follow the same rule as the column's own
+`icon`/`icon_url` above.
+
+`configured: false` hides the
 column entirely for that instance -- this is the normal state for an
 instance the addon has no opinion about, not an error. Any other failure
 (timeout, non-2xx, malformed body) also just hides the column; the players
