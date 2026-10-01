@@ -40,6 +40,9 @@ import {
   isLanRateForcedOn,
 } from '../../utils/lanRateCompatibility';
 
+// The id the detached instance-config <form> is reached by (see its comment).
+const CONFIG_FORM_ID = 'edit-instance-config-form';
+
 const CONFIG_FILES_ORDER = ['server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt'];
 
 const LANGUAGE_MAP = {
@@ -1088,7 +1091,16 @@ function EditInstanceConfigModal({
                         </div>
                       </div>
                     ) : (
-                      <form onSubmit={handleSubmit} className="flex flex-col flex-grow min-h-0">
+                      <div className="flex flex-col flex-grow min-h-0">
+                        {/* The config form is a detached element that the
+                            hostname input and the Save Configuration button
+                            join through their `form` attribute, instead of a
+                            <form> wrapped around the whole dialog body. An
+                            addon tab renders its own <form> in the content
+                            area below; nested inside this one it was invalid
+                            HTML, and its Save button reloaded the page instead
+                            of saving. */}
+                        <form id={CONFIG_FORM_ID} onSubmit={handleSubmit} className="hidden" />
                         <div className="mb-2 lg:mb-4 flex-shrink-0">
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
                             {/* Server Hostname Input */}
@@ -1101,6 +1113,7 @@ function EditInstanceConfigModal({
                                   type="text"
                                   name="serverHostname"
                                   id="serverHostname"
+                                  form={CONFIG_FORM_ID}
                                   value={serverHostname}
                                   onChange={handleHostnameChange}
                                   maxLength={64}
@@ -1353,21 +1366,28 @@ function EditInstanceConfigModal({
                             <button type="button" onClick={handleAttemptClose} className="btn btn-secondary">
                               Cancel
                             </button>
-                            <button
-                              type="submit"
-                              disabled={saving || loading}
-                              className="btn btn-primary"
-                            >
-                              {saving ? (
-                                <span className="flex items-center">
-                                  <LoaderCircle size={16} className="animate-spin mr-2" />
-                                  Saving...
-                                </span>
-                              ) : 'Save Configuration'}
-                            </button>
+                            {/* An addon tab saves through its own button and
+                                is no part of the instance config, so offering
+                                Save Configuration there would read as "save
+                                this tab" and could restart the instance. */}
+                            {!activeMainTab.startsWith('addon:') && (
+                              <button
+                                type="submit"
+                                form={CONFIG_FORM_ID}
+                                disabled={saving || loading}
+                                className="btn btn-primary"
+                              >
+                                {saving ? (
+                                  <span className="flex items-center">
+                                    <LoaderCircle size={16} className="animate-spin mr-2" />
+                                    Saving...
+                                  </span>
+                                ) : 'Save Configuration'}
+                              </button>
+                            )}
                           </div>
                         </div>
-                      </form>
+                      </div>
                     )}
                   </div>
                 </Dialog.Panel>

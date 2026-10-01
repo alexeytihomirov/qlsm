@@ -29,6 +29,23 @@ const mocks = vi.hoisted(() => ({
   // Last acceptedReplacements the plugin draft adapter saw for each preset name --
   // proves whether a stale accepted list from a previous preset leaked onto this one.
   draftAdapterAcceptedReplacementsByPreset: {},
+  // instance_tabs an installed addon contributes; empty unless a test sets it.
+  addonMounts: [],
+  addonPanelSubmit: vi.fn(),
+}));
+
+vi.mock('../../../contexts/AddonsContext', () => ({
+  useAddonMounts: () => mocks.addonMounts,
+}));
+
+// Stands in for a declarative addon panel: like the real AddonFormPanel, it
+// is a <form> of its own with its own submit button.
+vi.mock('../../addons/AddonPanel', () => ({
+  default: () => (
+    <form data-testid="addon-form" onSubmit={(e) => { e.preventDefault(); mocks.addonPanelSubmit(); }}>
+      <button type="submit">Save</button>
+    </form>
+  ),
 }));
 
 vi.mock('@headlessui/react', () => {
@@ -346,6 +363,7 @@ describe('EditInstanceConfigModal preset saving', () => {
     vi.clearAllMocks();
     mocks.fileManagerProps = [];
     mocks.hooksTabProps = [];
+    mocks.addonMounts = [];
     mocks.draftAdapterAcceptedReplacementsByPreset = {};
     if (!EditInstanceConfigModal) {
       ({ default: EditInstanceConfigModal } = await import('../EditInstanceConfigModal'));
@@ -856,6 +874,52 @@ describe('EditInstanceConfigModal preset saving', () => {
 
     await waitFor(() => expect(screen.getByText('hooks-tab')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /save configuration/i })).toBeInTheDocument();
+  });
+
+  it('an addon tab keeps its own form out of the config form and saves by itself', async () => {
+    mocks.addonMounts = [{
+      key: 'player-ranks:instance_tabs:ranks', label: 'Ranks', icon: 'gauge',
+      addon: { id: 'player-ranks' }, entry: { id: 'ranks' }, panel: { kind: 'form' }, scope: 'instance',
+    }];
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /save configuration/i })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /ranks/i }));
+
+    const addonForm = await screen.findByTestId('addon-form');
+    // Nested in the config form, the addon's Save button reloaded the page
+    // instead of saving.
+    expect(addonForm.parentElement.closest('form')).toBeNull();
+    // The addon tab is no part of the instance config: no Save Configuration.
+    expect(screen.queryByRole('button', { name: /save configuration/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(mocks.addonPanelSubmit).toHaveBeenCalledTimes(1);
+    expect(mocks.updateInstanceConfig).not.toHaveBeenCalled();
+  });
+
+  it('pressing Enter in the hostname field still submits the config form', async () => {
+    render(
+      <EditInstanceConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        instanceId={1}
+        instanceName="Test123"
+        onConfigSaved={vi.fn()}
+      />
+    );
+    const hostname = await screen.findByLabelText(/server hostname/i);
+    // The form is detached from the dialog body; the input joins it by id.
+    expect(hostname.form).not.toBeNull();
+    expect(hostname.form).toBe(screen.getByRole('button', { name: /save configuration/i }).form);
   });
 
   it('Save payload carries enabled_hooks reflecting toggles', async () => {
