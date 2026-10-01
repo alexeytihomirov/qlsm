@@ -66,6 +66,7 @@ describe('MOUNT_SCOPES', () => {
     expect(MOUNT_SCOPES.instance_tabs).toBe('instance');
     expect(MOUNT_SCOPES.settings_section).toBe('global');
     expect(MOUNT_SCOPES.page).toBe('global');
+    expect(MOUNT_SCOPES.live_status_columns).toBe('instance');
   });
 });
 

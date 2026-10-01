@@ -1,12 +1,19 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import LiveServerStatusModal from '../LiveServerStatusModal';
 
 vi.mock('../../../hooks/useWorkshopPreview', () => ({
     useWorkshopPreview: vi.fn(),
 }));
+vi.mock('../../../services/addons', async () => {
+    const actual = await vi.importActual('../../../services/addons');
+    return { ...actual, listAddons: vi.fn().mockResolvedValue([]), addonRequest: vi.fn() };
+});
+vi.mock('../../../contexts/AuthContext', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 
 import { useWorkshopPreview } from '../../../hooks/useWorkshopPreview';
+import { listAddons, addonRequest } from '../../../services/addons';
+import { AddonsProvider } from '../../../contexts/AddonsContext';
 
 const baseInstance = { id: 1, name: 'test-server', port: 27960 };
 const baseStatus = {
@@ -26,6 +33,7 @@ describe('LiveServerStatusModal map preview', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         useWorkshopPreview.mockReturnValue({ previewUrl: null, loading: false });
+        listAddons.mockResolvedValue([]);
     });
 
     it('renders a static preview image for a known standard map', () => {
@@ -161,5 +169,166 @@ describe('LiveServerStatusModal map preview', () => {
         );
 
         expect(screen.getByText('campgrounds')).toBeInTheDocument();
+    });
+});
+
+describe('LiveServerStatusModal addon-contributed player columns', () => {
+    const RATING_ADDON = {
+        id: 'player-ranks', name: 'Player Ranks', version: '1.0.0',
+        loaded: true, ui_mountable: true, enabled: true,
+        ui: {
+            live_status_columns: [
+                { id: 'rating', label: 'Rating', align: 'right', route: 'GET instances/{instance_id}/ranks' },
+            ],
+        },
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        useWorkshopPreview.mockReturnValue({ previewUrl: null, loading: false });
+    });
+
+    it('renders a configured column with per-player data', async () => {
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            data: { '76561197993968023': { display: '2181', title: 'duel, 13732 games' } },
+            configured: true,
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('Rating')).toBeInTheDocument();
+        expect(await screen.findByText('2181')).toBeInTheDocument();
+    });
+
+    it('stacks multiple sources inside one cell when the response carries entries', async () => {
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            data: {
+                '76561197993968023': {
+                    entries: [
+                        { display: '1357', title: 'duel, 310 games', icon_url: 'logos/qlstats.svg' },
+                        { display: '1387', title: 'Skilled', icon_url: 'logos/slipgate.svg' },
+                    ],
+                },
+            },
+            configured: true,
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('1357')).toBeInTheDocument();
+        expect(screen.getByText('1387')).toBeInTheDocument();
+    });
+
+    it('does not render a column the addon reports as unconfigured', async () => {
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({ data: {}, configured: false });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        await waitFor(() => expect(addonRequest).toHaveBeenCalled());
+        expect(screen.queryByText('Rating')).not.toBeInTheDocument();
+    });
+
+    it('survives a malformed cell instead of taking the drawer down', async () => {
+        // `entries: [null]` used to reach JSX and throw "Cannot read
+        // properties of null (reading 'title')", which unmounted the whole
+        // Live Status drawer -- addon-driven content renders inside a
+        // component core owns here, so a bad payload must stay a bad cell.
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            configured: true,
+            data: {
+                '76561197993968023': { entries: [null, { display: '1357' }] },
+                '76561197960287930': 'not an object at all',
+            },
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [
+                            { name: 'Player1', steam: '76561197993968023', team: 'free' },
+                            { name: 'Player2', steam: '76561197960287930', team: 'free' },
+                        ],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('1357')).toBeInTheDocument();
+        // the table as a whole is still there, with both rows
+        expect(screen.getByText('Player1')).toBeInTheDocument();
+        expect(screen.getByText('Player2')).toBeInTheDocument();
+    });
+
+    it('looks a player up under the same key the hook asked about', async () => {
+        // The hook skips an empty `steam` and falls through to `steamid`; the
+        // table used to do the same with `||` but the hook used `??`, so a
+        // player with steam: '' was requested under no key and read under
+        // another, and the cell stayed a dash forever.
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            data: { '76561197993968023': { display: '2181' } },
+            configured: true,
+        });
+
+        render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '', steamid: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        expect(await screen.findByText('2181')).toBeInTheDocument();
     });
 });

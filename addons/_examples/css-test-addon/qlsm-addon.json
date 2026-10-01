@@ -4,7 +4,7 @@
   "name": "CSS Test Addon",
   "description": "Reference addon proving a tier-2 component's CSS is loaded by convention. Not loaded by default - see README.md.",
   "scopes": ["global"],
-  "ui_api": 3,
+  "ui_api": 4,
 
   "ui": {
     "icon": "puzzle",

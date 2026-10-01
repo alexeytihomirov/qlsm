@@ -143,6 +143,69 @@ Mount points: `host_menu`, `instance_menu`, `instance_tabs`,
 addon's own `/api/addons/<id>/` prefix; absolute paths are rejected at
 manifest validation, so a panel cannot point at a core endpoint.
 
+### `live_status_columns` -- a column in core's own players table
+
+Every other mount point gives an addon its own place: a menu entry, a tab, a
+page. `live_status_columns` is the one exception -- it lets an addon add a
+column to a component core owns (the players table in the instance Live
+Status drawer), because that surface has no addon-owned equivalent to attach
+to and adding one felt like the wrong tradeoff for a single column.
+
+```json
+{ "ui": { "live_status_columns": [
+  { "id": "rating", "label": "Rating", "align": "right",
+    "icon_url": "logos/qlstats.svg",
+    "route": "GET instances/{instance_id}/ranks" }
+] } }
+```
+
+- `id` -- required, unique within the addon.
+- `label` -- required, at most 24 characters (the table is narrow).
+- `align` -- `left` (default) or `right`.
+- `icon` / `icon_url` -- optional, mutually exclusive. `icon` is a name from
+  the frontend's fixed icon list; `icon_url` is a path inside the addon's own
+  `ui/` directory (see "Icons and other images" below).
+- `route` -- required, `GET` only, relative to the addon's own prefix like
+  any panel route; `{instance_id}` is substituted by core.
+
+Core calls `GET /api/addons/<id>/<route>?steam_ids=a,b,c` (every connected
+player, deduplicated, sorted, comma-joined) and expects
+`{"data": {"<steam_id>": {"display": "1802", "title": "optional tooltip"}}, "configured": true}`.
+`display` is rendered as-is, never parsed.
+
+Polled every 30s while the drawer is open, deliberately not on core's own
+15s status tick. A roster change also triggers a fetch, but only once the
+roster has been stable for 3s and without restarting that 30s interval -- on
+a filling server people connect every few seconds, and a round per join would
+turn a slow source into a fast one.
+
+A cell may instead carry `"entries": [{"display": "1357", "title": "...",
+"icon": "...", "icon_url": "..."}, ...]` -- each entry is rendered stacked
+(icon above/beside value, one per line) inside the single `<td>`, instead of
+the flat `display`/`title` pair. This is for one column that bundles several
+sub-values that would otherwise need one column each (e.g. several rating
+sources) -- `entries` wins over `display`/`title` when both are present.
+`icon`/`icon_url` per entry follow the same rule as the column's own
+`icon`/`icon_url` above.
+
+`configured: false` (or a 404) hides the column entirely for that instance
+-- this is the normal state for an instance the addon has no opinion about,
+not an error, and core stops asking until the drawer is reopened. Any
+*other* failure (timeout, 500, a backend mid-restart) is treated as
+transient: the column keeps whatever it last showed and stays in the table,
+and the next poll tries again. Core also normalizes the payload before
+rendering, so a malformed body costs at most one empty cell -- the players
+table itself never breaks over this. An addon may declare more columns than
+fit -- e.g. one column per rating source, only some enabled per instance --
+every declared column is still fetched, since whether it ends up configured
+for a given instance is only known after that fetch. At most 3 columns that
+come back `configured: true` are rendered (across every addon that declares
+one), in the same addon-id-alphabetical order `dispatch()` uses elsewhere,
+declaration order within one addon; the rest are dropped with a console
+warning.
+
+Requires `"ui_api": 4`.
+
 ## UI, tier 2 — the addon's own component
 
 Build it yourself and ship the built file in `ui/`:
@@ -214,6 +277,23 @@ manifest field needed. It stays in `document.head` for the page's lifetime
 and out doesn't reload it. See `_examples/css-test-addon` for the smallest
 possible example, or `_examples/ui-kit-test-addon` for one that needs no CSS
 at all because every visual piece comes from `ctx.ui`.
+
+## Icons and other images
+
+A select field option, a `live_status_columns` entry, and the addon's own
+`ui.icon` can point at an image instead of naming one of the fixed icons:
+
+```json
+{ "value": "qlstats", "label": "qlstats", "icon_url": "logos/qlstats.svg" }
+```
+
+`icon_url` is a path relative to the addon's own `ui/` directory, served
+through the same `/api/addons/<id>/ui/<path>` route as a tier-2 component --
+`.svg`, `.png` and `.webp` are allowed there alongside `.js`/`.css`/`.map`. An
+`.svg` response carries `X-Content-Type-Options: nosniff` and a restrictive
+`Content-Security-Policy`, since it is served from the same origin as the
+rest of the app and can otherwise carry a script. `icon` and `icon_url` are
+mutually exclusive on anything that accepts either.
 
 ## Cross-addon UI contribution (addon-owned hooks)
 

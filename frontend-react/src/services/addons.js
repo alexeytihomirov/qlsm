@@ -45,7 +45,16 @@ export const updateAddonState = async (addonId, scope, scopeId, body) => {
 // already rejects absolute paths, and building the URL here rather than
 // letting a panel supply one means a panel physically cannot reach a core
 // endpoint even if validation were ever bypassed.
-export const addonRequest = async (addonId, method, path, { params, data } = {}) => {
+//
+// Unwraps the response body's top-level `data` key by default -- every
+// declarative panel route follows that `{"data": ...}` convention. Pass
+// `raw: true` for a route whose body carries sibling fields alongside
+// `data` (the `live_status_columns` contract's `{"data": ..., "configured":
+// ...}` is the one case today -- unwrapping there would silently discard
+// `configured` and hand the caller `undefined`, which read as "not false"
+// and made every column look configured with empty data regardless of what
+// the source actually reported).
+export const addonRequest = async (addonId, method, path, { params, data, raw } = {}) => {
   const clean = String(path || '').replace(/^\/+/, '');
   const response = await apiClient.request({
     url: `/addons/${addonId}/${clean}`,
@@ -53,7 +62,7 @@ export const addonRequest = async (addonId, method, path, { params, data } = {})
     params,
     data,
   });
-  return response.data?.data;
+  return raw ? response.data : response.data?.data;
 };
 
 // URL for a tier-2 component bundle. Not fetched through axios: the browser's
