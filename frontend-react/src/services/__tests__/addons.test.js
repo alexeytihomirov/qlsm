@@ -86,4 +86,17 @@ describe('addonAssetUrl', () => {
     expect(isSafeAddonAssetPath(path)).toBe(false);
     expect(addonAssetUrl('player-ranks', path)).toBeNull();
   });
+
+  it.each([
+    '.\t./.\t./hosts',
+    '..\r/hosts',
+    '..\n/hosts',
+    '.. /hosts',
+  ])('refuses a path hiding a dot segment behind whitespace: %p', (path) => {
+    // A URL parser strips tabs/CR/LF/space before looking at dot segments,
+    // so ".\t." reaches it as "..": the plain split-on-"/" segment check
+    // never sees a bare "." or ".." and let these through.
+    expect(isSafeAddonAssetPath(path)).toBe(false);
+    expect(addonAssetUrl('player-ranks', path)).toBeNull();
+  });
 });

@@ -65,6 +65,16 @@ def _err(errors, msg):
 #         as one harmless filename
 _UNSAFE_PATH_CHARS = ('%', '?', '#', '\\')
 
+# Control and whitespace characters (tab, CR, LF, ...) that a URL parser
+# strips before it ever looks at dot segments -- `".\t./.\t./hosts"` reaches
+# the browser's parser as `"../../hosts"`, which is exactly the traversal the
+# segment check below exists to catch, but the raw string it sees here is
+# neither `.` nor `..` so it sails through. Rejecting these outright, rather
+# than trying to strip them the same way a parser would, means there is no
+# second place that has to agree with the browser on what counts as
+# whitespace.
+_CONTROL_CHAR_RE = re.compile(r'[\x00-\x20\x7f]')
+
 
 def _escapes_addon_dir(path):
     """True when a manifest-declared relative path could leave its own base.
@@ -81,6 +91,8 @@ def _escapes_addon_dir(path):
     `/api/hosts` and sends it with the operator's cookie before any qlsm code
     sees it.
     """
+    if _CONTROL_CHAR_RE.search(path):
+        return True
     candidate = path.replace('\\', '/')
     if candidate.startswith('/'):
         return True
@@ -209,24 +221,51 @@ def _validate_relative_route(where, path, errors, allow_query=True):
         _err(errors, f'{where}: must stay inside the addon prefix')
 
 
+def _validate_panel_route(where, route, errors):
+    """Validate a declared `"METHOD path"` (or bare `path`) route string.
+
+    Shared by every place a panel can declare a route that
+    `addonRequest`/`addonDownload` will call with the operator's session:
+    `load`/`submit`, a managed form's `status.load`, and a table's
+    `row_actions`/`bulk_actions`. Missing any one of these left a declared
+    route that never went through `_validate_relative_route` at all -- the
+    absolute-path and traversal rejection only ever applied to the two kinds
+    checked here historically.
+    """
+    if route is None:
+        return
+    if not isinstance(route, str) or not route.strip():
+        _err(errors, f'{where}: must be a non-empty string')
+        return
+    path = route.split(' ', 1)[-1].strip()
+    _validate_relative_route(where, path, errors)
+
+
 def _validate_panel(name, panel, errors):
     if not isinstance(panel, dict):
         return _err(errors, f'panels.{name}: must be an object')
     kind = panel.get('kind')
     if kind not in PANEL_KINDS:
         return _err(errors, f'panels.{name}: kind must be one of {", ".join(PANEL_KINDS)}')
+    # Routes are relative to the addon's own /api/addons/<id>/ prefix.
+    # Rejecting absolute paths here is what stops a panel from being
+    # pointed at a core endpoint (see spec 5.1).
     for route_key in ('load', 'submit'):
-        route = panel.get(route_key)
-        if route is None:
+        _validate_panel_route(f'panels.{name}.{route_key}', panel.get(route_key), errors)
+    status = panel.get('status')
+    if isinstance(status, dict):
+        _validate_panel_route(f'panels.{name}.status.load', status.get('load'), errors)
+    for action_key in ('row_actions', 'bulk_actions'):
+        actions = panel.get(action_key)
+        if not isinstance(actions, list):
             continue
-        if not isinstance(route, str) or not route.strip():
-            _err(errors, f'panels.{name}.{route_key}: must be a non-empty string')
-            continue
-        # Routes are relative to the addon's own /api/addons/<id>/ prefix.
-        # Rejecting absolute paths here is what stops a panel from being
-        # pointed at a core endpoint (see spec 5.1).
-        path = route.split(' ', 1)[-1].strip()
-        _validate_relative_route(f'panels.{name}.{route_key}', path, errors)
+        for index, action in enumerate(actions):
+            if not isinstance(action, dict):
+                continue
+            action_id = action.get('id') if isinstance(action.get('id'), str) else index
+            _validate_panel_route(
+                f'panels.{name}.{action_key}[{action_id}].route', action.get('route'), errors,
+            )
     for field in panel.get('fields') or []:
         _validate_field(field, f'panels.{name}', errors)
     return errors

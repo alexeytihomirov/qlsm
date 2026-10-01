@@ -79,10 +79,15 @@ export const addonRequest = async (addonId, method, path, { params, data, raw } 
  *
  * `%` is rejected outright: `%2e%2e` and `..%2f` are a `..` segment to a URL
  * parser, and no legitimate asset filename here needs percent-encoding.
+ *
+ * Control and whitespace characters are rejected the same way: a URL parser
+ * strips them before it looks at dot segments, so `".\t./.\t./hosts"` reaches
+ * it as `"../../hosts"` even though the split-on-`/` segment check below
+ * never sees a bare `.` or `..`.
  */
 export function isSafeAddonAssetPath(filename) {
   if (typeof filename !== 'string' || !filename.trim()) return false;
-  if (/[%?#\\]/.test(filename)) return false;
+  if (/[%?#\\\x00-\x20\x7f]/.test(filename)) return false;
   const path = filename.replace(/^\/+/, '');
   if (!path) return false;
   return !path.split('/').some((segment) => segment === '' || segment === '.' || segment === '..');
