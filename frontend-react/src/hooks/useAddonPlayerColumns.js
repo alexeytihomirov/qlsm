@@ -140,7 +140,14 @@ export function useAddonPlayerColumns(isOpen, instanceId, players) {
   // below can tell a real roster change from its own first run.
   const fetchedIdsRef = useRef(null);
 
-  useEffect(() => () => { aliveRef.current = false; }, []);
+  // Set on mount as well as cleared on unmount: StrictMode (the dev server)
+  // mounts, runs this cleanup, and mounts again. Cleared-only, the flag
+  // stayed false after that first cleanup and every response was discarded,
+  // so no column ever appeared in development.
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   useEffect(() => {
     instanceRef.current = instanceId;

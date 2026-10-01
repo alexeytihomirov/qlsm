@@ -277,6 +277,34 @@ describe('LiveServerStatusModal addon-contributed player columns', () => {
         expect(screen.getByText('1387')).not.toHaveClass('text-red-500');
     });
 
+    it('keeps a multi-word value on one line and widens the drawer to fit the column', async () => {
+        listAddons.mockResolvedValue([RATING_ADDON]);
+        addonRequest.mockResolvedValue({
+            data: { '76561197993968023': { entries: [{ display: 'Platinum IV', color: 'cyan' }] } },
+            configured: true,
+        });
+
+        const { container } = render(
+            <AddonsProvider>
+                <LiveServerStatusModal
+                    isOpen={true}
+                    onClose={() => {}}
+                    instance={baseInstance}
+                    serverStatus={{
+                        ...baseStatus,
+                        players: [{ name: 'Player1', steam: '76561197993968023', team: 'free' }],
+                    }}
+                />
+            </AddonsProvider>
+        );
+
+        // Before the addon answers there is no column, so the drawer keeps its normal width.
+        expect(container.ownerDocument.querySelector('.drawer-panel')).toHaveClass('w-[500px]');
+        const value = await screen.findByText('Platinum IV');
+        expect(value.closest('td')).toHaveClass('whitespace-nowrap');
+        expect(container.ownerDocument.querySelector('.drawer-panel')).toHaveClass('w-[630px]');
+    });
+
     it('does not render a column the addon reports as unconfigured', async () => {
         listAddons.mockResolvedValue([RATING_ADDON]);
         addonRequest.mockResolvedValue({ data: {}, configured: false });
