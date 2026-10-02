@@ -10,6 +10,13 @@ struct test_xdp_md { uintptr_t data; uintptr_t data_end; };
 #include "../qlfilter.c"
 #undef xdp_md
 
+/* Source/A2S info query; browsers send it to the game port to list servers. */
+static const uint8_t source_engine_query[] = {
+    0xff, 0xff, 0xff, 0xff,
+    'T', 'S', 'o', 'u', 'r', 'c', 'e', ' ',
+    'E', 'n', 'g', 'i', 'n', 'e', ' ', 'Q', 'u', 'e', 'r', 'y',
+};
+
 static int failures;
 static int checks;
 
@@ -52,11 +59,10 @@ static void check(const char *name, unsigned port, unsigned ihl,
 int main(void)
 {
     for (unsigned port = 0; port <= 65535; port++)
-        check("query port scope", port, 5, 45000, 1, 0,
-              port >= QL_PORT_MIN && port <= QL_PORT_MAX ? XDP_DROP : XDP_PASS);
+        check("query port scope", port, 5, 45000, 1, 0, XDP_PASS);
     for (unsigned ihl = 5; ihl <= 15; ihl++) {
-        check("query with options", 27960, ihl, 45000, 1, 0, XDP_DROP);
-        check("query upper boundary", 27979, ihl, 45000, 1, 0, XDP_DROP);
+        check("query with options", 27960, ihl, 45000, 1, 0, XDP_PASS);
+        check("query upper boundary", 27979, ihl, 45000, 1, 0, XDP_PASS);
         check("legitimate query", 27960, ihl, 45000, 0, 0, XDP_PASS);
         check("DNS reflection", 27960, ihl, 53, 0, 0, XDP_DROP);
         check("SSDP reflection", 27960, ihl, 1900, 0, 0, XDP_DROP);

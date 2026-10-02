@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, configure, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/addons', async () => {
@@ -69,6 +69,32 @@ describe('useAddonPlayerColumns', () => {
     await waitFor(() => expect(result.current).toHaveLength(1));
     expect(result.current[0]).toMatchObject({ key: 'player-ranks:live_status_columns:rating', label: 'Rating', align: 'right' });
     expect(result.current[0].data['76561197993968023'].display).toBe('2181');
+  });
+
+  it('still shows the column under StrictMode, whose dev double-mount runs the unmount cleanup once', async () => {
+    // The Vite dev server renders the app in <StrictMode>, which mounts,
+    // runs every effect cleanup, and mounts again. A liveness flag cleared in
+    // that cleanup and never set back made the hook discard every response,
+    // so the column never appeared in development.
+    listAddons.mockResolvedValue([RATING_ADDON]);
+    addonRequest.mockResolvedValue({
+      data: { '76561197993968023': { display: '2181' } },
+      configured: true,
+    });
+    // A <StrictMode> in the wrapper is not enough: Testing Library only
+    // double-mounts when told to through its own config.
+    configure({ reactStrictMode: true });
+    try {
+      const { result } = renderHook(
+        () => useAddonPlayerColumns(true, 1, players),
+        { wrapper },
+      );
+
+      await waitFor(() => expect(result.current).toHaveLength(1));
+      expect(result.current[0].data['76561197993968023'].display).toBe('2181');
+    } finally {
+      configure({ reactStrictMode: false });
+    }
   });
 
   it('hides the column entirely when the addon reports configured: false', async () => {
@@ -336,7 +362,7 @@ describe('useAddonPlayerColumns', () => {
     await waitFor(() => expect(result.current).toHaveLength(1));
     const data = result.current[0].data;
     expect(data['76561197993968023'].entries).toEqual([
-      { display: '1357', title: '', icon: null, iconUrl: 'a.svg' },
+      { display: '1357', title: '', icon: null, iconUrl: 'a.svg', color: null },
     ]);
     expect(data['76561197960287930']).toBeUndefined();
   });
@@ -358,10 +384,22 @@ describe('normalizeCell', () => {
   it('reduces a cell to renderable text and drops unusable entries', () => {
     expect(normalizeCell(null)).toBeNull();
     expect(normalizeCell('1802')).toBeNull();
-    expect(normalizeCell({ display: 1802 })).toEqual({ display: '1802', title: '', entries: null });
-    expect(normalizeCell({ entries: [] })).toEqual({ display: '', title: '', entries: null });
+    expect(normalizeCell({ display: 1802 })).toEqual({ display: '1802', title: '', color: null, entries: null });
+    expect(normalizeCell({ entries: [] })).toEqual({ display: '', title: '', color: null, entries: null });
     expect(normalizeCell({ entries: [{ display: 'a', icon: 'gauge' }] })).toEqual({
-      display: '', title: '', entries: [{ display: 'a', title: '', icon: 'gauge', iconUrl: null }],
+      display: '', title: '', color: null,
+      entries: [{ display: 'a', title: '', icon: 'gauge', iconUrl: null, color: null }],
     });
+  });
+
+  it('keeps a color from the fixed palette and drops anything else', () => {
+    expect(normalizeCell({ display: 'Gold III', color: 'yellow' }).color).toBe('yellow');
+    expect(normalizeCell({ entries: [{ display: 'Gold III', color: 'yellow' }] }).entries[0].color).toBe('yellow');
+    // Not a palette name: a raw CSS value, a class name, a non-string.
+    expect(normalizeCell({ display: 'x', color: '#ff0000' }).color).toBeNull();
+    expect(normalizeCell({ display: 'x', color: 'text-red-500' }).color).toBeNull();
+    expect(normalizeCell({ entries: [{ display: 'x', color: { a: 1 } }] }).entries[0].color).toBeNull();
+    // An Object.prototype key must not pass as a palette name.
+    expect(normalizeCell({ display: 'x', color: 'constructor' }).color).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ Optional features that plug into QLSM without core knowing they exist.
 | Source | Path | Notes |
 |--------|------|-------|
 | Bundled | `addons/<id>/` | Ships inside the Docker image |
-| Installed | `$ADDON_PACKAGES_DIR/<id>/` (default `./addon-packages`) | Operator-writable volume |
+| Installed | `$ADDON_PACKAGES_DIR/<id>/` (default `./data/addon-packages`) | Operator-writable volume |
 
 A directory is an addon only if it contains `qlsm-addon.json`. An id present
 in both sources resolves to the **installed** copy, so an operator can
@@ -152,6 +152,17 @@ percent-encoding. A query string is allowed (`files?instance_id={instance_id}`
 -- see `_examples/hello-addon`); only the path in front of the `?` is subject
 to those rules.
 
+Whitespace is refused as well. A route is `"METHOD path"` -- a verb from
+`GET`/`POST`/`PUT`/`PATCH`/`DELETE`, plain spaces, then the path -- or a bare
+path, which means `GET`. The path may not contain a space or any control
+character, and no other whitespace (tab, newline, a non-breaking space, ...)
+may appear anywhere in the route. The validator and the frontend split the
+verb from the path by that one rule, so the path that is checked is the path
+that is requested. The frontend also refuses to send a request whose final
+path has a `.`, `..` or empty segment, which covers a table row's
+`{placeholder}` values: they are filled in from the addon's own response,
+after the manifest was validated.
+
 ### `live_status_columns` -- a column in core's own players table
 
 Every other mount point gives an addon its own place: a menu entry, a tab, a
@@ -198,6 +209,13 @@ sub-values that would otherwise need one column each (e.g. several rating
 sources) -- `entries` wins over `display`/`title` when both are present.
 `icon`/`icon_url` per entry follow the same rule as the column's own
 `icon`/`icon_url` above.
+
+A cell, or any one entry, may also carry `"color"`: one of `white`,
+`yellow`, `cyan`, `blue`, `magenta`, `green` (Quake Live's own `^N` colors --
+the first use is a rank tier shown in its in-game color). It is a name from
+that fixed list, not a CSS value: core picks the actual shade, a different one
+per theme so yellow and cyan stay readable on a light background. Anything
+else is ignored and the value renders in the default color.
 
 `configured: false` (or a 404) hides the column entirely for that instance
 -- this is the normal state for an instance the addon has no opinion about,
@@ -292,7 +310,12 @@ at all because every visual piece comes from `ctx.ui`.
 ## Icons and other images
 
 A select field option, a `live_status_columns` entry, and the addon's own
-`ui.icon` can point at an image instead of naming one of the fixed icons:
+`ui.icon` can point at an image instead of naming one of the fixed icons.
+Core itself only renders `icon_url` for a `live_status_columns` column and
+its cells so far; on a select option or on `ui` it is validated and passed
+through in the manifest for the addon's own components to use, but a
+declarative form's `<select>` and the addon's entry on the Addons page do not
+show it:
 
 ```json
 { "value": "qlstats", "label": "qlstats", "icon_url": "logos/qlstats.svg" }

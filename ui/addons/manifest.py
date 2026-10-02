@@ -221,6 +221,29 @@ def _validate_relative_route(where, path, errors, allow_query=True):
         _err(errors, f'{where}: must stay inside the addon prefix')
 
 
+# Mirrors parseRoute() in frontend-react/src/components/addons/panelRoute.js:
+# a verb from this list, spaces, then the path -- anything else is a GET path
+# in full. The two must split a route identically, or the path validated here
+# is not the path the browser requests.
+_ROUTE_RE = re.compile(r'(GET|POST|PUT|PATCH|DELETE) +(.*)', re.IGNORECASE)
+
+
+def _split_route(where, route, errors):
+    """Split a declared route into `(method, path)`, or None after an error.
+
+    Whitespace other than a plain space is refused anywhere in the route, so
+    there is no second separator the frontend could split on instead.
+    """
+    if any(ch != ' ' and (ch.isspace() or ch == '\ufeff') for ch in route):
+        _err(errors, f'{where}: must not contain whitespace other than a single space after the method')
+        return None
+    route = route.strip(' ')
+    match = _ROUTE_RE.fullmatch(route)
+    if match:
+        return match.group(1).upper(), match.group(2).strip(' ')
+    return 'GET', route
+
+
 def _validate_panel_route(where, route, errors):
     """Validate a declared `"METHOD path"` (or bare `path`) route string.
 
@@ -237,8 +260,9 @@ def _validate_panel_route(where, route, errors):
     if not isinstance(route, str) or not route.strip():
         _err(errors, f'{where}: must be a non-empty string')
         return
-    path = route.split(' ', 1)[-1].strip()
-    _validate_relative_route(where, path, errors)
+    parsed = _split_route(where, route, errors)
+    if parsed:
+        _validate_relative_route(where, parsed[1], errors)
 
 
 def _validate_panel(name, panel, errors):
@@ -304,13 +328,14 @@ def _validate_live_status_column(item, errors):
     if not isinstance(route, str) or not route.strip():
         _err(errors, f'{where}: "route" is required')
     else:
-        parts = route.split(' ', 1)
-        method, path = (parts[0], parts[1]) if len(parts) == 2 else ('GET', parts[0])
-        if method.upper() != 'GET':
-            _err(errors, f'{where}: "route" must be a GET route')
-        # Same rule as a panel route: relative to the addon's own prefix, so
-        # a column cannot be pointed at a core endpoint.
-        _validate_relative_route(f'{where}: "route"', path.strip(), errors, allow_query=False)
+        parsed = _split_route(f'{where}: "route"', route, errors)
+        if parsed:
+            method, path = parsed
+            if method != 'GET':
+                _err(errors, f'{where}: "route" must be a GET route')
+            # Same rule as a panel route: relative to the addon's own prefix, so
+            # a column cannot be pointed at a core endpoint.
+            _validate_relative_route(f'{where}: "route"', path, errors, allow_query=False)
     return col_id
 
 

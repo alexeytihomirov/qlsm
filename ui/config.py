@@ -31,7 +31,10 @@ class Config:
     # Addons: operator-installed packages live on a writable volume, separate
     # from the `addons/` directory baked into the image, so installing one
     # does not mean rebuilding. An id present in both resolves here.
-    ADDON_PACKAGES_DIR = os.environ.get('ADDON_PACKAGES_DIR', './addon-packages')
+    # Under data/ on purpose: that is the one directory every compose file,
+    # old or new, already mounts, so an installed addon survives a container
+    # recreate even when the operator's compose predates a dedicated mount.
+    ADDON_PACKAGES_DIR = os.environ.get('ADDON_PACKAGES_DIR', './data/addon-packages')
 
     # Restart stamp: POST /api/system/restart touches this file, restart-watcher.sh
     # (started by entrypoint.sh) polls it in every app container. Both sides read

@@ -25,7 +25,9 @@ export const MOUNT_SCOPES = {
 export function parseRoute(route) {
   if (typeof route !== 'string' || !route.trim()) return null;
   const trimmed = route.trim();
-  const match = trimmed.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(.*)$/i);
+  // Plain spaces only, matching _split_route() in ui/addons/manifest.py: the
+  // manifest validator checks the path this returns, so both must split alike.
+  const match = trimmed.match(/^(GET|POST|PUT|PATCH|DELETE) +(.*)$/i);
   if (match) {
     return { method: match[1].toUpperCase(), path: match[2].trim() };
   }

@@ -6,6 +6,7 @@ import { useWorkshopPreview } from '../../hooks/useWorkshopPreview';
 import { useAddonPlayerColumns, playerSteamId } from '../../hooks/useAddonPlayerColumns';
 import { addonAssetUrl } from '../../services/addons';
 import { resolveAddonIcon } from '../addons/addonIcons';
+import { addonCellColorClass } from '../addons/addonCellColors';
 import AddonErrorBoundary from '../addons/AddonErrorBoundary';
 import standardMapPreviews from '../../constants/standardMapPreviews';
 
@@ -78,6 +79,13 @@ const teamColor = (team) => TEAM_COLORS[normalizeTeam(team)] || 'text-theme-mute
 // normalizer doesn't anticipate -- with a tiny inline fallback, because the
 // boundary's default box cannot live in a table cell.
 
+// The drawer is sized for core's own five columns. Each addon column needs
+// room for a short value on one line ("Platinum IV" plus its icon), so the
+// drawer grows with the number shown instead of pushing the column past the
+// right edge. Literal class names, because Tailwind only emits what it can
+// see in the source; the table still scrolls sideways on a narrow screen.
+const DRAWER_WIDTH_BY_ADDON_COLUMNS = ['w-[500px]', 'w-[630px]', 'w-[750px]', 'w-[870px]'];
+
 const AddonColumnIcon = ({ addonId, icon, iconUrl }) => {
     // null when the path tries to leave the addon's ui/ directory. A cell's
     // icon_url comes from the addon's response, not its manifest, so this is
@@ -108,20 +116,26 @@ const AddonColumnCell = ({ col, steamId }) => {
     const entries = cell?.entries || null;
     return (
         <td
-            className={`px-3 py-2 font-mono text-theme-secondary align-top ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+            className={`px-3 py-2 font-mono text-theme-secondary align-top whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}
             title={entries ? undefined : (cell?.title || undefined)}
         >
             <AddonErrorBoundary addonId={col.addonId} fallback={<span className="text-theme-muted">—</span>}>
                 {entries ? (
                     <div className={`flex flex-col gap-0.5 ${col.align === 'right' ? 'items-end' : 'items-start'}`}>
                         {entries.map((entry, idx) => (
-                            <span key={idx} className="inline-flex items-center gap-1" title={entry.title || undefined}>
+                            <span
+                                key={idx}
+                                className={`inline-flex items-center gap-1 ${addonCellColorClass(entry.color)}`}
+                                title={entry.title || undefined}
+                            >
                                 <AddonColumnIcon addonId={col.addonId} icon={entry.icon} iconUrl={entry.iconUrl} />
                                 {entry.display}
                             </span>
                         ))}
                     </div>
-                ) : (cell?.display || '—')}
+                ) : (
+                    <span className={addonCellColorClass(cell?.color)}>{cell?.display || '—'}</span>
+                )}
             </AddonErrorBoundary>
         </td>
     );
@@ -287,7 +301,7 @@ export default function LiveServerStatusModal({ isOpen, onClose, instance, serve
                         leaveFrom="translate-x-0"
                         leaveTo="translate-x-full"
                     >
-                        <div ref={panelRef} className="drawer-panel w-[500px] pointer-events-auto flex flex-col">
+                        <div ref={panelRef} className={`drawer-panel ${DRAWER_WIDTH_BY_ADDON_COLUMNS[playerColumns.length] || DRAWER_WIDTH_BY_ADDON_COLUMNS[0]} max-w-full pointer-events-auto flex flex-col`}>
                             {/* Header */}
                             <div className="drawer-header shrink-0 mt-0" style={{ borderBottom: 'none' }}>
                                 <div>

@@ -15,31 +15,6 @@
 #define QL_PORT_MIN 27960
 #define QL_PORT_MAX 27979
 
-/* Legacy Source/A2S info query; it is never valid Quake Live traffic. */
-static const uint8_t source_engine_query[] = {
-	0xff, 0xff, 0xff, 0xff,
-	'T', 'S', 'o', 'u', 'r', 'c', 'e', ' ',
-	'E', 'n', 'g', 'i', 'n', 'e', ' ', 'Q', 'u', 'e', 'r', 'y',
-};
-
-static __inline int is_source_engine_query(void *payload, void *data_end)
-{
-	const uint8_t *bytes = payload;
-
-	if (payload + sizeof(source_engine_query) > data_end) {
-		return 0;
-	}
-
-#pragma unroll
-	for (int i = 0; i < sizeof(source_engine_query); i++) {
-		if (bytes[i] != source_engine_query[i]) {
-			return 0;
-		}
-	}
-
-	return 1;
-}
-
 SEC("prog")
 int xdp_drop_q3ql_udp_reflections(struct xdp_md *ctx)
 {
@@ -71,14 +46,13 @@ int xdp_drop_q3ql_udp_reflections(struct xdp_md *ctx)
 		if (udph + 1 > (struct udphdr *)data_end) {
 			return XDP_PASS;
 		}
-		// Drop reflected traffic and Source/A2S query floods sent to QL ports.
+		// Drop reflected traffic sent to QL ports. Source/A2S queries must pass:
+		// Steam and in-game server browsers use them to list the server (#228).
 		uint16_t dest_port = __be16_to_cpu(udph->dest);
 		uint16_t src_port = __be16_to_cpu(udph->source);
 		if (iph->protocol == IPPROTO_UDP &&
 			dest_port >= QL_PORT_MIN && dest_port <= QL_PORT_MAX) {
 			if (src_port <= 1024 || src_port == 1900) {
-				return XDP_DROP;
-			} else if (is_source_engine_query(udph + 1, data_end)) {
 				return XDP_DROP;
 			} else {
 				return XDP_PASS;

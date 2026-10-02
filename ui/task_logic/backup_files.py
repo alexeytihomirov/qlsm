@@ -22,7 +22,7 @@ SYSTEM_HOOKS_DIR = os.path.join('ql-assets', 'data', 'system-hooks')
 # Operator-installed addon packages. Real state: an addon uploaded through the
 # UI exists nowhere else, so a backup that skipped this would silently lose it
 # on a restore to a fresh host.
-ADDON_PACKAGES_DIR = 'addon-packages'
+ADDON_PACKAGES_DIR = os.path.join('data', 'addon-packages')
 RESTORE_PATH_PREFIX = '.qlsm-restore-'
 
 

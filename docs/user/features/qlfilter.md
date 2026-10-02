@@ -8,7 +8,7 @@ Public-facing QLDS UDP ports can be targeted by malicious actors with junk or re
 
 ## How It Works
 
-QLFilter operates at a very low level in Linux using **eBPF and XDP** — the eXpress Data Path. XDP hooks into the network driver itself, before the packet even enters the Linux networking stack. Packets that match known junk patterns (DNS, SSDP, legacy Source/A2S engine queries, and similar reflection garbage) are dropped at wire speed, before they consume CPU or reach QLDS. Source/A2S queries are not valid Quake Live traffic and are a common query-flood payload.
+QLFilter operates at a very low level in Linux using **eBPF and XDP** — the eXpress Data Path. XDP hooks into the network driver itself, before the packet even enters the Linux networking stack. Packets that match known junk patterns (DNS, SSDP, and similar reflection garbage) are dropped at wire speed, before they consume CPU or reach QLDS. Server-browser queries (Source/A2S) always pass, because Steam and the in-game browser use them to list your server.
 
 The result: your Quake Live server only sees legitimate player traffic.
 

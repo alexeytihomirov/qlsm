@@ -6,6 +6,11 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.46.2` | 2026-10-02 | [#239](https://github.com/dngrtech/qlsm/pull/239) | Bug fixes and improvements. |
+| `v1.46.1` | 2026-10-01 | [#238](https://github.com/dngrtech/qlsm/pull/238) | Bug fixes and improvements. |
+| `v1.46.0` | 2026-10-01 | [#237](https://github.com/dngrtech/qlsm/pull/237) | Addons can add their own columns to the **Live Status** player table, such as a player rating. |
+| `v1.45.1` | 2026-09-29 | — | Bug fixes and improvements. |
+| `v1.45.0` | 2026-09-25 | [#235](https://github.com/dngrtech/qlsm/pull/235) | Suggest console commands and cvar names as you type in the **RCON Console** and **Global RCON**. |
 | `v1.44.0` | 2026-09-22 | [#234](https://github.com/dngrtech/qlsm/pull/234) | Restart QLSM from the UI to activate addons installed at runtime. |
 | `v1.43.0` | 2026-09-22 | [#233](https://github.com/dngrtech/qlsm/pull/233) | Install and update addons straight from a plugin repository, and let a plugin ship extra files in a subfolder via `package_files`. |
 | `v1.42.0` | 2026-09-21 | [#230](https://github.com/dngrtech/qlsm/pull/230) | Add an addon system for extending QLSM with installable packages, contributing their own UI panels, settings, and API endpoints. |
