@@ -16,8 +16,8 @@ export const RUNTIME_OPTIONS = [
   {
     id: 'minqlxtended',
     name: 'minqlxtended',
-    description: "A hard fork by tjone270. Its plugins are not interchangeable with minqlx. QLSM builds it from alexeytihomirov/minqlxtended (upstream plus QLSM's own per-match demo capture) rather than tjone270's original, until that PR lands upstream.",
-    repoUrl: 'https://github.com/alexeytihomirov/minqlxtended',
+    description: 'A hard fork by tjone270. Its plugins are not interchangeable with minqlx.',
+    repoUrl: 'https://github.com/tjone270/minqlxtended',
   },
 ];
 

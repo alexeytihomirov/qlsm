@@ -16,11 +16,6 @@
 !vultr-startup.sh
 !.github/
 !.github/**
-
-# The Woodpecker pipeline and the home-docker deploy files used to live here
-# (.woodpecker.yml, deploy/). They moved to the private alexeytihomirov/qlsm-ci
-# repo on 2026-09-22 so this tree carries no deployment specific to our own
-# install — see that repo's README.
 !README.md
 !requirements.txt
 !VERSION

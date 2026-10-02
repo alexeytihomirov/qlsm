@@ -6,11 +6,8 @@ hardcoded 'minqlx-plugins' / 'minqlx.log' / '/home/ql/minqlx-shared' string in
 the backend, the playbooks and the Terraform roots resolves through here, so
 the two runtimes cannot drift apart.
 
-minqlxtended is a hard fork of minqlx with no backwards compatibility: plugins
-written for one do not run on the other. QLSM builds it from
-github.com/alexeytihomirov/minqlxtended (upstream tjone270/minqlxtended plus
-QLSM's own per-match demo-capture commits) rather than tjone270's original,
-until those commits land upstream via PR.
+minqlxtended (github.com/tjone270/minqlxtended) is a hard fork of minqlx with
+no backwards compatibility: plugins written for one do not run on the other.
 """
 import re
 
@@ -47,13 +44,6 @@ _RUNTIME_PATHS = {
         'min_python': None,
         'excluded_system_hooks': frozenset(),
     },
-    # Built from QLSM's own fork (alexeytihomirov/minqlxtended), not
-    # tjone270's original -- see the module docstring. No patch chain is
-    # applied at deploy time; the fork is built directly from its own
-    # git_repo/git_version. Plugin pool/shared dir stay minqlxtended's own
-    # (not shared with minqlx): minqlx and minqlxtended plugin files with the
-    # same name are NOT interchangeable (see test_preset_compat.py), so
-    # merging the pools would silently swap in the wrong variant of a plugin.
     MINQLXTENDED: {
         'runtime': MINQLXTENDED,
         'plugins_dirname': 'minqlxtended-plugins',
@@ -62,8 +52,8 @@ _RUNTIME_PATHS = {
         'engine_so': 'minqlxtended.x64.so',
         'launch_script': 'run_server_x64_minqlxtended.sh',
         'log_filename': 'minqlxtended.log',
-        'git_repo': 'https://github.com/alexeytihomirov/minqlxtended.git',
-        'git_version': 'd0719268d4aa4d9c0f2f05c9524f2a87fa733bc5',
+        'git_repo': 'https://github.com/tjone270/minqlxtended.git',
+        'git_version': '411591a2f6f8ad26949ee4c83758149d5b95f7ab',
         'os_name': 'Ubuntu 24.04 LTS x64',
         'os_family': 'ubuntu',
         'os_type': 'ubuntu',
@@ -80,28 +70,16 @@ _RUNTIME_PATHS = {
 }
 
 
-# A Host row can still carry this value on disk from when it was a valid,
-# selectable runtime (2026-09-18 through 2026-09-22). Mapping it forward to
-# MINQLXTENDED -- rather than letting it fall through to the unknown-value
-# branch below -- keeps any such host resolving to the fork build it was
-# actually set up with, instead of silently being reclassified as minqlx.
-_RETIRED_RUNTIME_ALIASES = {
-    'minqlxtended-patched': MINQLXTENDED,
-}
-
-
 def normalize_runtime(value):
     """Coerce any stored value to a valid runtime.
 
     None, an unknown string, or a non-string all resolve to minqlx: a NULL
     column means the row predates this feature, and nothing but minqlx has
-    ever existed. A retired runtime value maps forward via
-    _RETIRED_RUNTIME_ALIASES instead.
+    ever existed.
     """
     if not isinstance(value, str):
         return DEFAULT_RUNTIME
     normalized = value.strip().lower()
-    normalized = _RETIRED_RUNTIME_ALIASES.get(normalized, normalized)
     return normalized if normalized in VALID_RUNTIMES else DEFAULT_RUNTIME
 
 

@@ -40,10 +40,7 @@
 
     minqlx_git_version: "fbdd915185337791d8e209dc4b686a1ee60d3721"
     minqlx_shared_dir: "/home/ql/minqlx-shared"
-    # QLSM's own build: alexeytihomirov/minqlxtended fork (upstream +
-    # per-match demo capture under sv_demoRecord/sv_demoCut), not tjone270's
-    # original -- see ui/runtime.py.
-    minqlxtended_git_version: "d0719268d4aa4d9c0f2f05c9524f2a87fa733bc5"
+    minqlxtended_git_version: "411591a2f6f8ad26949ee4c83758149d5b95f7ab"
     minqlxtended_shared_dir: "/home/ql/minqlxtended-shared"
 
     runtime_shared_dir: "{{ minqlxtended_shared_dir if runtime == 'minqlxtended' else minqlx_shared_dir }}"
@@ -632,9 +629,8 @@
       when: runtime == 'minqlx'
 
   #######################################################################
-  # 5b. Shared minqlxtended build (alexeytihomirov/minqlxtended fork)
+  # 5b. Shared minqlxtended build
   #
-  # Built from QLSM's own fork, not tjone270's original -- see ui/runtime.py.
   # No patches: `damage` is a native event and reset_acc is pure Python here,
   # so both local C patches are obsolete. No PYTHONPATH either -- the .so
   # locates minqlxtended.zip beside itself.
@@ -663,11 +659,11 @@
         mode: '0755'
       when: runtime == 'minqlxtended'
 
-    - name: Clone minqlxtended (alexeytihomirov fork) repo as ql user
+    - name: Clone minqlxtended repo as ql user
       become: yes
       become_user: ql
       git:
-        repo: https://github.com/alexeytihomirov/minqlxtended.git
+        repo: https://github.com/tjone270/minqlxtended.git
         dest: "{{ minqlx_build_dir }}"
         version: "{{ minqlxtended_git_version }}"
         depth: 1

@@ -36,17 +36,6 @@ def test_runtime_normalisation_is_case_and_space_insensitive(value):
     assert normalize_runtime(value) == MINQLXTENDED
 
 
-def test_retired_minqlxtended_patched_value_maps_to_minqlxtended():
-    """A host created while 'minqlxtended-patched' was a selectable runtime
-    (2026-09-18 through 2026-09-22) can still carry that literal string in its
-    DB column. It must keep resolving to the fork build it was actually set up
-    with, not fall through to minqlx."""
-    assert normalize_runtime("minqlxtended-patched") == MINQLXTENDED
-    assert normalize_runtime("MinQLXtended-Patched") == MINQLXTENDED
-    # But it is no longer an option a caller may pick going forward.
-    assert is_valid_runtime("minqlxtended-patched") is False
-
-
 def test_is_valid_runtime_rejects_non_strings_and_unknowns():
     assert is_valid_runtime("minqlx") is True
     assert is_valid_runtime("MINQLXTENDED") is True
@@ -88,15 +77,12 @@ def test_minqlxtended_paths_match_the_p0_spike():
     assert paths["engine_so"] == "minqlxtended.x64.so"
     assert paths["launch_script"] == "run_server_x64_minqlxtended.sh"
     assert paths["log_filename"] == "minqlxtended.log"
-    assert paths["min_python"] == (3, 12)
-    assert "force_rate.so" in paths["excluded_system_hooks"]
-    # QLSM builds minqlxtended from its own fork, not tjone270's original --
-    # see the module docstring.
-    assert paths["git_repo"] == "https://github.com/alexeytihomirov/minqlxtended.git"
-    assert paths["git_version"] != "HEAD"
+    assert paths["git_repo"] == "https://github.com/tjone270/minqlxtended.git"
+    assert paths["git_version"] == "411591a2f6f8ad26949ee4c83758149d5b95f7ab"
     assert paths["os_name"] == "Ubuntu 24.04 LTS x64"
     assert paths["os_family"] == "ubuntu"
     assert paths["os_type"] == "ubuntu"
+    assert paths["min_python"] == (3, 12)
 
 
 def test_force_rate_is_excluded_only_on_minqlxtended():

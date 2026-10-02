@@ -6,13 +6,11 @@ describe('runtime constants', () => {
     expect(DEFAULT_RUNTIME).toBe('minqlx');
   });
 
-  it('gives every runtime the repo its tooltip links to', () => {
+  it('gives every runtime the upstream repo its tooltip links to', () => {
     expect(RUNTIME_OPTIONS.find(o => o.id === 'minqlx').repoUrl)
       .toBe('https://github.com/MinoMino/minqlx');
-    // QLSM builds minqlxtended from its own fork, not tjone270's original --
-    // see the runtime's description and ui/runtime.py.
     expect(RUNTIME_OPTIONS.find(o => o.id === 'minqlxtended').repoUrl)
-      .toBe('https://github.com/alexeytihomirov/minqlxtended');
+      .toBe('https://github.com/tjone270/minqlxtended');
   });
 
   it('offers exactly the two runtimes, minqlx first', () => {
