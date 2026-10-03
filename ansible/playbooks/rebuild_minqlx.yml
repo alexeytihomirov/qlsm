@@ -12,7 +12,7 @@
     # QLSM's own build: alexeytihomirov/minqlxtended fork (upstream +
     # per-match demo capture under sv_demoRecord/sv_demoCut), not tjone270's
     # original -- see ui/runtime.py.
-    minqlxtended_git_version: "d0719268d4aa4d9c0f2f05c9524f2a87fa733bc5"
+    minqlxtended_git_version: "0c453066d301bf6f567e39778a7b137f4e3c50a7"
     minqlxtended_shared_dir: "/home/ql/minqlxtended-shared"
 
   tasks:
