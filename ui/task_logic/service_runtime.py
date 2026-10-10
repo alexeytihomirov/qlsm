@@ -113,8 +113,11 @@ if ports_dbs:
                 status_queue.put((port, status))
         status_queue.put((None, None))
 
-    status_queue = multiprocessing.Queue()
-    worker = multiprocessing.Process(target=collect_statuses, args=(status_queue,), daemon=True)
+    # Python 3.14 defaults to forkserver on Linux, which cannot pickle a function
+    # defined in a `python3 -c` script. Pin fork; the parent has no threads yet.
+    mp = multiprocessing.get_context("fork")
+    status_queue = mp.Queue()
+    worker = mp.Process(target=collect_statuses, args=(status_queue,), daemon=True)
     worker.start()
     redis_deadline = time.monotonic() + {REDIS_PHASE_TIMEOUT}
     while True:
