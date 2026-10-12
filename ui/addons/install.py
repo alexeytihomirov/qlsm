@@ -247,3 +247,19 @@ def scan_installed_versions(packages_dir):
         if manifest is not None:
             versions[entry] = manifest.get('version') or ''
     return versions
+
+
+def package_stamp(root_dir):
+    """Identity of the package sitting at `root_dir`, or None if there is none.
+
+    install_addon_zip always writes a fresh tree and swaps it in, so the
+    manifest file is a new file after every install, including a reinstall of
+    the very same version. Comparing this at boot and now is what tells "the
+    package this process imported" from "one written since", which a version
+    comparison alone cannot do.
+    """
+    try:
+        st = os.stat(os.path.join(root_dir, MANIFEST_FILENAME))
+    except OSError:
+        return None
+    return (st.st_ino, st.st_mtime_ns, st.st_size)
