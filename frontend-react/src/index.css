@@ -2467,6 +2467,37 @@ body {
   position: relative;
 }
 
+/* Pending-restart reminder (shown only while an addon change waits for one) */
+.navbar-restart-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--accent-warning);
+  background: color-mix(in srgb, var(--accent-warning) 10%, transparent);
+  border: 1px solid var(--accent-warning);
+  border-radius: 6px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.navbar-restart-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-warning) 20%, transparent);
+  transform: translateY(-1px);
+}
+
+.navbar-restart-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
 /* Login button */
 .navbar-login-btn {
   display: flex;
@@ -2899,11 +2930,13 @@ body {
     font-size: 18px;
   }
 
-  .navbar-logout-btn span {
+  .navbar-logout-btn span,
+  .navbar-restart-btn span {
     display: none;
   }
 
   .navbar-logout-btn,
+  .navbar-restart-btn,
   .navbar-login-btn {
     padding: 8px 12px;
   }

@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNotification } from '../components/NotificationProvider';
 import { getSystemInfo, requestRestart, waitForRestart } from '../services/system';
 
+// What a restart does, for the confirmation every restart control raises.
+export const RESTART_CONFIRM_MESSAGE = 'The web interface and the background workers come back on freshly loaded code. Running background tasks are allowed to finish first, but the interface is unavailable for a few seconds. Game servers QLSM manages are not touched.';
+
 /**
  * State and action behind every "restart QLSM" control.
  *
