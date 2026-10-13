@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Loader2, RotateCw } from 'lucide-react';
 import ConfirmationModal from '../ConfirmationModal';
-import { useQlsmRestart } from '../../hooks/useQlsmRestart';
+import { RESTART_CONFIRM_MESSAGE, useQlsmRestart } from '../../hooks/useQlsmRestart';
 
 /**
  * "Something needs a restart" warning, with the button that actually does it.
@@ -31,7 +31,7 @@ function RestartQlsmBanner({ message }) {
         onClose={() => setConfirmOpen(false)}
         onConfirm={restart}
         title="Restart QLSM?"
-        message={'The web interface and the background workers come back on freshly loaded code. Running background tasks are allowed to finish first, but the interface is unavailable for a few seconds. Game servers QLSM manages are not touched.'}
+        message={RESTART_CONFIRM_MESSAGE}
         confirmButtonText="Restart"
         confirmButtonVariant="warning"
       />

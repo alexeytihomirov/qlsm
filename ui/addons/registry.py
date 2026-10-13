@@ -20,6 +20,7 @@ import traceback
 
 from ui.addons.context import AddonContext
 from ui.addons.hooks import HOOK_SCOPES, LIST_HOOKS
+from ui.addons.install import package_stamp
 from ui.addons.manifest import CURRENT_UI_API, MANIFEST_FILENAME, read_manifest
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class LoadedAddon:
         self.manifest = manifest
         self.root_dir = root_dir
         self.source = source           # 'bundled' | 'installed'
+        self.stamp = package_stamp(root_dir)   # the package as it was at boot
         self.ctx = None
         self.errors = []               # manifest errors + load traceback summary
         self.loaded = False

@@ -11,7 +11,7 @@ import os
 from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import jwt_required
 
-from ui.addons import catalog, get_addon
+from ui.addons import catalog, get_addon, get_addons
 from ui.addons.manifest import IMAGE_EXTENSIONS
 from ui.addons.settings import AddonSettingsError
 from ui.models import Host, QLInstance
@@ -76,10 +76,11 @@ def list_addons_api():
     whose code the operator wrongly believes is already live, with no
     explanation either way.
     """
-    from ui.addons.install import scan_installed_ids, scan_installed_versions
+    from ui.addons.install import package_stamp, scan_installed_ids, scan_installed_versions
 
     entries = catalog()
     loaded_ids = {entry['id'] for entry in entries}
+    loaded = get_addons()
     packages_dir = current_app.config.get('ADDON_PACKAGES_DIR')
     on_disk = scan_installed_ids(packages_dir)
     on_disk_versions = scan_installed_versions(packages_dir)
@@ -88,11 +89,13 @@ def list_addons_api():
         installed = entry['source'] == 'installed'
         # Loaded, but its package is gone from the volume -> uninstalled since boot.
         removed = installed and entry['id'] not in on_disk
-        # Present both before and after, but the on-disk bytes moved on -> an
-        # in-place update the process hasn't picked up yet.
-        updated = (
-            installed and not removed
-            and on_disk_versions.get(entry['id']) != entry['version']
+        # Present both before and after, but the package on disk is not the
+        # one this process imported -> an in-place update it hasn't picked up
+        # yet. The stamp catches a reinstall at an unchanged version, which
+        # the version comparison alone would report as nothing to do.
+        updated = installed and not removed and (
+            on_disk_versions.get(entry['id']) != entry['version']
+            or package_stamp(os.path.join(packages_dir, entry['id'])) != loaded[entry['id']].stamp
         )
         entry['pending_restart'] = removed or updated
         if removed:
