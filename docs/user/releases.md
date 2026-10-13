@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.47.8` | 2026-10-13 | [#247](https://github.com/dngrtech/qlsm/pull/247) | Fixed live status and player counts not showing for game hosts running Python 3.14. |
 | `v1.47.7` | 2026-10-12 | [#249](https://github.com/dngrtech/qlsm/pull/249) | Fixed the **Restart QLSM** reminder disappearing after dismissing the prompt or reinstalling an addon at the same version; a **Restart QLSM** button now stays in the top bar until QLSM restarts. |
 | `v1.47.6` | 2026-10-12 | [#248](https://github.com/dngrtech/qlsm/pull/248) | Addon payload sync now reaches standalone and self hosts. |
 | `v1.47.5` | 2026-10-12 | [#245](https://github.com/dngrtech/qlsm/pull/245) | Fixed addon playbooks failing to run when pushing an addon's host configuration. |

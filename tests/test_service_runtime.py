@@ -65,7 +65,10 @@ def test_build_probe_covers_all_port_db_pairs_with_one_bounded_ssh_command():
     assert "socket_connect_timeout=1" in script
     assert "socket_timeout=1" in script
     assert "ThreadPoolExecutor(max_workers=min(8, len(ports_dbs)))" in script
-    assert "multiprocessing.Process" in script
+    # Python 3.14 hosts default to forkserver, which cannot pickle the worker
+    # function of a `python3 -c` script: live status stayed null on new hosts.
+    assert 'multiprocessing.get_context("fork")' in script
+    assert "mp.Process(" in script
     assert "worker.kill()" in script
     assert "timeout=5" in script
 
