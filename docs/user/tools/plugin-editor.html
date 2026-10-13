@@ -742,6 +742,13 @@ function commandRowTemplate(i, j, c){
     </div>`;
 }
 
+function runtimeOptions(current){
+  const known = ['minqlx','minqlxtended'];
+  const opts = [{ value:'', label:'(ask at install)' }, ...known.map(v => ({ value:v, label:v }))];
+  if(current && !known.includes(current)) opts.push({ value:current, label:current + ' (unrecognized)' });
+  return opts.map(o => `<option value="${escapeHtml(o.value)}" ${o.value === (current || '') ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+}
+
 function renderEditor(){
   const el = document.getElementById('editor-panel');
   if(!el) return;
@@ -762,7 +769,7 @@ function renderEditor(){
       </div>
       <div class="field"><label for="f-description">Description</label><textarea id="f-description" data-field="description" data-index="${i}" rows="3">${escapeHtml(p.description)}</textarea></div>
       <div class="field-row">
-        <div class="field"><label for="f-runtime">Runtime</label><input id="f-runtime" class="mono" data-field="runtime" data-index="${i}" value="${escapeHtml(p.runtime)}"/></div>
+        <div class="field"><label for="f-runtime">Runtime</label><select id="f-runtime" class="mono" data-field="runtime" data-index="${i}">${runtimeOptions(p.runtime)}</select></div>
         <div class="field"><label for="f-version">Requires QLSM version</label><input id="f-version" class="mono" data-field="requires_qlsm_version" data-index="${i}" value="${escapeHtml(p.requires_qlsm_version)}" placeholder="1.36.0"/></div>
       </div>
     </fieldset>
@@ -1057,6 +1064,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if(t.type === 'checkbox' && t.dataset && t.dataset.field === 'default'){
       const i = Number(t.dataset.index), row = Number(t.dataset.row);
       setByPath(i, t.dataset.array, row, 'default', t.checked);
+      updateLight();
+    }
+    else if(t.tagName === 'SELECT' && t.dataset.field === 'runtime'){
+      setByPath(Number(t.dataset.index), null, null, 'runtime', t.value);
       updateLight();
     }
     else if(t.tagName === 'SELECT' && t.dataset.field === 'type'){
