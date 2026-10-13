@@ -105,6 +105,11 @@ def setup_standalone_host_logic(host_id, rerun=False):
         if not _run_setup_playbook(host, inventory_path):
             return f"Error during Ansible host setup for host {host_id}"
 
+        # Same addon payload sync a cloud host's setup gets (host.payload_sync
+        # hook), before the reconcile below restarts instances.
+        from .ansible_host_setup import _dispatch_addon_payload_sync
+        _dispatch_addon_payload_sync(host)
+
         # Success
         if host.provider != 'self':
             host.redis_unix_socket = True
