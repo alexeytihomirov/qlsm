@@ -241,3 +241,51 @@ def test_uninstall_keeps_addon_state_rows(ctx):
     with app.app_context():
         row = AddonState.query.filter_by(addon_id='uploaded-addon').one()
         assert row.settings == {'kept': 1}
+
+
+def test_an_addon_reinstalled_at_the_same_version_is_pending_restart(tmp_path):
+    """A reinstall writes a fresh package even when the version string did not
+    move (a rebuilt zip, a repaired install). The running process still holds
+    the code it imported at boot, and the install response says a restart is
+    needed -- the catalog has to agree, or the restart reminder vanishes."""
+    from ui.addons.install import install_addon_zip
+
+    packages = tmp_path / 'addon-packages'
+    packages.mkdir()
+    install_addon_zip(zip_bytes(), str(packages))
+
+    db_fd, db_path = tempfile.mkstemp()
+    app = create_app({
+        'TESTING': True, 'SECRET_KEY': 'x', 'JWT_SECRET_KEY': 'x',
+        'JWT_COOKIE_CSRF_PROTECT': False, 'JWT_TOKEN_LOCATION': ['headers', 'cookies'],
+        'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
+        'SERVER_NAME': 'test.server', 'RCON_ENABLED': False,
+        'ADDON_PACKAGES_DIR': str(packages),
+    })
+    with app.app_context():
+        db.create_all()
+    make_user(app, 'installer', 'pw')
+    headers = auth_headers(app, 'installer')
+    client = app.test_client()
+
+    def entry():
+        addons = client.get('/api/addons', headers=headers).get_json()['data']['addons']
+        return next(a for a in addons if a['id'] == 'uploaded-addon')
+
+    try:
+        assert entry()['pending_restart'] is False
+
+        assert upload(client, headers, zip_bytes()).status_code == 201
+
+        reinstalled = entry()
+        assert reinstalled['pending_restart'] is True
+        assert reinstalled['pending_action'] == 'update'
+        assert reinstalled['loaded'] is True
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.engine.dispose()
+        os.close(db_fd)
+        for path in (db_path, f'{db_path}-wal', f'{db_path}-shm'):
+            if os.path.exists(path):
+                os.unlink(path)
