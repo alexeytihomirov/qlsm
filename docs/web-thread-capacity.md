@@ -38,10 +38,8 @@ WebSockets / 12 threads, then verifies 32 HTTP requests with 24 persistent
 WebSockets / 48 threads, and verifies recovery after socket closure. It starts
 only short-lived isolated fixture processes, never the development stack.
 
-`scripts/probe_web_thread_capacity.py` runs the same fixture without pytest, so
-it can be exercised inside the exact production image with no production mounts
-or network access. Set `TMPDIR` to a dedicated scratch directory. It does not
-connect to Redis, SQLite, RCON, or game servers.
+The fixture and helpers live entirely in `tests/test_web_thread_capacity.py`;
+no standalone diagnostic probe is shipped.
 
 ## x76 validation
 
