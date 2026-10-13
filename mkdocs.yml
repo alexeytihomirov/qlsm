@@ -62,6 +62,7 @@ nav:
     - Presets And Default Config: presets/overview.md
     - Configure Auto-Restart: operations/auto-restart.md
   - Operations:
+    - Sizing and Tuning the QLSM Host: operations/panel-host-tuning.md
     - Host Actions Menu: operations/host-actions-menu.md
     - Update Workshop Item: operations/update-workshop-item.md
     - Check For Plugin Updates: operations/check-for-updates.md

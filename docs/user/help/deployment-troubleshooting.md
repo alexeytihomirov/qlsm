@@ -74,6 +74,13 @@ here has to be deleted and recreated. See [Server Runtime](../getting-started/ad
 
 See: [Configure Auto-Restart](../operations/auto-restart.md)
 
+## Problem: The panel takes a long time to open
+
+Open browser WebSockets can exhaust the web request pool, while memory pressure
+or a slow dependency can produce similar symptoms. See [Sizing and Tuning the
+QLSM Host](../operations/panel-host-tuning.md) for checks and safe thread tuning.
+Do not restart game instances or re-run game-host setup to fix panel latency.
+
 ## Related Pages
 
 - [Host Logs](../operations/host-logs.md)
