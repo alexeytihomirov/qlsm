@@ -152,5 +152,5 @@ rather than increasing thread counts indefinitely.
 
 - [Installation and configuration](../getting-started/installation.md)
 - [Deployment troubleshooting](../help/deployment-troubleshooting.md)
-- [RCON console](rcon-console.md)
-- [Global RCON](global-rcon.md)
+- [RCON console](../operations/rcon-console.md)
+- [Global RCON](../operations/global-rcon.md)

@@ -62,7 +62,6 @@ nav:
     - Presets And Default Config: presets/overview.md
     - Configure Auto-Restart: operations/auto-restart.md
   - Operations:
-    - Sizing and Tuning the QLSM Host: operations/panel-host-tuning.md
     - Host Actions Menu: operations/host-actions-menu.md
     - Update Workshop Item: operations/update-workshop-item.md
     - Check For Plugin Updates: operations/check-for-updates.md
@@ -86,6 +85,7 @@ nav:
     - User Management & API Keys: administration/user-management.md
     - Operators: administration/operators.md
     - Backup & Restore: administration/backup-restore.md
+    - Sizing and Tuning the QLSM Host: administration/panel-host-tuning.md
   - Release Notes: releases.md
   - Help:
     - Deployment Troubleshooting: help/deployment-troubleshooting.md
