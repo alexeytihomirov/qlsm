@@ -295,6 +295,29 @@ def _validate_panel(name, panel, errors):
     return errors
 
 
+MENU_STATUS_POINTS = ('host_menu', 'instance_menu')
+
+
+def _validate_menu_status(mount, status, errors):
+    """Validate a menu entry's optional `status` route.
+
+    It is fetched with the operator's session each time the menu opens, so it
+    follows the panel route rules and is GET only: opening a menu must never
+    mutate anything.
+    """
+    where = f'ui.{mount}.status'
+    if mount not in MENU_STATUS_POINTS:
+        _err(errors, f'{where}: only allowed on host_menu and instance_menu entries')
+        return
+    before = len(errors)
+    _validate_panel_route(where, status, errors)
+    if len(errors) > before:
+        return
+    method, _path = _split_route(where, status, errors)
+    if method != 'GET':
+        _err(errors, f'{where}: must be a GET route')
+
+
 def _validate_live_status_column(item, errors):
     """Validate one entry; returns its id, or None when there isn't a usable one.
 
@@ -404,6 +427,8 @@ def _validate_ui(ui, errors):
                 _err(errors, f'ui.{mount}: "renders" must be one of {", ".join(RENDER_MODES)}')
             if renders == 'modal' and not has_component:
                 _err(errors, f'ui.{mount}: "renders": "modal" needs a component, not a panel')
+            if item.get('status') is not None:
+                _validate_menu_status(mount, item['status'], errors)
     return ui
 
 

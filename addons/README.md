@@ -163,6 +163,16 @@ path has a `.`, `..` or empty segment, which covers a table row's
 `{placeholder}` values: they are filled in from the addon's own response,
 after the manifest was validated.
 
+A `host_menu` or `instance_menu` entry may declare `"status": "GET <route>"`
+to show a small status after its label. The route follows the same rules as a
+panel route (relative to the addon prefix, `{host_id}` / `{instance_id}`
+placeholders) and must be a GET. It answers `{"data": {"ok": true, "label":
+"Streaming"}}`: QLSM shows a green dot when `ok` is true, a grey one
+otherwise, then the label (truncated, full text on hover). The status is
+fetched each time the menu opens and is not refreshed while it stays open. If
+the request fails or the answer is malformed nothing extra is shown, and the
+entry still opens normally. `status` is rejected on other mount points.
+
 ### `live_status_columns` -- a column in core's own players table
 
 Every other mount point gives an addon its own place: a menu entry, a tab, a

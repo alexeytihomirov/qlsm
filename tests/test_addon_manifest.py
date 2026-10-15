@@ -547,3 +547,40 @@ def test_live_status_column_route_split_matches_the_frontend(route):
 def test_route_split_still_accepts_what_the_frontend_parses(route):
     _, errors = validate_manifest(_minimal(ui={'panels': {'p': {'kind': 'form', 'load': route}}}))
     assert errors == []
+
+
+def _menu_status(status, point='host_menu'):
+    return validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form'}},
+        point: [{'id': 'relay', 'label': 'Relay', 'panel': 'p', 'status': status}],
+    }))
+
+
+@pytest.mark.parametrize('point', ['host_menu', 'instance_menu'])
+def test_menu_status_route_accepted(point):
+    _, errors = _menu_status('GET hosts/{host_id}/status', point)
+    assert errors == []
+    _, errors = _menu_status('instances/{instance_id}/status', point)
+    assert errors == []
+
+
+@pytest.mark.parametrize('route', ['POST hosts/{host_id}/status', 'DELETE x', 'put x'])
+def test_menu_status_must_be_get(route):
+    _, errors = _menu_status(route)
+    assert any('status' in e and 'GET' in e for e in errors)
+
+
+@pytest.mark.parametrize('route', [
+    'GET /api/hosts', 'GET ../../hosts', 'GET https://evil.example/x', 5, '',
+])
+def test_menu_status_route_escape_rejected(route):
+    _, errors = _menu_status(route)
+    assert errors
+
+
+def test_status_on_settings_section_rejected():
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form'}},
+        'settings_section': {'id': 's', 'panel': 'p', 'status': 'GET x'},
+    }))
+    assert any('status' in e and 'host_menu' in e for e in errors)
