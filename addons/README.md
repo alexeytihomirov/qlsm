@@ -180,7 +180,11 @@ entry for it in the navbar, after core's own items and ordered by addon id:
 The entry follows the same rule as every other mount: it appears only while
 the addon is loaded, compatible with this `ui_api` and switched on from the
 Addons page, and it is highlighted while the page is open. The mobile menu
-lists it as well. A core that predates `nav` ignores the key (the page still
+lists it as well.
+
+A page with a navbar entry owns its header: core renders no "Addons" back link
+and no title, so render your own title (and any actions) in the page component.
+A page without `nav` keeps core's back link and title. A core that predates `nav` ignores the key (the page still
 works at `/addons/<id>`, there is just no navbar entry).
 
 ### `live_status_columns` -- a column in core's own players table
