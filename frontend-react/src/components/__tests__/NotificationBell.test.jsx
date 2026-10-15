@@ -140,6 +140,18 @@ describe('NotificationBell dropdown', () => {
     await waitFor(() => expect(screen.queryByTestId('notification-badge')).not.toBeInTheDocument());
   });
 
+  it('keeps the unread count when marking everything read fails', async () => {
+    markAllNotificationsRead.mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderBell();
+    await screen.findByText('2');
+    await user.click(screen.getByRole('button', { name: /notifications/i }));
+    await user.click(await screen.findByText('Mark all read'));
+
+    await waitFor(() => expect(markAllNotificationsRead).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('notification-badge')).toHaveTextContent('2');
+  });
+
   it('says so when there are none', async () => {
     listNotifications.mockResolvedValue({ notifications: [], unread_count: 0 });
     const user = userEvent.setup();

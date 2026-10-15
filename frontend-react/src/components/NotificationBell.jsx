@@ -76,6 +76,8 @@ function NotificationBell() {
   const markAllRead = async () => {
     try {
       await markAllNotificationsRead();
+    } catch {
+      // The reload below shows what is still unread.
     } finally {
       await loadList();
     }
