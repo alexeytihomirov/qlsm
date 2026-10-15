@@ -85,6 +85,7 @@ nav:
     - User Management & API Keys: administration/user-management.md
     - Operators: administration/operators.md
     - Backup & Restore: administration/backup-restore.md
+    - Sizing and Tuning the QLSM Host: administration/panel-host-tuning.md
   - Release Notes: releases.md
   - Help:
     - Deployment Troubleshooting: help/deployment-troubleshooting.md

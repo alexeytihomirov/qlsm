@@ -101,7 +101,9 @@ services:
       - gunicorn
       - --config=gunicorn.conf.py
       - --workers=1
-      - --threads=12
+      # Each threaded Socket.IO WebSocket occupies one request thread.
+      # Leave HTTP/health-check headroom for multiple open browser tabs.
+      - --threads=${WEB_THREADS:-48}
       - --bind=0.0.0.0:5001
       - --timeout=120
       - --capture-output

@@ -6,6 +6,11 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.47.9` | 2026-10-13 | [#250](https://github.com/dngrtech/qlsm/pull/250) | Increased and made configurable the web request-thread pool so open Socket.IO connections do not exhaust the previous 12-thread capacity and stall the Servers page. |
+| `v1.47.8` | 2026-10-13 | [#247](https://github.com/dngrtech/qlsm/pull/247) | Fixed live status and player counts not showing for game hosts running Python 3.14. |
+| `v1.47.7` | 2026-10-12 | [#249](https://github.com/dngrtech/qlsm/pull/249) | Fixed the **Restart QLSM** reminder disappearing after dismissing the prompt or reinstalling an addon at the same version; a **Restart QLSM** button now stays in the top bar until QLSM restarts. |
+| `v1.47.6` | 2026-10-12 | [#248](https://github.com/dngrtech/qlsm/pull/248) | Addon payload sync now reaches standalone and self hosts. |
+| `v1.47.5` | 2026-10-12 | [#245](https://github.com/dngrtech/qlsm/pull/245) | Fixed addon playbooks failing to run when pushing an addon's host configuration. |
 | `v1.47.4` | 2026-10-10 | [#246](https://github.com/dngrtech/qlsm/pull/246) | Added a hosted **Repository Manifest Editor** so anyone can build a `qlsm-repository.json` for their plugin repository without running QLSM. |
 | `v1.47.3` | 2026-10-07 | [#243](https://github.com/dngrtech/qlsm/pull/243) | Fixed **Restart QLSM** sometimes staying on "Restarting…" forever, and reloading the page before the restarted QLSM was actually serving. |
 | `v1.47.2` | 2026-10-07 | [#242](https://github.com/dngrtech/qlsm/pull/242) | Bug fixes and improvements. |

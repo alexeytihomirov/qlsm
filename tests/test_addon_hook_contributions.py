@@ -179,6 +179,58 @@ def test_standalone_and_self_setup_pass_addon_extravars(app, provider):
     assert command[-1].endswith('setup_host.yml')
 
 
+@pytest.mark.parametrize('provider', ['standalone', 'self'])
+@pytest.mark.parametrize('rerun', [False, True])
+def test_standalone_and_self_setup_sync_addon_payloads(app, provider, rerun):
+    """host.payload_sync used to be dispatched for cloud hosts only, so an
+    addon's host-side payload never reached a standalone or self host."""
+    from ui.task_logic import standalone_host_setup as mod
+
+    with app.app_context():
+        host = Host(
+            name='h', ip_address='10.0.0.2', provider=provider, ssh_port=22,
+            ssh_user='root', ssh_key_path='/tmp/key',
+            status=HostStatus.CONFIGURING if rerun else HostStatus.PROVISIONED_PENDING_SETUP,
+        )
+        db.session.add(host)
+        db.session.commit()
+        host_id = host.id
+
+        with patch('ui.addons.dispatch', return_value=[]) as dispatch, \
+                patch.object(mod, 'get_current_job', return_value=MagicMock(id='job')), \
+                patch.object(mod, '_generate_standalone_inventory',
+                             return_value=('/tmp/inventory.yml', '10.0.0.2')), \
+                patch.object(mod, '_wait_for_ssh', return_value=True), \
+                patch.object(mod, '_run_setup_playbook', return_value=True), \
+                patch('ui.task_logic.common._reconcile_host_instances_after_setup',
+                      return_value=(0, 0)):
+            mod.setup_standalone_host_logic(host_id, rerun=rerun)
+
+        dispatch.assert_called_once_with('host.payload_sync', host_id, host_id)
+        assert db.session.get(Host, host_id).status == HostStatus.ACTIVE
+
+
+def test_standalone_setup_skips_payload_sync_when_the_playbook_fails(app):
+    from ui.task_logic import standalone_host_setup as mod
+
+    with app.app_context():
+        host = Host(name='h', ip_address='10.0.0.2', provider='standalone', ssh_port=22,
+                    ssh_user='root', ssh_key_path='/tmp/key',
+                    status=HostStatus.PROVISIONED_PENDING_SETUP)
+        db.session.add(host)
+        db.session.commit()
+
+        with patch('ui.addons.dispatch', return_value=[]) as dispatch, \
+                patch.object(mod, 'get_current_job', return_value=MagicMock(id='job')), \
+                patch.object(mod, '_generate_standalone_inventory',
+                             return_value=('/tmp/inventory.yml', '10.0.0.2')), \
+                patch.object(mod, '_wait_for_ssh', return_value=True), \
+                patch.object(mod, '_run_setup_playbook', return_value=False):
+            mod.setup_standalone_host_logic(host.id)
+
+        dispatch.assert_not_called()
+
+
 @pytest.mark.parametrize('playbook', ['setup_host.yml', 'rebuild_minqlx.yml'])
 def test_minqlxtended_is_cloned_from_overridable_vars(playbook):
     """The repository is a var like the version, so a host.setup contribution
