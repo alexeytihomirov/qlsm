@@ -335,6 +335,22 @@ manifest -- a `live_status_columns` cell's `icon_url` does, and the manifest
 validator never sees it. An escaping path renders no image at all, rather
 than becoming a credentialed same-origin request to wherever it points.
 
+## Periodic work: `poller.tick`
+
+`ctx.on('poller.tick')` subscribes a handler that runs once per cycle of the
+status poller (every 15 seconds), right after the host poll. It takes no
+arguments and its return value is ignored. Things to know:
+
+- It fires in the `flask run-status-poller` process, not in the web app, so
+  in-memory state a handler keeps there is not visible to request handlers;
+  persist through the addon's settings or the database.
+- Handlers run inline in the poll loop. Keep them short: a handler that takes
+  longer than 10 seconds delays the next poll and is logged as a warning. To
+  act less often than every 15 seconds, count ticks in the handler.
+- A handler that raises is logged and skipped; it cannot stop the poller.
+- The hook is gated at `global` scope: it only fires for an addon that is
+  switched on.
+
 ## Cross-addon UI contribution (addon-owned hooks)
 
 None of the tiers above cover one addon adding UI elements — actions,
