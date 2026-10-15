@@ -30,8 +30,8 @@ const mount = (key, entry = {}) => ({
   entry: { id: key, panel: 'p', ...entry },
 });
 
-function Harness() {
-  const addonMenu = useAddonMenu('instance_menu', { id: 7 });
+function Harness({ entityId = 7 }) {
+  const addonMenu = useAddonMenu('instance_menu', { id: entityId });
   return (
     <>
       {addonMenu.modal}
@@ -118,5 +118,48 @@ describe('addon menu entry status', () => {
     await openMenu(); // open again
     await screen.findByText('Up');
     expect(addonRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refetch while the menu stays open and the active item changes', async () => {
+    mockMounts = [mount('a', { status: 'GET s' }), mount('b')];
+    addonRequest.mockResolvedValue({ ok: true, label: 'Up' });
+    render(<Harness />);
+    await openMenu();
+    await screen.findByText('Up');
+
+    await userEvent.hover(screen.getByText('Entry b'));
+    await userEvent.hover(screen.getByText('Entry a'));
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByText('Up')).toBeInTheDocument();
+    expect(addonRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches for a different entity and hides the old status meanwhile', async () => {
+    mockMounts = [mount('a', { status: 'GET instances/{instance_id}/status' })];
+    let resolveSecond;
+    addonRequest.mockResolvedValueOnce({ ok: true, label: 'Seven' });
+    const { rerender } = render(<Harness entityId={7} />);
+    await openMenu();
+    await screen.findByText('Seven');
+
+    addonRequest.mockReturnValueOnce(new Promise((r) => { resolveSecond = r; }));
+    rerender(<Harness entityId={8} />);
+    await waitFor(() => expect(addonRequest).toHaveBeenCalledWith('demo-stream', 'GET', 'instances/8/status'));
+    expect(screen.queryByText('Seven')).toBeNull();
+    expect(screen.queryByTestId('addon-menu-status-dot')).toBeNull();
+
+    resolveSecond({ ok: true, label: 'Eight' });
+    expect(await screen.findByText('Eight')).toBeInTheDocument();
+  });
+
+  it('sends no request for a non-GET status route', async () => {
+    mockMounts = [mount('a', { status: 'POST instances/{instance_id}/status' })];
+    render(<Harness />);
+    await openMenu();
+
+    await screen.findByText('Entry a');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(addonRequest).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('addon-menu-status-dot')).toBeNull();
   });
 });
