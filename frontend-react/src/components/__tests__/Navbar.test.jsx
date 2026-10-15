@@ -7,6 +7,11 @@ vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({ isAuthenticated: true, currentUser: { id: 1 }, logoutContext: vi.fn() }),
 }));
 vi.mock('../ThemeToggleButton', () => ({ default: () => <button type="button">Theme</button> }));
+vi.mock('../../services/notifications', () => ({
+  listNotifications: vi.fn().mockResolvedValue({ notifications: [], unread_count: 0 }),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+}));
 
 import Navbar from '../Navbar';
 
@@ -33,6 +38,13 @@ describe('Navbar Global RCON navigation', () => {
     expect(mobileGlobal).toHaveAttribute('href', '/global-rcon');
     expect(mobileServers.compareDocumentPosition(mobileGlobal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(mobileGlobal.compareDocumentPosition(documentation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('Navbar notification bell', () => {
+  it('shows the bell for a signed-in user', async () => {
+    renderNavbar();
+    expect(await screen.findByRole('button', { name: /^notifications$/i })).toBeInTheDocument();
   });
 });
 

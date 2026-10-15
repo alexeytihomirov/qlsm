@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import ThemeToggleButton from './ThemeToggleButton';
 import RestartQlsmNavButton from './system/RestartQlsmNavButton';
+import NotificationBell from './NotificationBell';
 import { useAuth } from '../contexts/AuthContext';
 import { Settings, Users, ChevronDown, Terminal, LogOut, Server, SlidersHorizontal, Menu as MenuIcon, BookOpen, Archive, ShieldCheck, FileText, PackagePlus, Puzzle } from 'lucide-react';
 
@@ -331,6 +332,8 @@ function Navbar() {
           )}
 
           {isAuthenticated && !passwordChangeRequired && <RestartQlsmNavButton />}
+
+          {isAuthenticated && !passwordChangeRequired && <NotificationBell />}
 
           {isAuthenticated ? (
             <button onClick={handleLogout} className="navbar-logout-btn">

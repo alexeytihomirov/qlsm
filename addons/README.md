@@ -351,6 +351,24 @@ arguments and its return value is ignored. Things to know:
 - The hook is gated at `global` scope: it only fires for an addon that is
   switched on.
 
+## Notifications: `ctx.notify`
+
+`ctx.notify(severity, title, body='', link=None, key=None)` stores a
+notification that shows under the bell in the navbar. `severity` is `info`,
+`warning` or `critical`; `title` is cut at 120 characters and `body` at 1000;
+`link`, if given, must be an in-app path such as `/addons/<id>`. It works from
+a request handler, a task or a `poller.tick` handler alike, and commits.
+
+- Without `key`, every call adds a row.
+- With `key`, a repeat updates the open notification instead of adding
+  another, so a condition you report every tick shows up once. A row the
+  operator already read stays read unless the severity goes up.
+- `ctx.resolve(key)` marks it resolved (shown greyed); the next `notify()` with
+  that key opens a new one. Keys are per addon: two addons using the same key
+  never touch each other's rows.
+- Rows are kept for 30 days after their last update and are part of the
+  database backup.
+
 ## Cross-addon UI contribution (addon-owned hooks)
 
 None of the tiers above cover one addon adding UI elements — actions,
