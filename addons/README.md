@@ -370,6 +370,17 @@ arguments and its return value is ignored. Things to know:
 - A handler that raises is logged and skipped; it cannot stop the poller.
 - The hook is gated at `global` scope: it only fires for an addon that is
   switched on.
+- `poller.tick` exists only in cores that ship it. On an older core
+  `ctx.on('poller.tick')` raises and marks the addon broken, so an addon that
+  must also run there checks first:
+
+  ```python
+  from ui.addons.hooks import HOOK_SCOPES
+
+  def register(ctx):
+      if 'poller.tick' in HOOK_SCOPES:
+          ctx.on('poller.tick')(tick)
+  ```
 
 ## Notifications: `ctx.notify`
 
@@ -377,7 +388,14 @@ arguments and its return value is ignored. Things to know:
 notification that shows under the bell in the navbar. `severity` is `info`,
 `warning` or `critical`; `title` is cut at 120 characters and `body` at 1000;
 `link`, if given, must be an in-app path such as `/addons/<id>`. It works from
-a request handler, a task or a `poller.tick` handler alike, and commits.
+a request handler, a task or a `poller.tick` handler alike, and commits the
+current database session.
+
+- Because it commits the session, called from inside a core transaction (a task,
+  a `*.delete` hook) it commits core's pending changes too, and if the commit
+  fails it rolls back the whole session, core's pending work included. Call it
+  where you own the transaction (a request handler, a `poller.tick` handler), or
+  outside other work or at its end.
 
 - Without `key`, every call adds a row.
 - With `key`, a repeat updates the open notification instead of adding
@@ -386,6 +404,12 @@ a request handler, a task or a `poller.tick` handler alike, and commits.
 - `ctx.resolve(key)` marks it resolved (shown greyed); the next `notify()` with
   that key opens a new one. Keys are per addon: two addons using the same key
   never touch each other's rows.
+- Resolve only after the condition has stayed clear for a while. A condition
+  that flaps opens a new unread row each time it comes back after a resolve.
+- The bell's unread count includes resolved rows nobody has read yet, and read
+  state is shared by all users: one user reading a notification clears it for
+  everyone.
+- To use `ctx.notify` on an older core, check `hasattr(ctx, 'notify')` first.
 - Rows are kept for 30 days after their last update and are part of the
   database backup.
 
