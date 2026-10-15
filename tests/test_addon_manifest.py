@@ -594,3 +594,40 @@ def test_page_nav_label_is_capped():
 def test_page_nav_icon_must_be_a_name(icon):
     _, errors = validate_manifest(_page({'label': 'Hosts', 'icon': icon}))
     assert any('"icon" must be a non-empty string' in e for e in errors)
+
+
+def _menu_status(status, point='host_menu'):
+    return validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form'}},
+        point: [{'id': 'relay', 'label': 'Relay', 'panel': 'p', 'status': status}],
+    }))
+
+
+@pytest.mark.parametrize('point', ['host_menu', 'instance_menu'])
+def test_menu_status_route_accepted(point):
+    _, errors = _menu_status('GET hosts/{host_id}/status', point)
+    assert errors == []
+    _, errors = _menu_status('instances/{instance_id}/status', point)
+    assert errors == []
+
+
+@pytest.mark.parametrize('route', ['POST hosts/{host_id}/status', 'DELETE x', 'put x'])
+def test_menu_status_must_be_get(route):
+    _, errors = _menu_status(route)
+    assert any('status' in e and 'GET' in e for e in errors)
+
+
+@pytest.mark.parametrize('route', [
+    'GET /api/hosts', 'GET ../../hosts', 'GET https://evil.example/x', 5, '',
+])
+def test_menu_status_route_escape_rejected(route):
+    _, errors = _menu_status(route)
+    assert errors
+
+
+def test_status_on_settings_section_rejected():
+    _, errors = validate_manifest(_minimal(ui={
+        'panels': {'p': {'kind': 'form'}},
+        'settings_section': {'id': 's', 'panel': 'p', 'status': 'GET x'},
+    }))
+    assert any('status' in e and 'host_menu' in e for e in errors)
