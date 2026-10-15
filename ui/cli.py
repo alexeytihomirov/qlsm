@@ -1,18 +1,23 @@
 import signal
 import sys
 import threading
+import time
 import logging
 import click
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 15  # seconds
+# poller.tick handlers run inline in the poll loop, so a slow one delays the
+# next status poll; warn past this so the culprit is easy to find in the logs.
+TICK_WARN_SECONDS = 10
 
 
 def register_cli_commands(app):
     @app.cli.command('run-status-poller')
     def run_status_poller():
         """Daemon: polls game server status from game host Redis via SSH every 15s."""
+        from ui.addons import dispatch
         from ui.task_logic.server_status_poll import poll_all_hosts
 
         stop_event = threading.Event()
@@ -30,6 +35,17 @@ def register_cli_commands(app):
                 poll_all_hosts()
             except Exception as e:
                 logger.error(f"Poll cycle failed: {e}", exc_info=True)
+            started = time.monotonic()
+            try:
+                dispatch('poller.tick')
+            except Exception as e:
+                logger.error(f"poller.tick dispatch failed: {e}", exc_info=True)
+            elapsed = time.monotonic() - started
+            if elapsed > TICK_WARN_SECONDS:
+                logger.warning(
+                    "poller.tick handlers took %.1fs (warn threshold %ds)",
+                    elapsed, TICK_WARN_SECONDS,
+                )
             stop_event.wait(POLL_INTERVAL)
         logger.info("Status poller stopped")
 
