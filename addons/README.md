@@ -163,6 +163,26 @@ path has a `.`, `..` or empty segment, which covers a table row's
 `{placeholder}` values: they are filled in from the addon's own response,
 after the manifest was validated.
 
+### `page.nav` -- a navbar entry for the page
+
+An addon `page` is reachable at `/addons/<id>`. Adding `nav` puts a top-level
+entry for it in the navbar, after core's own items and ordered by addon id:
+
+```json
+{ "ui": { "page": { "component": "ui/Page.js",
+  "nav": { "label": "Hosts health", "icon": "activity" } } } }
+```
+
+- `label` -- required, 1-32 characters.
+- `icon` -- optional, a name from the frontend's fixed icon list; falls back
+  to the page's own `icon`, then to the addon's.
+
+The entry follows the same rule as every other mount: it appears only while
+the addon is loaded, compatible with this `ui_api` and switched on from the
+Addons page, and it is highlighted while the page is open. The mobile menu
+lists it as well. A core that predates `nav` ignores the key (the page still
+works at `/addons/<id>`, there is just no navbar entry).
+
 ### `live_status_columns` -- a column in core's own players table
 
 Every other mount point gives an addon its own place: a menu entry, a tab, a
