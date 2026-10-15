@@ -80,11 +80,23 @@ def _dispatch_addon_payload_sync(host):
     merely tags along with.
     """
     try:
+        # Setup has just appended its ansible output to host.logs without a
+        # commit. Handlers share this session, so their first query would
+        # autoflush that UPDATE and open a SQLite write transaction that stays
+        # open while the handler runs its own ansible; every other worker's
+        # write then times out with "database is locked". Commit first.
+        db.session.commit()
+
         from ui.addons import dispatch
 
         dispatch('host.payload_sync', host.id, host.id)
     except Exception as e:
         log.warning('Addon host.payload_sync hook skipped for host %s: %s', host.id, e)
+    finally:
+        # A handler whose flush failed leaves the shared session waiting for a
+        # rollback, which would fail the setup task's final status write.
+        if not db.session.is_active:
+            db.session.rollback()
 
 
 def setup_host_ansible_logic(host_id, rerun=False):
