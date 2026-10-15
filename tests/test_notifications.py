@@ -211,3 +211,56 @@ def test_mark_all_read(client, app):
     assert response.get_json()['data']['updated'] == 2
     with app.app_context():
         assert Notification.query.filter(Notification.read_at.is_(None)).count() == 0
+
+
+# --- a failed commit must not wedge the session ---
+
+def _fail_next_commit(monkeypatch):
+    """Make the next commit fail inside its flush, like SQLite's 'database is
+    locked'. A flush error leaves the session refusing all further work
+    (PendingRollbackError) until someone rolls it back."""
+    from sqlalchemy import event
+    from sqlalchemy.exc import OperationalError
+
+    session = db.session()
+
+    def fail_once(sess, flush_context, instances):
+        event.remove(session, 'before_flush', fail_once)
+        raise OperationalError('INSERT', {}, Exception('database is locked'))
+
+    event.listen(session, 'before_flush', fail_once)
+
+
+def _fail_next_commit_call(monkeypatch):
+    """Make the next db.session.commit() raise before committing, for a write
+    with nothing to flush (resolve() is a bulk UPDATE)."""
+    from sqlalchemy.exc import OperationalError
+
+    real_commit = db.session.commit
+
+    def commit():
+        monkeypatch.setattr(db.session, 'commit', real_commit)
+        raise OperationalError('COMMIT', {}, Exception('database is locked'))
+
+    monkeypatch.setattr(db.session, 'commit', commit)
+
+
+def test_notify_rolls_back_a_failed_commit(app, monkeypatch):
+    with app.app_context():
+        _fail_next_commit(monkeypatch)
+        with pytest.raises(Exception, match='database is locked'):
+            notify('core', 'warning', 'first try')
+        # The session is usable again and the failed row is gone.
+        row = notify('core', 'warning', 'second try')
+        assert [n.title for n in Notification.query.all()] == ['second try']
+        assert row.id is not None
+
+
+def test_resolve_rolls_back_a_failed_commit(app, monkeypatch):
+    with app.app_context():
+        notify('core', 'warning', 'open', key='k')
+        _fail_next_commit_call(monkeypatch)
+        with pytest.raises(Exception, match='database is locked'):
+            resolve('core', 'k')
+        assert Notification.query.one().resolved_at is None
+        assert resolve('core', 'k') == 1

@@ -17,6 +17,7 @@ def register_cli_commands(app):
     @app.cli.command('run-status-poller')
     def run_status_poller():
         """Daemon: polls game server status from game host Redis via SSH every 15s."""
+        from ui import db
         from ui.addons import dispatch
         from ui.task_logic.server_status_poll import poll_all_hosts
 
@@ -40,6 +41,13 @@ def register_cli_commands(app):
                 dispatch('poller.tick')
             except Exception as e:
                 logger.error(f"poller.tick dispatch failed: {e}", exc_info=True)
+            # dispatch() swallows handler errors, so a handler that left this
+            # process's one session needing a rollback would otherwise break
+            # every later poll cycle. Handlers commit their own work.
+            try:
+                db.session.rollback()
+            except Exception as e:
+                logger.error(f"Session rollback after poller.tick failed: {e}", exc_info=True)
             elapsed = time.monotonic() - started
             if elapsed > TICK_WARN_SECONDS:
                 logger.warning(
