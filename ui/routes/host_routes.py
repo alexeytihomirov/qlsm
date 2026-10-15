@@ -920,6 +920,15 @@ def update_host_api(host_id):
             return jsonify({"error": {"message": error["message"]}}), error["status_code"]
         name = validated_name
 
+        # Standalone hosts belong to someone else's machine: by default only the
+        # name inside QLSM changes. The client opts in to renaming the machine too.
+        # Cloud hosts are provisioned by QLSM, so their hostname always follows.
+        apply_to_machine = data.get('apply_to_machine', False)
+        if not isinstance(apply_to_machine, bool):
+            return jsonify({"error": {"message": "apply_to_machine must be true or false."}}), 400
+        if not host.is_standalone:
+            apply_to_machine = True
+
         try:
             # Check if name is actually changing
             old_name = host.name
@@ -940,7 +949,7 @@ def update_host_api(host_id):
                     update_host(host_id, name=old_name)
                     return jsonify({"error": {"message": f'Another operation is running on host "{old_name}". Please wait for it to complete.'}}), 409
                 try:
-                    enqueue_task(rename_host_task, host_id, old_name, name, lock_token=lock_token, on_failure=host_job_failure_handler)
+                    enqueue_task(rename_host_task, host_id, old_name, name, lock_token=lock_token, apply_to_machine=apply_to_machine, on_failure=host_job_failure_handler)
                 except Exception:
                     release_lock('host', host_id, lock_token)
                     update_host(host_id, name=old_name)
