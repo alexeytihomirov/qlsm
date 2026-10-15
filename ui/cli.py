@@ -1,16 +1,13 @@
 import signal
 import sys
 import threading
-import time
 import logging
 import click
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 15  # seconds
-# poller.tick handlers run inline in the poll loop, so a slow one delays the
-# next status poll; warn past this so the culprit is easy to find in the logs.
-TICK_WARN_SECONDS = 10
+# A slow poller.tick handler is logged by addon id in ui.addons.registry.dispatch.
 
 
 def register_cli_commands(app):
@@ -36,7 +33,6 @@ def register_cli_commands(app):
                 poll_all_hosts()
             except Exception as e:
                 logger.error(f"Poll cycle failed: {e}", exc_info=True)
-            started = time.monotonic()
             try:
                 dispatch('poller.tick')
             except Exception as e:
@@ -48,12 +44,6 @@ def register_cli_commands(app):
                 db.session.rollback()
             except Exception as e:
                 logger.error(f"Session rollback after poller.tick failed: {e}", exc_info=True)
-            elapsed = time.monotonic() - started
-            if elapsed > TICK_WARN_SECONDS:
-                logger.warning(
-                    "poller.tick handlers took %.1fs (warn threshold %ds)",
-                    elapsed, TICK_WARN_SECONDS,
-                )
             stop_event.wait(POLL_INTERVAL)
         logger.info("Status poller stopped")
 

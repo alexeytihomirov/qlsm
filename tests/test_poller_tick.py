@@ -2,11 +2,11 @@
 
 The poller is a long-running daemon: a handler that raises, or that is slow,
 must not stop it polling hosts. The loop is driven for a fixed number of
-cycles with a fake stop event and a fake clock, so nothing sleeps.
+cycles with a fake stop event, so nothing sleeps. A slow handler is logged by addon
+id in ui.addons.registry.dispatch (see tests/test_addon_registry.py).
 """
 import logging
 import signal
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -37,18 +37,10 @@ def run_poller(app):
     """Run `flask run-status-poller` for N cycles; returns the CLI result."""
     saved = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
 
-    def _run(cycles=1, clock=None):
+    def _run(cycles=1):
         _FakeStopEvent.cycles = cycles
-        patches = [patch('ui.cli.threading.Event', _FakeStopEvent)]
-        if clock is not None:
-            patches.append(patch('ui.cli.time', SimpleNamespace(monotonic=clock)))
-        for p in patches:
-            p.start()
-        try:
+        with patch('ui.cli.threading.Event', _FakeStopEvent):
             return app.test_cli_runner().invoke(app.cli.commands['run-status-poller'])
-        finally:
-            for p in patches:
-                p.stop()
 
     yield _run
     for sig, handler in saved.items():
@@ -90,25 +82,6 @@ def test_a_raising_handler_does_not_stop_the_loop(app, run_poller, caplog):
     assert poll.call_count == 3
     assert dispatch.call_count == 3
     assert 'poller.tick dispatch failed' in caplog.text
-
-
-def test_a_slow_tick_logs_a_warning(run_poller, caplog):
-    # monotonic() is read before and after the dispatch: 12s apart
-    ticks = iter([100.0, 112.0])
-    with patch('ui.task_logic.server_status_poll.poll_all_hosts'), \
-            patch('ui.addons.dispatch'), \
-            caplog.at_level(logging.WARNING, logger='ui.cli'):
-        run_poller(cycles=1, clock=lambda: next(ticks))
-    assert 'poller.tick handlers took 12.0s' in caplog.text
-
-
-def test_a_fast_tick_logs_no_warning(run_poller, caplog):
-    ticks = iter([100.0, 100.5])
-    with patch('ui.task_logic.server_status_poll.poll_all_hosts'), \
-            patch('ui.addons.dispatch'), \
-            caplog.at_level(logging.WARNING, logger='ui.cli'):
-        run_poller(cycles=1, clock=lambda: next(ticks))
-    assert 'poller.tick' not in caplog.text
 
 
 def test_session_is_rolled_back_after_each_tick(run_poller):
