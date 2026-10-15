@@ -109,3 +109,14 @@ def test_a_fast_tick_logs_no_warning(run_poller, caplog):
             caplog.at_level(logging.WARNING, logger='ui.cli'):
         run_poller(cycles=1, clock=lambda: next(ticks))
     assert 'poller.tick' not in caplog.text
+
+
+def test_session_is_rolled_back_after_each_tick(run_poller):
+    """dispatch() swallows handler errors, so a handler that left the shared
+    session needing a rollback would fail every later cycle without this."""
+    with patch('ui.task_logic.server_status_poll.poll_all_hosts'), \
+            patch('ui.addons.dispatch'), \
+            patch('ui.db.session.rollback') as rollback:
+        result = run_poller(cycles=2)
+    assert result.exit_code == 0
+    assert rollback.call_count == 2

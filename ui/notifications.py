@@ -31,6 +31,18 @@ def _validate_link(link):
     return link
 
 
+def _commit():
+    """Commit, or roll back and re-raise. The status poller keeps one session
+    for its whole life, so a commit that fails (SQLite 'database is locked'
+    while the web app writes) and is left un-rolled-back would fail every
+    later cycle with PendingRollbackError until a restart."""
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+
 def _prune(now):
     cutoff = now - datetime.timedelta(days=RETENTION_DAYS)
     Notification.query.filter(Notification.updated_at < cutoff).delete(synchronize_session=False)
@@ -71,7 +83,7 @@ def notify(source, severity, title, body='', link=None, key=None):
     row.body = body
     row.link = link
     row.updated_at = now
-    db.session.commit()
+    _commit()
     return row
 
 
@@ -84,5 +96,5 @@ def resolve(source, key):
     count = (Notification.query
              .filter_by(source=source, key=key, resolved_at=None)
              .update({'resolved_at': now}, synchronize_session=False))
-    db.session.commit()
+    _commit()
     return count
