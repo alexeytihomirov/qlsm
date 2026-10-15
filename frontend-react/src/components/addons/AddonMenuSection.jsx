@@ -24,9 +24,14 @@ function MenuEntryStatus({ mount, scopeId }) {
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
+    // Drop the previous entity's answer right away: a stale dot next to a
+    // different host's name is worse than no dot.
+    setStatus(null);
     if (typeof route !== 'string' || !route) return undefined;
     const resolved = resolveRoute(route, { scope: mount.scope, scopeId, addonId: mount.addon?.id });
-    if (!resolved) return undefined;
+    // Opening a menu must never mutate anything; the manifest validator
+    // enforces GET and so does this.
+    if (!resolved || resolved.method !== 'GET') return undefined;
     let cancelled = false;
     addonRequest(mount.addon?.id, resolved.method, resolved.path)
       .then((data) => {
