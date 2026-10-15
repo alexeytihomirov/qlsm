@@ -56,6 +56,18 @@ describe('AddonPage header', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Demo page' })).toBeInTheDocument();
   });
 
+  it('keeps core header and shows the error when a nav page cannot be mounted', () => {
+    renderPage({
+      ...makeAddon({ component: 'ui/Page.js', label: 'Demo page', nav: { label: 'Demo' } }),
+      loaded: false,
+    });
+
+    expect(screen.queryByTestId('addon-body')).toBeNull();
+    expect(screen.getByRole('link', { name: /addons/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Demo page' })).toBeInTheDocument();
+    expect(screen.getByText(/failed to load/i)).toBeInTheDocument();
+  });
+
   it('keeps the back link on the not-found branch', () => {
     renderPage(null);
 

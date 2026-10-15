@@ -51,7 +51,8 @@ function AddonPage() {
   const Icon = resolveAddonIcon(entry.icon || addon.ui?.icon);
   // A page with a navbar entry is a destination of its own, not a child of
   // the Addons list: it draws its own title and actions.
-  const ownsHeader = Boolean(entry.nav);
+  const mounted = Boolean(addon.loaded && addon.ui_mountable);
+  const ownsHeader = Boolean(entry.nav) && mounted;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -75,7 +76,7 @@ function AddonPage() {
         </>
       )}
 
-      {addon.loaded && addon.ui_mountable ? (
+      {mounted ? (
         <AddonPanel addon={addon} entry={entry} panel={panel} scope="global" scopeId={0} />
       ) : (
         <p className="text-sm" style={{ color: 'var(--accent-danger)' }}>

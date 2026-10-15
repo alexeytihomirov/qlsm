@@ -184,8 +184,10 @@ lists it as well.
 
 A page with a navbar entry owns its header: core renders no "Addons" back link
 and no title, so render your own title (and any actions) in the page component.
-A page without `nav` keeps core's back link and title. A core that predates `nav` ignores the key (the page still
-works at `/addons/<id>`, there is just no navbar entry).
+A page without `nav` keeps core's back link and title, and so does a `nav` page
+whose body cannot be mounted (the addon failed to load or needs a newer
+QLSM). A core that predates `nav` ignores the key (the page still works at
+`/addons/<id>`, there is just no navbar entry).
 
 ### `live_status_columns` -- a column in core's own players table
 
