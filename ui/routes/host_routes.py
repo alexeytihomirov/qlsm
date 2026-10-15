@@ -142,8 +142,9 @@ VALID_TIMEZONES = {
     'America/Santiago', 'America/Toronto', 'Asia/Colombo', 'Asia/Dubai', 'Asia/Jakarta',
     'Asia/Jerusalem', 'Asia/Kolkata', 'Asia/Riyadh', 'Asia/Seoul', 'Asia/Shanghai',
     'Asia/Singapore', 'Asia/Tokyo', 'Australia/Melbourne', 'Australia/Perth',
-    'Australia/Sydney', 'Europe/Amsterdam', 'Europe/Berlin', 'Europe/London',
-    'Europe/Madrid', 'Europe/Moscow', 'Europe/Paris', 'Europe/Stockholm', 'Europe/Warsaw',
+    'Australia/Sydney', 'Europe/Amsterdam', 'Europe/Berlin', 'Europe/Helsinki', 'Europe/London',
+    'Europe/Madrid', 'Europe/Moscow', 'Europe/Paris', 'Europe/Stockholm', 'Europe/Tallinn',
+    'Europe/Warsaw',
     'Pacific/Auckland', 'Pacific/Honolulu', 'UTC',
 }
 
