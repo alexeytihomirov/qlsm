@@ -547,3 +547,50 @@ def test_live_status_column_route_split_matches_the_frontend(route):
 def test_route_split_still_accepts_what_the_frontend_parses(route):
     _, errors = validate_manifest(_minimal(ui={'panels': {'p': {'kind': 'form', 'load': route}}}))
     assert errors == []
+
+
+# ---- page navbar entry ------------------------------------------------
+
+def _page(nav):
+    return _minimal(ui={'page': {'component': 'ui/Page.js', 'nav': nav}})
+
+
+def test_page_nav_entry_is_valid():
+    manifest, errors = validate_manifest(_page({'label': 'Hosts health', 'icon': 'activity'}))
+    assert errors == []
+    assert manifest['ui']['page']['nav'] == {'label': 'Hosts health', 'icon': 'activity'}
+
+
+def test_page_nav_icon_is_optional():
+    _, errors = validate_manifest(_page({'label': 'Hosts health'}))
+    assert errors == []
+
+
+def test_page_without_nav_is_still_valid():
+    _, errors = validate_manifest(_minimal(ui={'page': {'component': 'ui/Page.js'}}))
+    assert errors == []
+
+
+@pytest.mark.parametrize('nav', ['Hosts', ['Hosts'], 7])
+def test_page_nav_must_be_an_object(nav):
+    _, errors = validate_manifest(_page(nav))
+    assert any('ui.page.nav: must be an object' in e for e in errors)
+
+
+@pytest.mark.parametrize('label', [None, '', '   ', 5])
+def test_page_nav_label_is_required(label):
+    _, errors = validate_manifest(_page({'label': label, 'icon': 'activity'}))
+    assert any('ui.page.nav: "label" is required' in e for e in errors)
+
+
+def test_page_nav_label_is_capped():
+    _, errors = validate_manifest(_page({'label': 'x' * 33}))
+    assert any('"label" must be at most 32 characters' in e for e in errors)
+    _, errors = validate_manifest(_page({'label': 'x' * 32}))
+    assert errors == []
+
+
+@pytest.mark.parametrize('icon', ['', '  ', 3])
+def test_page_nav_icon_must_be_a_name(icon):
+    _, errors = validate_manifest(_page({'label': 'Hosts', 'icon': icon}))
+    assert any('"icon" must be a non-empty string' in e for e in errors)

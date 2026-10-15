@@ -14,9 +14,33 @@ vi.mock('../../services/notifications', () => ({
 }));
 
 import Navbar from '../Navbar';
+import AddonsContext, { mountEntriesForAddon } from '../../contexts/AddonsContext';
 
-function renderNavbar() {
-  return render(<MemoryRouter initialEntries={['/servers']}><Navbar /></MemoryRouter>);
+function renderNavbar(path = '/servers', addons = []) {
+  const value = {
+    addons,
+    loading: false,
+    error: null,
+    reload: () => {},
+    mounts: (point) => addons.flatMap((addon) => mountEntriesForAddon(addon, point)),
+  };
+  return render(
+    <AddonsContext.Provider value={value}>
+      <MemoryRouter initialEntries={[path]}><Navbar /></MemoryRouter>
+    </AddonsContext.Provider>,
+  );
+}
+
+function pageAddon(id, overrides = {}) {
+  return {
+    id,
+    name: id,
+    loaded: true,
+    ui_mountable: true,
+    enabled: true,
+    ui: { page: { component: 'ui/Page.js', nav: { label: `${id} label`, icon: 'activity' } } },
+    ...overrides,
+  };
 }
 
 describe('Navbar Global RCON navigation', () => {
@@ -67,5 +91,41 @@ describe('Navbar Backup & Restore navigation', () => {
     await user.click(screen.getByRole('button', { name: /open navigation menu/i }));
     const link = await screen.findByText('Backup & Restore');
     expect(link.closest('a')).toHaveAttribute('href', '/settings/backup');
+  });
+});
+
+describe('Navbar addon page entries', () => {
+  it('shows an entry for an enabled, loaded addon page with nav, after the core items and ordered by id', () => {
+    renderNavbar('/servers', [pageAddon('zeta'), pageAddon('alpha')]);
+    const links = screen.getAllByRole('link').map((link) => link.textContent.trim());
+    expect(links.indexOf('ALPHA LABEL')).toBeGreaterThan(links.indexOf('DOCS'));
+    expect(links.indexOf('ZETA LABEL')).toBeGreaterThan(links.indexOf('ALPHA LABEL'));
+    expect(screen.getByRole('link', { name: /alpha label/i })).toHaveAttribute('href', '/addons/alpha');
+  });
+
+  it('shows nothing for a disabled, broken, too-new or nav-less addon', () => {
+    renderNavbar('/servers', [
+      pageAddon('off', { enabled: false }),
+      pageAddon('broken', { loaded: false }),
+      pageAddon('newer', { ui_mountable: false }),
+      pageAddon('plain', { ui: { page: { component: 'ui/Page.js' } } }),
+    ]);
+    expect(screen.queryByText(/label/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /plain/i })).not.toBeInTheDocument();
+  });
+
+  it('marks the entry active on its own page only', () => {
+    renderNavbar('/addons/alpha', [pageAddon('alpha'), pageAddon('alpha-two')]);
+    expect(screen.getByRole('link', { name: /^alpha label$/i })).toHaveClass('navbar-nav-link-active');
+    expect(screen.getByRole('link', { name: /alpha-two label/i })).not.toHaveClass('navbar-nav-link-active');
+  });
+
+  it('lists the entry in the mobile menu, active on its page', async () => {
+    const user = userEvent.setup();
+    renderNavbar('/addons/alpha', [pageAddon('alpha')]);
+    await user.click(screen.getByRole('button', { name: /open navigation menu/i }));
+    const item = (await screen.findAllByText('alpha label')).at(-1).closest('a');
+    expect(item).toHaveAttribute('href', '/addons/alpha');
+    expect(item).toHaveClass('navbar-dropdown-item-active');
   });
 });

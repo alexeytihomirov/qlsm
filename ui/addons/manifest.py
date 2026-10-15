@@ -34,6 +34,7 @@ CURRENT_UI_API = 4
 
 LIVE_STATUS_COLUMN_ALIGNS = ('left', 'right')
 LIVE_STATUS_COLUMN_LABEL_MAX = 24
+PAGE_NAV_LABEL_MAX = 32
 
 # Extensions ui/routes/addon_routes.py is willing to serve as an image. Checked
 # here too so a manifest pointing `icon_url` at something the route refuses
@@ -358,6 +359,23 @@ def _validate_live_status_columns(entries, errors):
         seen.add(col_id)
 
 
+def _validate_page_nav(nav, errors):
+    """`ui.page.nav` -- a top-level navbar entry that links to the page."""
+    if nav is None:
+        return
+    if not isinstance(nav, dict):
+        _err(errors, 'ui.page.nav: must be an object')
+        return
+    label = nav.get('label')
+    if not isinstance(label, str) or not label.strip():
+        _err(errors, 'ui.page.nav: "label" is required')
+    elif len(label) > PAGE_NAV_LABEL_MAX:
+        _err(errors, f'ui.page.nav: "label" must be at most {PAGE_NAV_LABEL_MAX} characters')
+    # The name is resolved against the frontend's fixed icon list, which
+    # falls back to a default for a name it does not know.
+    _validate_icon_ref('ui.page.nav', nav.get('icon'), None, errors)
+
+
 def _validate_ui(ui, errors):
     if ui is None:
         return {}
@@ -404,6 +422,8 @@ def _validate_ui(ui, errors):
                 _err(errors, f'ui.{mount}: "renders" must be one of {", ".join(RENDER_MODES)}')
             if renders == 'modal' and not has_component:
                 _err(errors, f'ui.{mount}: "renders": "modal" needs a component, not a panel')
+            if mount == 'page':
+                _validate_page_nav(item.get('nav'), errors)
     return ui
 
 
