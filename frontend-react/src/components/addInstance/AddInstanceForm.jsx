@@ -59,6 +59,13 @@ const CONFIG_FILES = ['server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt']
 const NET_PORT_REGEX = /^(set\s+net_port\s+").*(".*)/m;
 const HOSTNAME_REGEX = /^(set\s+sv_hostname\s+").*(".*)/m;
 
+function withServerHostname(serverCfg, hostname) {
+  if (!serverCfg) return `set sv_hostname "${hostname}"`;
+  return HOSTNAME_REGEX.test(serverCfg)
+    ? serverCfg.replace(HOSTNAME_REGEX, (_m, head, tail) => `${head}${hostname}${tail}`)
+    : `${serverCfg}\nset sv_hostname "${hostname}"`;
+}
+
 const CONFIG_LANGUAGE_MAP = {
   'server.cfg': qlcfgLanguage,
   'mappool.txt': qlmappoolLanguage,
@@ -725,9 +732,7 @@ function AddInstanceForm({
   useEffect(() => {
     if (hostname !== '' && hostname !== prevHostnameRef.current && !isUpdatingFromServerCfg.current) {
       const currentServerCfg = configContentsRef.current['server.cfg'] || '';
-      const nextServerCfg = currentServerCfg
-        ? (HOSTNAME_REGEX.test(currentServerCfg) ? currentServerCfg.replace(HOSTNAME_REGEX, `$1${hostname}$2`) : `${currentServerCfg}\nset sv_hostname "${hostname}"`)
-        : `set sv_hostname "${hostname}"`;
+      const nextServerCfg = withServerHostname(currentServerCfg, hostname);
       if (nextServerCfg !== currentServerCfg) {
         syncConfigFile('server.cfg', nextServerCfg);
       }
@@ -772,10 +777,17 @@ function AddInstanceForm({
       // Extract hostname and port from preset server.cfg, patching newConfigs before setting state
       let newInitialHostname = hostnameRef.current;
       let newInitialPort = portRef.current;
+      // A hostname the operator typed (anything other than what the form itself
+      // last filled in) wins over the preset's; an untouched one follows the preset.
+      const keepTypedHostname = hostnameRef.current !== '' && hostnameRef.current !== initialHostnameRef.current;
+
+      if (keepTypedHostname) {
+        newConfigs['server.cfg'] = withServerHostname(newConfigs['server.cfg'], hostnameRef.current);
+      }
 
       if (newConfigs['server.cfg']) {
         const hostnameMatch = newConfigs['server.cfg'].match(/^set\s+sv_hostname\s+"([^"]*)"/m);
-        if (hostnameMatch && hostnameMatch[1]) {
+        if (!keepTypedHostname && hostnameMatch && hostnameMatch[1]) {
           newInitialHostname = hostnameMatch[1];
           isUpdatingFromServerCfg.current = true;
           setHostname(newInitialHostname);
@@ -866,7 +878,8 @@ function AddInstanceForm({
       resetFactories(factoriesToLoad);
       setIsPresetModified(false);
 
-      initialHostnameRef.current = newInitialHostname;
+      // Leave the baseline alone for a kept hostname, so it still counts as typed on the next preset load.
+      if (!keepTypedHostname) initialHostnameRef.current = newInitialHostname;
       initialPortRef.current = newInitialPort;
 
       // Restore checked plugins state saved with the preset.

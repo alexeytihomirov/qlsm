@@ -498,6 +498,32 @@ describe('EditInstanceConfigModal preset saving', () => {
       .toEqual(['iouonegirl.py', 'mybalance.py']);
   });
 
+  it('keeps the instance hostname when a preset is loaded', async () => {
+    mocks.getPresetById.mockResolvedValue({
+      name: 'named-preset',
+      configs: { 'server.cfg': 'set sv_hostname "Preset Server"\nset g_motd "from preset"' },
+      factories: {},
+    });
+
+    render(
+      <EditInstanceConfigModal isOpen={true} onClose={vi.fn()} instanceId={1} instanceName="Test123" onConfigSaved={vi.fn()} />
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.showSuccess).toHaveBeenCalledWith('Preset "named-preset" loaded successfully.'));
+
+    expect(screen.getByLabelText(/server hostname/i)).toHaveValue('Test123');
+
+    fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+    await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalledTimes(1));
+    const payload = mocks.updateInstanceConfig.mock.calls[0][1];
+    expect(payload.hostname).toBe('Test123');
+    expect(payload.configs['server.cfg']).toBe('set sv_hostname "Test123"\nset g_motd "from preset"');
+  });
+
   it('shows the modal while the admin read is still running and the preset waits for it', async () => {
     let finishAdmins;
     mocks.getInstanceAdmins.mockReturnValue(new Promise((resolve) => { finishAdmins = resolve; }));
