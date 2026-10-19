@@ -57,3 +57,21 @@ describe('Navbar Backup & Restore navigation', () => {
     expect(link.closest('a')).toHaveAttribute('href', '/settings/backup');
   });
 });
+
+describe('Navbar Presets navigation', () => {
+  it('links to the Presets page from the desktop settings dropdown', async () => {
+    const user = userEvent.setup();
+    renderNavbar();
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    const link = await screen.findByText('Presets');
+    expect(link.closest('a')).toHaveAttribute('href', '/presets');
+  });
+
+  it('links to the Presets page from the mobile settings dropdown', async () => {
+    const user = userEvent.setup();
+    renderNavbar();
+    await user.click(screen.getByRole('button', { name: /open navigation menu/i }));
+    const link = await screen.findByText('Presets');
+    expect(link.closest('a')).toHaveAttribute('href', '/presets');
+  });
+});
