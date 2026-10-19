@@ -27,7 +27,7 @@ def instance_job_failure_handler(job: Job, connection, type, value, traceback):
     # Import here to avoid circular imports
     from ui import create_app, db
     from ui.models import QLInstance, InstanceStatus
-    from ui.task_logic.common import append_log
+    from ui.task_logic.common import append_log, commit_with_retry
     
     # Extract instance_id from job args
     instance_id = None
@@ -60,9 +60,12 @@ def instance_job_failure_handler(job: Job, connection, type, value, traceback):
             
             if instance.status in transitional_states:
                 error_message = f"Job {job.id} failed: {type.__name__}: {value}"
-                append_log(instance, f"Task failed (timeout or crash): {error_message}")
-                instance.status = InstanceStatus.ERROR
-                db.session.commit()
+
+                def _mark_failed():
+                    append_log(instance, f"Task failed (timeout or crash): {error_message}")
+                    instance.status = InstanceStatus.ERROR
+
+                commit_with_retry(_mark_failed)
                 log.info(f"Instance {instance_id} status updated to ERROR by failure handler")
             else:
                 log.info(f"Instance {instance_id} already in terminal state {instance.status.value}, skipping update")
@@ -92,7 +95,7 @@ def host_job_failure_handler(job: Job, connection, type, value, traceback):
     # Import here to avoid circular imports
     from ui import create_app, db
     from ui.models import Host, HostStatus
-    from ui.task_logic.common import append_log
+    from ui.task_logic.common import append_log, commit_with_retry
     
     # Extract host_id from job args
     host_id = None
@@ -124,9 +127,12 @@ def host_job_failure_handler(job: Job, connection, type, value, traceback):
             
             if host.status in transitional_states:
                 error_message = f"Job {job.id} failed: {type.__name__}: {value}"
-                append_log(host, f"Task failed (timeout or crash): {error_message}")
-                host.status = HostStatus.ERROR
-                db.session.commit()
+
+                def _mark_failed():
+                    append_log(host, f"Task failed (timeout or crash): {error_message}")
+                    host.status = HostStatus.ERROR
+
+                commit_with_retry(_mark_failed)
                 log.info(f"Host {host_id} status updated to ERROR by failure handler")
             else:
                 log.info(f"Host {host_id} already in terminal state {host.status.value}, skipping update")
