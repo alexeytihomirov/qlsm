@@ -18,7 +18,10 @@ ADDON_ID_MAX = 64
 SCOPES = ('global', 'host', 'instance')
 FIELD_TYPES = ('bool', 'number', 'string', 'secret', 'select')
 PANEL_KINDS = ('form', 'table', 'logs')
-MOUNT_POINTS = ('host_menu', 'instance_menu', 'instance_tabs', 'settings_section', 'page')
+MOUNT_POINTS = (
+    'host_menu', 'instance_menu', 'instance_tabs', 'settings_section', 'page',
+    'add_instance_tabs',
+)
 
 # `panel` = core renders its shell and the addon fills the body.
 # `modal`  = the addon's component *is* the whole dialog, so an addon can
@@ -358,6 +361,30 @@ def _validate_live_status_columns(entries, errors):
         seen.add(col_id)
 
 
+def _validate_add_instance_tab(item, panels, errors):
+    """An Add Instance form tab has no instance to save to yet.
+
+    Its values travel with the create request (`addon_options`) to the
+    addon's own `instance.created` handler, so a panel there is a `form`
+    whose optional `load` prefills it (with `{host_id}` of the selected
+    host) and which declares no `submit` -- a submit route would read as if
+    the tab saved somewhere on its own. It is a tab inside core's form, so
+    it cannot be its own dialog either.
+    """
+    if item.get('renders') == 'modal':
+        _err(errors, 'ui.add_instance_tabs: "renders": "modal" is not available here')
+    if panels is None:
+        return
+    panel = panels.get(item['panel'])
+    if not isinstance(panel, dict):
+        return  # already reported as undeclared / malformed
+    if panel.get('kind') != 'form':
+        _err(errors, f'ui.add_instance_tabs: panel "{item["panel"]}" must be of kind "form"')
+    if panel.get('submit') is not None:
+        _err(errors, f'ui.add_instance_tabs: panel "{item["panel"]}" must not declare "submit" '
+                     '-- its values are sent with the create request')
+
+
 def _validate_ui(ui, errors):
     if ui is None:
         return {}
@@ -404,6 +431,8 @@ def _validate_ui(ui, errors):
                 _err(errors, f'ui.{mount}: "renders" must be one of {", ".join(RENDER_MODES)}')
             if renders == 'modal' and not has_component:
                 _err(errors, f'ui.{mount}: "renders": "modal" needs a component, not a panel')
+            if mount == 'add_instance_tabs':
+                _validate_add_instance_tab(item, panels if has_panel else None, errors)
     return ui
 
 

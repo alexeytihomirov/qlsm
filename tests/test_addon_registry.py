@@ -389,3 +389,66 @@ def test_ctx_path_refuses_to_escape_the_addon_directory(addon_app):
     assert ctx.path('ui', 'panel.js').startswith(os.path.abspath(ctx.root_dir))
     with pytest.raises(ValueError):
         ctx.path('..', '..', 'terraform', 'ssh-keys')
+
+
+# ---- dispatch_each ------------------------------------------------------
+
+def test_dispatch_each_gives_every_addon_its_own_arguments(addon_app):
+    """instance.created carries per-addon input (an add-instance tab's
+    values): each addon must see its own part, never another addon's."""
+    build, packages, _ = addon_app
+    for addon_id in ('alpha', 'beta'):
+        write_addon(packages, addon_id, manifest={'id': addon_id, 'version': '1.0.0'}, backend='''
+            def register(ctx):
+                @ctx.on('instance.created')
+                def created(instance_id, options):
+                    return (ctx.addon_id, instance_id, options)
+        ''')
+    app = build()
+    options = {'alpha': {'token': 'a-secret'}, 'beta': {'on': True}}
+    with app.app_context():
+        results = registry.dispatch_each(
+            'instance.created', 7, lambda addon_id: ((7, options.get(addon_id, {})), {}),
+        )
+    assert results == [('alpha', 7, {'token': 'a-secret'}), ('beta', 7, {'on': True})]
+
+
+def test_dispatch_each_reports_a_raising_handler_and_carries_on(addon_app):
+    build, packages, _ = addon_app
+    write_addon(packages, 'angry', manifest={'id': 'angry', 'version': '1.0.0'}, backend='''
+        def register(ctx):
+            @ctx.on('instance.created')
+            def boom(instance_id, options):
+                raise RuntimeError("hook exploded")
+    ''')
+    write_addon(packages, 'calm', manifest={'id': 'calm', 'version': '1.0.0'}, backend='''
+        def register(ctx):
+            @ctx.on('instance.created')
+            def fine(instance_id, options):
+                return 'ok'
+    ''')
+    app = build()
+    failed = []
+    with app.app_context():
+        results = registry.dispatch_each(
+            'instance.created', 1, lambda addon_id: ((1, {}), {}),
+            on_error=lambda addon_id, exc: failed.append((addon_id, str(exc))),
+        )
+    assert results == ['ok']
+    assert failed == [('angry', 'hook exploded')]
+
+
+def test_instance_created_fires_for_a_globally_disabled_addon(addon_app):
+    """Ungated on purpose: a new instance has no instance-layer row yet, and
+    whether to switch itself on for it is the addon's own decision."""
+    build, packages, _ = addon_app
+    write_addon(packages, 'quiet', manifest={'id': 'quiet', 'version': '1.0.0'}, backend='''
+        def register(ctx):
+            @ctx.on('instance.created')
+            def created(instance_id, options):
+                return instance_id
+    ''')
+    app = build()
+    with app.app_context():
+        assert registry.get_addon('quiet').globally_enabled is False
+        assert registry.dispatch('instance.created', 3, 3, {}) == [3]
