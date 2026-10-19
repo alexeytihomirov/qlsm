@@ -17,6 +17,7 @@ from ui.models import QLInstance, InstanceStatus, Host # Need Host for cleanup p
 from ui.lan_rate_policy import effective_lan_rate
 from ui.runtime import host_runtime, log_filename_pattern, runtime_extravars, runtime_paths
 from .common import append_log # Import from the common module
+from ui.pending_changes import clear_pending_changes
 from . import service_runtime
 from .ansible_runner import _run_ansible_playbook
 from .cpu_affinity import ensure_instance_cpu_affinity
@@ -335,6 +336,7 @@ def deploy_instance_logic(instance_id, admin_levels=None):
             # If rc is 0 and the specific message wasn't found, it's a success
             else: # not no_hosts_matched implicitly true here
                 instance.status = InstanceStatus.RUNNING
+                clear_pending_changes(instance.id)
                 append_log(instance, f"Task finished successfully. Status: RUNNING.")
                 db.session.commit()
                 log.info(f"Finished task deploy_instance for instance_id: {instance_id}. Status: RUNNING")
@@ -447,6 +449,7 @@ def restart_instance_logic(instance_id):
 
         if runner_result.rc == 0:
             instance.status = InstanceStatus.RUNNING
+            clear_pending_changes(instance.id)
             append_log(instance, f"Task finished successfully. Status: RUNNING.")
             db.session.commit()
             log.info(f"Finished task restart_instance for instance_id: {instance_id}. Status: RUNNING")
@@ -578,6 +581,7 @@ def start_instance_logic(instance_id):
 
         if runner_result.rc == 0:
             instance.status = InstanceStatus.RUNNING
+            clear_pending_changes(instance.id)
             append_log(instance, f"Task finished successfully. Status: RUNNING.")
             db.session.commit()
             log.info(f"Finished task start_instance for instance_id: {instance_id}. Status: RUNNING")
@@ -724,6 +728,9 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
                     )
                 instance.runtime_invocation_id = baseline
 
+            if restart:
+                # The restart made every earlier deferred change live too.
+                clear_pending_changes(instance.id)
             instance.status = final_status
             db.session.commit()
 
@@ -959,6 +966,7 @@ def reconfigure_instance_lan_rate_logic(instance_id):
 
         if runner_result.rc == 0:
             instance.status = InstanceStatus.RUNNING
+            clear_pending_changes(instance.id)
             lan_status = "enabled" if instance.lan_rate_enabled else "disabled"
             append_log(instance, f"Task finished successfully. LAN rate {lan_status}. Status: RUNNING.")
             db.session.commit()
