@@ -1107,6 +1107,74 @@ def test_update_host_name_success(mock_lock, mock_enqueue, client, app):
 
 
 @patch('ui.routes.host_routes.enqueue_task')
+@patch('ui.routes.host_routes.acquire_lock', return_value=True)
+def test_update_standalone_host_name_defaults_to_qlsm_only(mock_lock, mock_enqueue, client, app):
+    """A standalone rename without apply_to_machine leaves the machine alone."""
+    with app.app_context():
+        host = create_host(name='sa-old', provider='standalone', is_standalone=True,
+                           status=HostStatus.ACTIVE)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.put(f'/api/hosts/{host_id}', headers=headers, json={'name': 'sa-new'})
+    assert response.status_code == 200
+    mock_enqueue.assert_called_once()
+    assert mock_enqueue.call_args.kwargs['apply_to_machine'] is False
+
+
+@patch('ui.routes.host_routes.enqueue_task')
+@patch('ui.routes.host_routes.acquire_lock', return_value=True)
+def test_update_standalone_host_name_apply_to_machine_opt_in(mock_lock, mock_enqueue, client, app):
+    """A standalone rename with apply_to_machine=true renames the machine too."""
+    with app.app_context():
+        host = create_host(name='sa-opt-old', provider='standalone', is_standalone=True,
+                           status=HostStatus.ACTIVE)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.put(f'/api/hosts/{host_id}', headers=headers, json={
+        'name': 'sa-opt-new', 'apply_to_machine': True
+    })
+    assert response.status_code == 200
+    assert mock_enqueue.call_args.kwargs['apply_to_machine'] is True
+
+
+@patch('ui.routes.host_routes.enqueue_task')
+@patch('ui.routes.host_routes.acquire_lock', return_value=True)
+def test_update_cloud_host_name_always_applies_to_machine(mock_lock, mock_enqueue, client, app):
+    """A cloud host's hostname always follows the rename, whatever the client sends."""
+    with app.app_context():
+        host = create_host(name='cloud-old', provider='vultr', status=HostStatus.ACTIVE)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.put(f'/api/hosts/{host_id}', headers=headers, json={
+        'name': 'cloud-new', 'apply_to_machine': False
+    })
+    assert response.status_code == 200
+    assert mock_enqueue.call_args.kwargs['apply_to_machine'] is True
+
+
+@patch('ui.routes.host_routes.enqueue_task')
+@patch('ui.routes.host_routes.acquire_lock', return_value=True)
+def test_update_host_name_apply_to_machine_non_bool_rejected(mock_lock, mock_enqueue, client, app):
+    """A non-boolean apply_to_machine returns 400 and leaves the name unchanged."""
+    with app.app_context():
+        host = create_host(name='sa-bad', provider='standalone', is_standalone=True,
+                           status=HostStatus.ACTIVE)
+        host_id = host.id
+
+    headers = auth_headers(app, DEFAULT_USER)
+    response = client.put(f'/api/hosts/{host_id}', headers=headers, json={
+        'name': 'sa-bad-new', 'apply_to_machine': 'yes'
+    })
+    assert response.status_code == 400
+    mock_enqueue.assert_not_called()
+    with app.app_context():
+        assert get_host(host_id).name == 'sa-bad'
+
+
+@patch('ui.routes.host_routes.enqueue_task')
 def test_update_host_same_name(mock_enqueue, client, app):
     """Updating to the same name succeeds without queuing rename task."""
     with app.app_context():
