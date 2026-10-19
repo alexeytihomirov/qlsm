@@ -9,7 +9,7 @@ from ui import db
 from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.models import Host, HostStatus, QLFilterStatus
 from ui.runtime import host_runtime
-from .common import append_log # Import from the common module
+from .common import append_log, record_task_failure # Import from the common module
 # Note: No need to import _run_ansible_playbook as this task uses direct subprocess calls
 
 log = logging.getLogger(__name__)
@@ -306,12 +306,11 @@ def setup_host_ansible_logic(host_id, rerun=False):
     except Exception as e:
         log.exception(f"Unhandled exception in setup_host_ansible_logic for host_id {host_id}: {e}")
         if host: # Check if host object was retrieved
-            try:
-                # Avoid overwriting specific error status if already set
-                if host.status != HostStatus.ERROR:
-                    host.status = HostStatus.ERROR
-                append_log(host, f"Task failed with unhandled exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                 log.error(f"Failed to update host status/log on unhandled exception: {commit_err}")
+            failure_message = f"Task failed with unhandled exception: {e}"
+
+            def _mark_failed():
+                host.status = HostStatus.ERROR
+                append_log(host, failure_message)
+
+            record_task_failure(_mark_failed)
         return f"Error during host {host_id} Ansible setup: {e}"

@@ -16,7 +16,7 @@ from ui.constants import resolve_redis_db
 from ui.models import QLInstance, InstanceStatus, Host # Need Host for cleanup path
 from ui.lan_rate_policy import effective_lan_rate
 from ui.runtime import host_runtime, log_filename_pattern, runtime_extravars, runtime_paths
-from .common import append_log # Import from the common module
+from .common import append_log, record_task_failure # Import from the common module
 from . import service_runtime
 from .ansible_runner import _run_ansible_playbook
 from .cpu_affinity import ensure_instance_cpu_affinity
@@ -255,6 +255,21 @@ def _extract_pip_warning(stdout_content):
     return None
 
 
+def _record_instance_failure(instance, message):
+    """Mark the instance ERROR with `message` from a task's failure path.
+
+    Rolls back first and retries a locked database (record_task_failure);
+    raises if the status still cannot be saved, so RQ fails the job and
+    instance_job_failure_handler runs instead of the instance staying in a
+    transitional status behind a "successful" job.
+    """
+    def _mark_failed():
+        instance.status = InstanceStatus.ERROR
+        append_log(instance, message)
+
+    record_task_failure(_mark_failed)
+
+
 def deploy_instance_logic(instance_id, admin_levels=None):
     """
     Logic for deploying a QL instance via Ansible.
@@ -284,6 +299,7 @@ def deploy_instance_logic(instance_id, admin_levels=None):
         # Ensure ZMQ setup is ready before building args
         _prepare_instance_zmq(instance)
         cpu_affinity = ensure_instance_cpu_affinity(instance)
+        db.session.commit()  # end the write transaction before addon hooks and ansible
         
         # Prepare extravars specific to deployment (now safe to access instance.host.name)
         qlds_args_string = _build_qlds_args_string(instance)
@@ -309,7 +325,7 @@ def deploy_instance_logic(instance_id, admin_levels=None):
 
 
         if error_msg: # Handle errors from helper function (e.g., host missing details)
-            # Status already set to ERROR in helper if possible
+            _record_instance_failure(instance, f"Task failed: {error_msg}")
             return f"Error during instance {instance_id} deployment: {error_msg}"
 
         if runner_result is None: # Should not happen if error_msg is None, but check anyway
@@ -368,12 +384,7 @@ def deploy_instance_logic(instance_id, admin_levels=None):
     except Exception as e:
         log.exception(f"Exception in deploy_instance for instance_id {instance_id}: {e}")
         if instance:
-            try:
-                instance.status = InstanceStatus.ERROR
-                append_log(instance, f"Task failed with exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update instance status/log on exception: {commit_err}")
+            _record_instance_failure(instance, f"Task failed with exception: {e}")
         return f"Error during instance {instance_id} deployment: {e}"
 
 
@@ -405,6 +416,7 @@ def restart_instance_logic(instance_id):
         # Ensure ZMQ setup is ready before building args
         _prepare_instance_zmq(instance)
         cpu_affinity = ensure_instance_cpu_affinity(instance)
+        db.session.commit()  # end the write transaction before addon hooks and ansible
         
         # Construct qlds_args
         qlds_args_string = _build_qlds_args_string(instance)
@@ -431,6 +443,7 @@ def restart_instance_logic(instance_id):
         )
 
         if error_msg: # Handle errors from helper function (e.g., host missing details)
+            _record_instance_failure(instance, f"Task failed: {error_msg}")
             return f"Error during instance {instance_id} restart: {error_msg}"
 
         if runner_result is None:
@@ -461,12 +474,7 @@ def restart_instance_logic(instance_id):
     except Exception as e:
         log.exception(f"Exception in restart_instance for instance_id {instance_id}: {e}")
         if instance:
-            try:
-                instance.status = InstanceStatus.ERROR
-                append_log(instance, f"Task failed with exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update instance status/log on exception: {commit_err}")
+            _record_instance_failure(instance, f"Task failed with exception: {e}")
         return f"Error during instance {instance_id} restart: {e}"
 
 
@@ -502,6 +510,7 @@ def stop_instance_logic(instance_id):
         )
 
         if error_msg:
+            _record_instance_failure(instance, f"Task failed: {error_msg}")
             return f"Error during instance {instance_id} stop: {error_msg}"
 
         if runner_result is None:
@@ -526,12 +535,7 @@ def stop_instance_logic(instance_id):
     except Exception as e:
         log.exception(f"Exception in stop_instance for instance_id {instance_id}: {e}")
         if instance:
-            try:
-                instance.status = InstanceStatus.ERROR
-                append_log(instance, f"Task failed with exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update instance status/log on exception: {commit_err}")
+            _record_instance_failure(instance, f"Task failed with exception: {e}")
         return f"Error during instance {instance_id} stop: {e}"
 
 
@@ -568,6 +572,7 @@ def start_instance_logic(instance_id):
         )
 
         if error_msg:
+            _record_instance_failure(instance, f"Task failed: {error_msg}")
             return f"Error during instance {instance_id} start: {error_msg}"
 
         if runner_result is None:
@@ -592,12 +597,7 @@ def start_instance_logic(instance_id):
     except Exception as e:
         log.exception(f"Exception in start_instance for instance_id {instance_id}: {e}")
         if instance:
-            try:
-                instance.status = InstanceStatus.ERROR
-                append_log(instance, f"Task failed with exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update instance status/log on exception: {commit_err}")
+            _record_instance_failure(instance, f"Task failed with exception: {e}")
         return f"Error during instance {instance_id} start: {e}"
 
 
@@ -636,6 +636,7 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
         # Ensure ZMQ setup is ready before building args
         _prepare_instance_zmq(instance)
         cpu_affinity = ensure_instance_cpu_affinity(instance)
+        db.session.commit()  # end the write transaction before addon hooks and ansible
         
         qlds_args_string = _build_qlds_args_string(instance)
         ld_preload_paths = _build_ld_preload_paths(instance)
@@ -663,7 +664,7 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
         )
 
         if error_msg: # Handle errors from helper function (e.g., host missing details)
-            # Status already set to ERROR in helper if possible
+            _record_instance_failure(instance, f"Task failed: {error_msg}")
             return f"Error during instance {instance_id} config apply: {error_msg}"
 
         if runner_result is None:
@@ -752,12 +753,7 @@ def apply_instance_config_logic(instance_id, restart=True, reconcile_lan_rate_ne
     except Exception as e:
         log.exception(f"Exception in apply_instance_config_logic for instance_id {instance_id}: {e}")
         if instance:
-            try:
-                instance.status = InstanceStatus.ERROR
-                append_log(instance, f"Task failed with exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update instance status/log on exception: {commit_err}")
+            _record_instance_failure(instance, f"Task failed with exception: {e}")
         return f"Error during instance {instance_id} config application: {e}"
 
 
@@ -875,16 +871,15 @@ def delete_instance_logic(instance_id):
         # Attempt to set ERROR status if instance object exists and DB delete hasn't happened
         # This part is tricky because the DB delete might have failed above.
         if instance:
-            try:
-                # Check if the instance is still in the session (i.e., DB delete failed or wasn't reached)
-                if instance in db.session:
-                    # Avoid overwriting DELETING status if already set by route
-                    if instance.status != InstanceStatus.DELETING:
-                         instance.status = InstanceStatus.ERROR
-                    append_log(instance, f"Task failed with outer exception: {e}")
-                    db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update instance status/log on outer exception during deletion: {commit_err}")
+            failure_message = f"Task failed with outer exception: {e}"
+
+            def _mark_failed():
+                # Avoid overwriting DELETING status if already set by route
+                if instance.status != InstanceStatus.DELETING:
+                    instance.status = InstanceStatus.ERROR
+                append_log(instance, failure_message)
+
+            record_task_failure(_mark_failed)
         # Return a generic error message for the job
         return f"Error during instance {instance_id} deletion: {e}"
 
@@ -924,6 +919,7 @@ def reconfigure_instance_lan_rate_logic(instance_id):
         # Ensure ZMQ setup is ready before building args
         _prepare_instance_zmq(instance)
         cpu_affinity = ensure_instance_cpu_affinity(instance)
+        db.session.commit()  # end the write transaction before addon hooks and ansible
         
         qlds_args_string = _build_qlds_args_string(instance)
         ld_preload_paths = _build_ld_preload_paths(instance)
@@ -947,6 +943,7 @@ def reconfigure_instance_lan_rate_logic(instance_id):
         )
 
         if error_msg:
+            _record_instance_failure(instance, f"Task failed: {error_msg}")
             return f"Error during instance {instance_id} LAN rate reconfiguration: {error_msg}"
 
         if runner_result is None:
@@ -974,12 +971,7 @@ def reconfigure_instance_lan_rate_logic(instance_id):
     except Exception as e:
         log.exception(f"Exception in reconfigure_instance_lan_rate for instance_id {instance_id}: {e}")
         if instance:
-            try:
-                instance.status = InstanceStatus.ERROR
-                append_log(instance, f"Task failed with exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update instance status/log on exception: {commit_err}")
+            _record_instance_failure(instance, f"Task failed with exception: {e}")
         return f"Error during instance {instance_id} LAN rate reconfiguration: {e}"
 
 

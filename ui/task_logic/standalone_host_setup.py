@@ -9,7 +9,7 @@ from ui.constants import GAME_UDP_PORTS, RCON_TCP_PORTS
 from ui.models import Host, HostStatus
 from ui.runtime import host_runtime
 from ui.task_logic.self_host_network import resolve_self_host_management_target
-from .common import append_log
+from .common import append_log, record_task_failure
 from .standalone_inventory import generate_standalone_inventory
 
 log = logging.getLogger(__name__)
@@ -135,13 +135,13 @@ def setup_standalone_host_logic(host_id, rerun=False):
     except Exception as e:
         log.exception(f"Unhandled exception in setup_standalone_host_logic for host_id {host_id}: {e}")
         if host:
-            try:
-                if host.status != HostStatus.ERROR:
-                    host.status = HostStatus.ERROR
-                append_log(host, f"Task failed with unhandled exception: {e}")
-                db.session.commit()
-            except Exception as commit_err:
-                log.error(f"Failed to update host status/log on unhandled exception: {commit_err}")
+            failure_message = f"Task failed with unhandled exception: {e}"
+
+            def _mark_failed():
+                host.status = HostStatus.ERROR
+                append_log(host, failure_message)
+
+            record_task_failure(_mark_failed)
         return f"Error during standalone host {host_id} setup: {e}"
 
 
