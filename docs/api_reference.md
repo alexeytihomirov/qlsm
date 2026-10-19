@@ -24,7 +24,7 @@ All endpoints except `/api/auth/login` require authentication via JWT cookie.
 | `/hosts/self/defaults` | GET | Get detected defaults for the self-host provider |
 | `/hosts/test-connection` | POST | Test standalone SSH connectivity before host creation |
 | `/hosts/<id>` | GET | Get host details with instances |
-| `/hosts/<id>` | PUT | Update host (e.g., rename - triggers rename task) |
+| `/hosts/<id>` | PUT | Update host (rename - triggers rename task; see [Update Host](#update-host-rename)) |
 | `/hosts/<id>` | DELETE | Delete host (triggers Terraform destroy) |
 | `/hosts/<id>/restart` | POST | Restart/reboot host |
 | `/hosts/<id>/resize` | POST | Resize a Vultr host to a larger same-family plan |
@@ -232,6 +232,50 @@ Error responses:
 The resize task sets the host to `configuring`, runs `terraform apply` with
 `vultr_plan=<new_plan>`, then returns the host to `active` on success. Vultr may
 reboot the VM during the resize; QLDS services are expected to auto-restart.
+
+### Update Host (Rename)
+
+```
+PUT /api/hosts/<id>
+```
+
+Request:
+
+```json
+{
+  "name": "new-host-name",
+  "apply_to_machine": false
+}
+```
+
+- `name`: validated like a new host name (see [Host Name Validation](#host-name-validation-rfc-1123)) and must be unique.
+- `apply_to_machine` (optional, boolean): whether the rename also changes the
+  machine itself (`hostname`, `/etc/hostname`, the `127.0.1.1` line of
+  `/etc/hosts`, cloud-init). Defaults to `false` for standalone hosts, whose
+  machine QLSM does not own, so only the name inside QLSM, the inventory file
+  and the config folder change. Ignored for cloud hosts: QLSM provisioned the
+  machine, so its hostname always follows (treated as `true`).
+
+When the name changes, the database row is updated at once and a rename task is
+queued under the host lock. The task sets the host to `active` when it
+finishes, or `error` (with the reason in the host logs) when a step fails.
+Sending the current name succeeds without queuing anything.
+
+Success response (`200 OK`):
+
+```json
+{
+  "message": "Host renamed from 'old-host-name' to 'new-host-name'. Inventory update task queued.",
+  "data": { "id": 1, "name": "new-host-name", "...": "..." }
+}
+```
+
+Error responses:
+
+- `400` for a missing body, an invalid name, or a non-boolean `apply_to_machine`.
+- `404` when the host does not exist.
+- `409` when the name is taken or another operation holds the host lock (the name is reverted).
+- `500` when the rename task cannot be queued (the name is reverted).
 
 ### Create Host Request
 Cloud provider:
