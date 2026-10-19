@@ -216,6 +216,7 @@ vi.mock('../InstanceBasicInfoForm', () => ({
       <div>basic-info</div>
       <div data-testid="hostname">{hostname}</div>
       <button type="button" onClick={() => onHostnameChange({ target: { value: 'My Server' } })}>Type Hostname</button>
+      <button type="button" onClick={() => onHostnameChange({ target: { value: 'Default Name' } })}>Type Default Hostname</button>
       <div data-testid="selected-host">{selectedHostId || 'none'}</div>
       <div data-testid="port">{port || 'none'}</div>
       <div data-testid="redis-db">{redisDb ?? 'none'}</div>
@@ -646,6 +647,25 @@ describe('AddInstanceForm draft lifecycle', () => {
     const submitted = onSubmit.mock.calls[0][0];
     expect(submitted.hostname).toBe('My Server');
     expect(submitted.configs['server.cfg']).toBe('set sv_hostname "My Server"\nset g_motd "from preset"');
+  });
+
+  it('keeps a typed hostname that equals the one the form filled in', async () => {
+    mocks.getPresetById.mockResolvedValue({
+      name: 'named-preset',
+      configs: { 'server.cfg': 'set sv_hostname "Preset Server"' },
+      factories: {},
+    });
+    renderWithNamedDefault();
+
+    await waitFor(() => expect(screen.getByTestId('hostname')).toHaveTextContent('Default Name'));
+    fireEvent.click(screen.getByRole('button', { name: /type default hostname/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+    await waitFor(() => expect(mocks.getPresetById).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('preset-manager')).not.toBeInTheDocument());
+
+    expect(screen.getByTestId('hostname')).toHaveTextContent('Default Name');
   });
 
   it('takes the preset hostname when the field was not typed in', async () => {
