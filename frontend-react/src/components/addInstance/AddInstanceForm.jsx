@@ -269,6 +269,9 @@ function AddInstanceForm({
   const initialSelectedHostIdRef = useRef('');
   const initialPortRef = useRef('');
   const initialHostnameRef = useRef('');
+  // Set when the operator edits the hostname (field or sv_hostname line), so a
+  // preset load keeps it even when it equals the value the form filled in.
+  const hostnameTypedRef = useRef(false);
   const initialLanRateEnabledRef = useRef(false);
   const initialConfigContentsRef = useRef(normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap()));
   const initialCheckedPluginsRef = useRef(initialPluginSeed.selectable);
@@ -587,6 +590,7 @@ function AddInstanceForm({
     // Default to empty; overwritten by handleHostChange with the auto-selected port when startHostId is set
     initialPortRef.current = '';
     initialHostnameRef.current = initialHostnameFromCfg;
+    hostnameTypedRef.current = false;
     initialLanRateEnabledRef.current = false;
 
     setName('');
@@ -777,9 +781,8 @@ function AddInstanceForm({
       // Extract hostname and port from preset server.cfg, patching newConfigs before setting state
       let newInitialHostname = hostnameRef.current;
       let newInitialPort = portRef.current;
-      // A hostname the operator typed (anything other than what the form itself
-      // last filled in) wins over the preset's; an untouched one follows the preset.
-      const keepTypedHostname = hostnameRef.current !== '' && hostnameRef.current !== initialHostnameRef.current;
+      // A hostname the operator typed wins over the preset's; an untouched one follows the preset.
+      const keepTypedHostname = hostnameTypedRef.current && hostnameRef.current !== '';
 
       if (keepTypedHostname) {
         newConfigs['server.cfg'] = withServerHostname(newConfigs['server.cfg'], hostnameRef.current);
@@ -878,8 +881,7 @@ function AddInstanceForm({
       resetFactories(factoriesToLoad);
       setIsPresetModified(false);
 
-      // Leave the baseline alone for a kept hostname, so it still counts as typed on the next preset load.
-      if (!keepTypedHostname) initialHostnameRef.current = newInitialHostname;
+      initialHostnameRef.current = newInitialHostname;
       initialPortRef.current = newInitialPort;
 
       // Restore checked plugins state saved with the preset.
@@ -1128,7 +1130,7 @@ function AddInstanceForm({
     syncConfigFile(fileName, newContent);
     if (fileName === 'server.cfg') {
       const hostnameMatch = newContent.match(/^set\s+sv_hostname\s+"([^"]*)"/m);
-      if (hostnameMatch && hostnameMatch[1] !== hostnameRef.current) { isUpdatingFromServerCfg.current = true; setHostname(hostnameMatch[1]); setTimeout(() => isUpdatingFromServerCfg.current = false, 0); }
+      if (hostnameMatch && hostnameMatch[1] !== hostnameRef.current) { hostnameTypedRef.current = true; isUpdatingFromServerCfg.current = true; setHostname(hostnameMatch[1]); setTimeout(() => isUpdatingFromServerCfg.current = false, 0); }
       const portMatch = newContent.match(/^set\s+net_port\s+"(\d+)"/m);
       if (portMatch && portMatch[1] !== portRef.current) { const portVal = portMatch[1]; if (availablePortsRef.current.includes(parseInt(portVal, 10))) { isUpdatingPortFromServerCfg.current = true; setPort(portVal); setTimeout(() => isUpdatingPortFromServerCfg.current = false, 0); } }
     }
@@ -1338,7 +1340,7 @@ function AddInstanceForm({
   return (
     <form onSubmit={localHandleSubmit} className="flex flex-col flex-grow min-h-0 pt-4">
       <div className="flex-shrink-0 mb-6">
-        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} />
+        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => { hostnameTypedRef.current = true; setHostname(e.target.value); }} />
         <InstanceOptionsRow
           lanRateEnabled={lanRateEnabled}
           onLanRateChange={setLanRateEnabled}
