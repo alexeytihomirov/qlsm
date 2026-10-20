@@ -232,6 +232,32 @@ def test_rename_host_logic_success(
     assert final_status == HostStatus.ACTIVE
 
 
+@patch(f'{TASK_LOGIC_MODULE}._run_host_ansible_playbook')
+@patch(f'{TASK_LOGIC_MODULE}._rename_config_folder', return_value=(True, None))
+@patch(f'{TASK_LOGIC_MODULE}._update_inventory_file', return_value=(True, None))
+@patch(f'{TASK_LOGIC_MODULE}.update_host')
+@patch(f'{TASK_LOGIC_MODULE}.get_host')
+@patch(f'{TASK_LOGIC_MODULE}.get_current_job')
+def test_rename_host_logic_qlsm_only_skips_machine_playbook(
+    mock_job, mock_get_host, mock_update_host,
+    mock_inv, mock_cfg, mock_ansible, test_app
+):
+    """apply_to_machine=False renames inventory and config folder only, ends ACTIVE."""
+    mock_job.return_value = MagicMock(id='job-6')
+    host = Host(id=7, name='My-Host', status=HostStatus.ACTIVE, is_standalone=True,
+                ip_address='1.2.3.4', ssh_key_path='/key', ssh_user='root', logs=None)
+    mock_get_host.return_value = host
+
+    result = rename_host_logic(7, 'my-host', 'My-Host', apply_to_machine=False)
+
+    assert result is True
+    mock_inv.assert_called_once_with('my-host', 'My-Host', host)
+    mock_cfg.assert_called_once_with('my-host', 'My-Host')
+    mock_ansible.assert_not_called()
+    final_status = mock_update_host.call_args_list[-1].kwargs.get('status')
+    assert final_status == HostStatus.ACTIVE
+
+
 @patch(f'{TASK_LOGIC_MODULE}._update_inventory_file', return_value=(False, 'Inventory file not found'))
 @patch(f'{TASK_LOGIC_MODULE}.update_host')
 @patch(f'{TASK_LOGIC_MODULE}.get_host')
