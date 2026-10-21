@@ -31,6 +31,7 @@ class NicknameTests(unittest.TestCase):
         self.plugin.mode = "kick"
         self.plugin.max_warnings = 1
         self.plugin.log = Mock()
+        self.plugin.chatlog_enabled = False
         self.plugin.db = Mock()
         self.player = types.SimpleNamespace(name="clean player", steam_id=76561199818065399)
 
@@ -73,8 +74,10 @@ class NicknameTests(unittest.TestCase):
         self.plugin.db.get_permission.assert_not_called()
 
     def test_log_failure_does_not_allow_connection(self):
-        self.plugin.log.side_effect = OSError("disk full")
-        self.assertEqual(self.connect("nigga"), self.module.NICKNAME_REJECTION)
+        self.plugin.log = types.MethodType(self.module.autokick.log, self.plugin)
+        self.plugin.log_path = "unwritable"
+        with patch("builtins.open", side_effect=OSError("disk full")):
+            self.assertEqual(self.connect("nigga"), self.module.NICKNAME_REJECTION)
         self.runtime.get_logger.return_value.warning.assert_called_once()
 
     def test_rejection_log_escapes_newlines(self):
@@ -117,7 +120,8 @@ class NicknameTests(unittest.TestCase):
             plugin.add_command = Mock()
             plugin.set_cvar_once = Mock()
             plugin.get_cvar = Mock(side_effect=lambda key: {
-                "qlx_autokickWarnings": "1", "qlx_autokickMode": "warn"}[key])
+                "qlx_autokickWarnings": "1", "qlx_autokickMode": "warn",
+                "qlx_autokickChatlog": "0"}[key])
             with patch.object(plugin, "get_minqlx_dir", return_value=directory):
                 plugin.__init__()
             plugin.add_hook.assert_any_call("player_connect", plugin.handle_player_connect)
