@@ -11,6 +11,7 @@ Simply put the plugin in the 'minqlx-plugins' folder, !load the plugin, and set 
     qlx_serverBrandTopField              - Where the map author credit (line 1) appears, the text set in this cvar will appear after the credit.
     qlx_serverBrandBottomField           - Where the map author credit (line 2) appears, the text set in this cvar will appear after the credit.
 
+    qlx_connectMessage                   - When the player is at the awaiting challenge screen when they first connect to the server, text will appear here.
     qlx_loadedMessage                    - When the player gets to the menu after connecting, and clicks Join or Spectate, they'll get centre print from this cvar.
     qlx_countdownMessage                 - When the countdown begins, this text will appear mid-screen. (like the qlx_loadedMessage does)
     qlx_endOfGameMessage                 - When the game finishes, it'll put the text in this cvar in the text box on the left.
@@ -28,6 +29,7 @@ import minqlx
 class branding(minqlx.Plugin):
     def __init__(self):
         self.add_hook("new_game", self.brand_map)
+        self.add_hook("player_connect", self.player_connect)
         self.add_hook("player_loaded", self.player_loaded)
         self.add_hook("game_countdown", self.game_countdown)
         self.add_hook("game_end", self.game_end)
@@ -40,6 +42,8 @@ class branding(minqlx.Plugin):
         self.set_cvar_once("qlx_brandingMapCredit", "0")
         
         self.plugin_version = "2.2"
+
+        self.playerConnectedYetList = []
         
     def brand_map(self):
         if self.get_cvar("qlx_serverBrandName") == None:
@@ -89,9 +93,20 @@ class branding(minqlx.Plugin):
 
             minqlx.set_configstring(3, res)
 
+    def player_connect(self, player):
+        if self.get_cvar("qlx_connectMessage") != None:
+            if player not in self.playerConnectedYetList:
+                self.playerConnectedYetList.append(player)
+                return self.get_cvar("qlx_connectMessage")
+        
     def player_loaded(self, player):
         if self.get_cvar("qlx_loadedMessage") != None:
             self.center_print(self.get_cvar("qlx_loadedMessage"), player.id)
+
+        try:
+            self.playerConnectedYetList.remove(player)
+        except:
+            return
 
     def game_countdown(self):
         if self.get_cvar("qlx_countdownMessage") != None:
