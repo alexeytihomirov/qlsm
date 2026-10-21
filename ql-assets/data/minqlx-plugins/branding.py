@@ -28,7 +28,6 @@ import minqlx
 class branding(minqlx.Plugin):
     def __init__(self):
         self.add_hook("new_game", self.brand_map)
-        self.add_hook("player_connect", self.player_connect)
         self.add_hook("player_loaded", self.player_loaded)
         self.add_hook("game_countdown", self.game_countdown)
         self.add_hook("game_end", self.game_end)
