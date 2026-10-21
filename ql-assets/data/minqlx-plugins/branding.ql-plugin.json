@@ -5,7 +5,6 @@
     { "cvar": "qlx_serverBrandName", "label": "Brand name", "type": "string", "default": "", "description": "Shown where the map name usually appears." },
     { "cvar": "qlx_serverBrandTopField", "label": "Top field", "type": "string", "default": "", "description": "Shown after the map author credit (line 1)." },
     { "cvar": "qlx_serverBrandBottomField", "label": "Bottom field", "type": "string", "default": "", "description": "Shown after the map author credit (line 2)." },
-    { "cvar": "qlx_connectMessage", "label": "Connect message", "type": "string", "default": "", "description": "Shown on the awaiting-challenge screen while connecting." },
     { "cvar": "qlx_loadedMessage", "label": "Loaded message", "type": "string", "default": "", "description": "Centre print after clicking Join or Spectate." },
     { "cvar": "qlx_countdownMessage", "label": "Countdown message", "type": "string", "default": "", "description": "Shown mid-screen when the countdown begins." },
     { "cvar": "qlx_endOfGameMessage", "label": "End of game message", "type": "string", "default": "", "description": "Shown in the text box when the game finishes." },

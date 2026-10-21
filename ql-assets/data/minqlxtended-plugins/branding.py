@@ -26,7 +26,6 @@ Simply put the plugin in the 'minqlx-plugins' folder, !load the plugin, and set 
     qlx_serverBrandTopField              - Where the map author credit (line 1) appears, the text set in this cvar will appear after the credit.
     qlx_serverBrandBottomField           - Where the map author credit (line 2) appears, the text set in this cvar will appear after the credit.
 
-    qlx_connectMessage                   - When the player is at the awaiting challenge screen when they first connect to the server, text will appear here.
     qlx_loadedMessage                    - When the player gets to the menu after connecting, and clicks Join or Spectate, they'll get centre print from this cvar.
     qlx_countdownMessage                 - When the countdown begins, this text will appear mid-screen. (like the qlx_loadedMessage does)
     qlx_endOfGameMessage                 - When the game finishes, it'll put the text in this cvar in the text box on the left.
@@ -49,7 +48,6 @@ class branding(minqlxtended.Plugin):
     _qlx_serverBrandName = minqlxtended.setting("qlx_serverBrandName", "")
     _qlx_serverBrandTopField = minqlxtended.setting("qlx_serverBrandTopField", "")
     _qlx_serverBrandBottomField = minqlxtended.setting("qlx_serverBrandBottomField", "")
-    _qlx_connectMessage = minqlxtended.setting("qlx_connectMessage", "")
     _qlx_loadedMessage = minqlxtended.setting("qlx_loadedMessage", "")
     _qlx_countdownMessage = minqlxtended.setting("qlx_countdownMessage", "")
     _qlx_endOfGameMessage = minqlxtended.setting("qlx_endOfGameMessage", "")
@@ -57,11 +55,6 @@ class branding(minqlxtended.Plugin):
     _qlx_brandingPrependMapName = minqlxtended.setting("qlx_brandingPrependMapName", False)
     _qlx_brandingAppendGameType = minqlxtended.setting("qlx_brandingAppendGameType", False)
     _qlx_rainbowBrandName = minqlxtended.setting("qlx_rainbowBrandName", False)
-
-    def __init__(self):
-        super().__init__()
-
-        self.connected_players = set()
 
     @minqlxtended.hook("new_game")
     def handle_map(self):
@@ -116,23 +109,10 @@ class branding(minqlxtended.Plugin):
         minqlxtended.set_configstring(CS_AUTHOR, author)
         minqlxtended.set_configstring(CS_AUTHOR2, author2)
 
-    @minqlxtended.hook("player_connect")
-    def handle_player_connect(self, player, is_bot):
-        if (self._qlx_connectMessage) and (player.steam_id not in self.connected_players):
-            self.connected_players.add(player.steam_id)
-            return f"{self._qlx_connectMessage}\n^7This server is running ^4branding.py^7. ^2http://github.com/tjone270/Quake-Live^7.\n"
-
     @minqlxtended.hook("player_loaded")
     def handle_player_loaded(self, player):
         if self._qlx_loadedMessage:
             player.center_print(self._qlx_loadedMessage)
-
-        self.connected_players.discard(player.steam_id)
-
-    @minqlxtended.hook("player_disconnect")
-    def handle_player_disconnect(self, player, reason):
-        # Prune players who disconnected before they finished loading.
-        self.connected_players.discard(player.steam_id)
 
     @minqlxtended.hook("game_countdown")
     def handle_game_countdown(self):
