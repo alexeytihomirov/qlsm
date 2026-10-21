@@ -54,7 +54,7 @@ diff it against ours, and reapply. None of them is large.
 | `dictionary.py` | Per-player `DEFINE_COOLDOWN` before `!define` forks its HTTP worker. |
 | `infectedmm.py` | The delayed warmup callback re-checks gametype and `_loaded` before adding the mastermind bot. |
 | `leaverban.py` | `handle_game_start` filters bots out of `players_start`, matching the rest of the file. |
-| `names.py` | v1.1.0: maintain accepted client baselines, check enforcement eligibility on every restore, lazily hydrate reloaded online players, and bound synchronous self-assignment guards. See `docs/user/names-1.1.0-audit.md`. |
+| `names.py` | v1.1.0: maintain accepted client baselines, check enforcement eligibility on every restore, lazily hydrate reloaded online players, and bound synchronous self-assignment guards. |
 | `vpnblock.py` | `_update_cache`'s four messages go through `_msg_next_frame` instead of calling `self.msg()` from the worker thread. |
 
 All but `branding.py` and `names.py` came from the review recorded in
