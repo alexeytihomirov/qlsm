@@ -19,6 +19,8 @@
 import minqlx
 import re
 
+VERSION = "1.1.0"
+
 _re_remove_excessive_colors = re.compile(r"(?:\^.)+(\^.)")
 _name_key = "minqlx:players:{}:colored_name"
 
@@ -33,7 +35,7 @@ class names(minqlx.Plugin):
         self.set_cvar_once("qlx_enforceSteamName", "1")
 
         self.steam_names = {}
-        self.name_set = False
+        self.name_set = set()
 
     def handle_player_connect(self, player):
         self.steam_names[player.steam_id] = player.clean_name
@@ -43,29 +45,35 @@ class names(minqlx.Plugin):
         if name_key in self.db:
             db_name = self.db[name_key]
             if not self.get_cvar("qlx_enforceSteamName", bool) or self.clean_text(db_name).lower() == player.clean_name.lower():
-                self.name_set = True
-                player.name = db_name
+                self._assign_name(player, db_name)
 
     def handle_player_disconnect(self, player, reason):
-        if player.steam_id in self.steam_names:
-            del self.steam_names[player.steam_id]
+        self.steam_names.pop(player.steam_id, None)
+        self.name_set.discard(player.steam_id)
 
     def handle_userinfo(self, player, changed):
-        # Make sure we're not doing anything if our script set the name.
-        if self.name_set:
-            self.name_set = False
+        if "name" not in changed:
             return
-
-        if "name" in changed:
-            name_key = _name_key.format(player.steam_id)
-            if name_key not in self.db:
-                self.steam_names[player.steam_id] = self.clean_text(changed["name"])
-            elif self.steam_names[player.steam_id] == self.clean_text(changed["name"]):
-                changed["name"] = self.db[name_key]
+        sid = player.steam_id
+        # Only this player's synchronous name assignment is ours.
+        if sid in self.name_set:
+            self.name_set.discard(sid)
+            return
+        current_clean = self.clean_text(changed["name"])
+        baseline = self.steam_names.setdefault(sid, current_clean)
+        name_key = _name_key.format(sid)
+        # Keep observing external Redis additions, edits and deletions per name event.
+        registered = self.db.get(name_key)
+        if registered is None:
+            self.steam_names[sid] = current_clean
+        elif baseline == current_clean:
+            if not self.get_cvar("qlx_enforceSteamName", bool) or self.clean_text(registered).lower() == current_clean.lower():
+                changed["name"] = registered
                 return changed
-            else:
-                del self.db[name_key]
-                player.tell("Your registered name has been reset.")
+        else:
+            self.steam_names[sid] = current_clean
+            del self.db[name_key]
+            player.tell("Your registered name has been reset.")
 
     def cmd_name(self, player, msg, channel):
         name_key = _name_key.format(player.steam_id)
@@ -92,13 +100,26 @@ class names(minqlx.Plugin):
             player.tell("Blank names cannot be used. Sorry for the inconvenience.")
             return minqlx.RET_STOP_ALL
 
-        self.name_set = True
+        # A command after reload has only the current player snapshot available.
+        # Do not replace an existing original-client baseline with our alias.
+        self.steam_names.setdefault(player.steam_id, player.clean_name)
         name = "^7" + name
-        player.name = name
+        self._assign_name(player, name)
         self.db[name_key] = name
         player.tell("The name has been registered. To make me forget about it, a simple ^6{}name^7 will do it."
             .format(self.get_cvar("qlx_commandPrefix")))
         return minqlx.RET_STOP_ALL
+
+    def _assign_name(self, player, name):
+        if player.cvars.get("name") == name:
+            return
+        self.name_set.add(player.steam_id)
+        try:
+            player.name = name
+        finally:
+            # client_command is synchronous; blocked/no-event/error writes must
+            # never leave a marker that consumes a later genuine client rename.
+            self.name_set.discard(player.steam_id)
 
     def clean_excessive_colors(self, name):
         """Removes excessive colors and only keeps the ones that matter."""
