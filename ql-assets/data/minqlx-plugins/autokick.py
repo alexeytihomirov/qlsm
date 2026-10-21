@@ -2,7 +2,10 @@
 # https://github.com/D00MSDAYDEVICE
 # https://www.youtube.com/@HIT-CLIPS
 
-# This is an extension plugin for minqlx to autokick players based on chat
+# Filters chat and rejects connecting players whose nicknames match the
+# case-insensitive regexes in autokick_patterns.txt (Quake colours ignored).
+# Nickname rejection applies to everyone, independently of chat mode/warnings.
+# !reloadpatterns refreshes the shared regex list for chat and connections.
 # CVARS:
 # qlx_autokickWarnings "1"
 # qlx_autokickMode "kick" or "warn" or "silent"
@@ -29,12 +32,17 @@ import os
 import re
 from datetime import datetime
 
+# Compile once, not on every connection. Match only the regex file for names.
+COLOR_CODE = re.compile(r"\^[0-9]")
+NICKNAME_REJECTION = "Please change your nickname: inappropriate language."
+
 class autokick(minqlx.Plugin):
     def __init__(self):
-        self.version = "1.2"
+        self.version = "1.3"
         self.add_command("akv", self.cmd_version, 0)
 
         # Hooks
+        self.add_hook("player_connect", self.handle_player_connect)
         self.add_hook("chat", self.handle_chat)
         self.add_hook("map", self.handle_map_change)
 
@@ -129,6 +137,23 @@ class autokick(minqlx.Plugin):
     # ------------------------------------------------------------
     # Event Hooks
     # ------------------------------------------------------------
+
+    def handle_player_connect(self, player):
+        # player_connect is synchronous: returning a string rejects admission.
+        # Do not kick/tell a client that has not finished connecting. No admin
+        # exemption, Redis lookup, warning counter, or chat-mode dependency.
+        name = COLOR_CODE.sub("", player.name)
+        for pattern in self.regex_patterns:
+            if pattern.search(name):
+                try:
+                    # repr keeps player-controlled newlines out of log records.
+                    self.log(f"[REJECT-NAME] {name!r} ({player.steam_id}) "
+                             f"matched regex {pattern.pattern!r}")
+                except OSError as e:
+                    # A read-only/full log filesystem must not allow the join.
+                    minqlx.get_logger(self).warning(
+                        "autokick: nickname rejection log failed: %s", e)
+                return NICKNAME_REJECTION
 
     def handle_map_change(self, mapname, factory):
         self.warnings.clear()
