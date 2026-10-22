@@ -60,6 +60,10 @@
       "origin": "upstream",
       "sha256": "b3f7ef4f4316a8e3c0dfd80b3966a8a7a543ef7f704c4b2ca4a585d345530b87"
     },
+    "lgacc.py": {
+      "origin": "qlsm",
+      "sha256": "c2fd25f865f705c3559aa7f736f72911e4e3e10bb74d226acb5ba5598729e09e"
+    },
     "log.py": {
       "origin": "upstream",
       "sha256": "49dfc7e4498c46d5dce9e12af6fce4de76911836ac7b870e429111a4cfb0700a"

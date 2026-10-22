@@ -7,13 +7,13 @@ from ui.plugin_compat import baseline_digest
 BASELINES = ['minqlx-plugins', 'minqlxtended-plugins']
 
 # QLSM's own plugins, ported to each runtime's API -- not upstream code. Both
-# runtimes carry ports of the same seven files; mirrors QLSM_PLUGINS in
+# runtimes carry ports of the same eight files; mirrors QLSM_PLUGINS in
 # tests/test_minqlxtended_plugin_baseline.py, which already covers the
 # minqlxtended side. This file adds the equivalent for minqlx: a first-ever
 # manifest generation defaulted every file, QLSM ports included, to
 # origin='upstream', and this is the regression test for that.
 QLSM_PLUGINS = [
-    'commands.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
+    'commands.py', 'lgacc.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
     'serverchecker.py', 'specqueue.py', 'suppress_join_msg.py',
 ]
 
