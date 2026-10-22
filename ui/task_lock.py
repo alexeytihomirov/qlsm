@@ -208,6 +208,22 @@ def release_lock(entity_type, entity_id, token):
     return bool(result)
 
 
+def lock_superseded(entity_type, entity_id, token):
+    """True when another operation now holds this entity's lock.
+
+    A missing key (expired or already released) is not superseded: nothing
+    newer owns the entity, so recovery of an interrupted job may proceed.
+    """
+    if not token:
+        return False
+    owner = _get_redis().get(f"task_lock:{entity_type}:{entity_id}")
+    if owner is None:
+        return False
+    if isinstance(owner, bytes):
+        owner = owner.decode()
+    return owner != token
+
+
 def release_locks(entity_type, entity_ids, token):
     """Best-effort release for every unique entity ID."""
     for entity_id in sorted(set(entity_ids)):
