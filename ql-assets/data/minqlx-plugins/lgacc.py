@@ -138,6 +138,6 @@ class lgacc(minqlx.Plugin):
     def _send(self, player, own, enemy):
         if not self._pref(player, "own") or not (own[0] or enemy[0]):
             return
-        player.tell("^7You: ^3{}%".format(_pct(own[1], own[0])))
         if self._pref(player, "enemy"):
             player.tell("^7Enemy: ^1{}%".format(_pct(enemy[1], enemy[0])))
+        player.tell("^7You: ^3{}%".format(_pct(own[1], own[0])))
