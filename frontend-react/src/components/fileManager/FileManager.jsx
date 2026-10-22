@@ -40,6 +40,7 @@ const FileManager = forwardRef(function FileManager({
   onPushToHost = null,
   pushingToHost = false,
   hostPoolUnavailable = false,
+  onUploadingChange,
 }, ref) {
   const sidebarWidth = useSidebarWidth();
   const controller = useFileManagerController({
@@ -54,6 +55,7 @@ const FileManager = forwardRef(function FileManager({
     getBinaryMeta,
     saveBinaryMeta,
     binaryContext,
+    onUploadingChange,
   });
 
   useImperativeHandle(ref, () => ({
