@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.48.3` | 2026-10-21 | [#254](https://github.com/dngrtech/qlsm/pull/254) | Fixed Save not waiting for in-progress plugin uploads, which could leave uploaded files out of the deployment. |
 | `v1.48.2` | 2026-10-21 | [#253](https://github.com/dngrtech/qlsm/pull/253) | Fixed nickname lifecycle bugs in the names plugin for both minqlx and minqlxtended. |
 | `v1.48.1` | 2026-10-21 | [#252](https://github.com/dngrtech/qlsm/pull/252) | Autokick now rejects players whose nickname matches the regex patterns when they connect. |
 | `v1.48.0` | 2026-10-20 | [#251](https://github.com/dngrtech/qlsm/pull/251) | Added stored notifications, a navbar bell, and addon hooks, navigation, and menu status extensions; improved standalone host onboarding, setup error handling, and plugin helper-package updates. |
