@@ -89,6 +89,7 @@ vi.mock('../../fileManager', () => ({
     protectedFiles: [],
   },
   PluginCvarsModal: () => null,
+  useUploadBusy: () => ({ uploading: false, track: () => () => {} }),
   FileManager: React.forwardRef(function MockFileManager(props, ref) {
     mocks.fileManagerProps.push(props);
     React.useImperativeHandle(ref, () => ({

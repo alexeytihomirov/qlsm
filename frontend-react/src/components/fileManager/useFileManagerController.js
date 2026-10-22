@@ -44,6 +44,7 @@ export function useFileManagerController({
   getBinaryMeta,
   saveBinaryMeta,
   binaryContext,
+  onUploadingChange,
 }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [currentContent, setCurrentContent] = useState('');
@@ -61,6 +62,8 @@ export function useFileManagerController({
   const [actionError, setActionError] = useState(null);
   const pendingLocalPathsRef = useRef(new Set());
   const inFlightUploadsRef = useRef(new Set());
+  const onUploadingChangeRef = useRef(onUploadingChange);
+  onUploadingChangeRef.current = onUploadingChange;
   const pendingRemovedPathsRef = useRef(new Set());
   const prevResetCountRef = useRef(adapter.resetCount ?? 0);
   const emptyCheckedFiles = useMemo(() => new Set(), []);
@@ -339,7 +342,11 @@ export function useFileManagerController({
   const handleUpload = useCallback((input, targetDir = null) => {
     const promise = runUpload(input, targetDir);
     inFlightUploadsRef.current.add(promise);
-    const done = () => inFlightUploadsRef.current.delete(promise);
+    onUploadingChangeRef.current?.(true);
+    const done = () => {
+      inFlightUploadsRef.current.delete(promise);
+      if (inFlightUploadsRef.current.size === 0) onUploadingChangeRef.current?.(false);
+    };
     promise.then(done, done);
     return promise;
   }, [runUpload]);

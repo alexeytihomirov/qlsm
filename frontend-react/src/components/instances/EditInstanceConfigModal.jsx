@@ -9,7 +9,7 @@ import ConfirmationModal from '../ConfirmationModal';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
 import PresetCompatibilityDialog from '../presetManager/PresetCompatibilityDialog';
 import { combineAcceptedPaths, mergeReplacements } from '../../utils/presetCompatibility';
-import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, PluginCvarsModal, useStateAdapter, useDraftAdapter } from '../fileManager';
+import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, PluginCvarsModal, useStateAdapter, useDraftAdapter, useUploadBusy } from '../fileManager';
 import SubfolderPluginNotice from '../fileManager/SubfolderPluginNotice';
 import {
   applyPluginDependencies,
@@ -164,6 +164,7 @@ function EditInstanceConfigModal({
   const [droppedPluginCount, setDroppedPluginCount] = useState(0);
   const [pluginNoticeDismissed, setPluginNoticeDismissed] = useState(false);
   const pluginFileManagerRef = useRef(null);
+  const { uploading, track: trackUploads } = useUploadBusy();
   const pluginsSyncedRef = useRef(false);
   const hookLoadSeqRef = useRef(0);
 
@@ -865,6 +866,7 @@ function EditInstanceConfigModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (uploading) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -1244,6 +1246,7 @@ function EditInstanceConfigModal({
                           <div className={activeMainTab === 'config' ? 'flex-1 min-h-0' : 'hidden'}>
                             <FileManager
                               adapter={configsAdapter}
+                              onUploadingChange={trackUploads('config')}
                               capabilities={CONFIG_CAPS}
                               defaultSelectedPath="server.cfg"
                               onExpandEditor={handleExpandEditor}
@@ -1260,6 +1263,7 @@ function EditInstanceConfigModal({
                               <FileManager
                                 ref={pluginFileManagerRef}
                                 adapter={pluginsAdapter}
+                                onUploadingChange={trackUploads('plugins')}
                                 capabilities={PLUGIN_CAPS}
                                 checkable
                                 checkedFiles={checkedPlugins}
@@ -1283,6 +1287,7 @@ function EditInstanceConfigModal({
                           <div className={activeMainTab === 'factories' ? 'flex-1 min-h-0' : 'hidden'}>
                             <FileManager
                               adapter={factoriesAdapter}
+                              onUploadingChange={trackUploads('factories')}
                               capabilities={FACTORY_CAPS}
                               checkable
                               checkedFiles={checkedFactories}
@@ -1374,7 +1379,7 @@ function EditInstanceConfigModal({
                               <button
                                 type="submit"
                                 form={CONFIG_FORM_ID}
-                                disabled={saving || loading}
+                                disabled={saving || loading || uploading}
                                 className="btn btn-primary"
                               >
                                 {saving ? (

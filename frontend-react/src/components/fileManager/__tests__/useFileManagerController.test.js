@@ -626,3 +626,27 @@ describe('useFileManagerController flushEdits vs in-flight uploads', () => {
     expect(flushDone).toBe(true);
   });
 });
+
+describe('useFileManagerController onUploadingChange', () => {
+  it('reports busy while a batch runs and idle once it settles', async () => {
+    const adapter = createAdapter([]);
+    let release;
+    adapter.upload.mockImplementation((file) =>
+      new Promise(resolve => { release = () => resolve({ path: file.name, content: '' }); }));
+    const onUploadingChange = vi.fn();
+
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.cfg'] },
+      onUploadingChange,
+    }));
+
+    let uploadPromise;
+    act(() => { uploadPromise = result.current.handleUpload(new File(['a'], 'one.cfg')); });
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { release(); await uploadPromise; });
+    expect(onUploadingChange).toHaveBeenLastCalledWith(false);
+    expect(onUploadingChange).toHaveBeenCalledTimes(2);
+  });
+});
