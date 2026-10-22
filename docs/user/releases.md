@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.48.5` | 2026-10-22 | [#255](https://github.com/dngrtech/qlsm/pull/255) | Instances no longer stay stuck or flip to Error when a worker restart interrupts a job; the real server state is now detected. |
 | `v1.48.4` | 2026-10-22 | [#257](https://github.com/dngrtech/qlsm/pull/257) | Save is now held while any file upload is in progress on the Configuration Files, Plugins and Factories tabs. |
 | `v1.48.3` | 2026-10-21 | [#254](https://github.com/dngrtech/qlsm/pull/254) | Fixed Save not waiting for in-progress plugin uploads, which could leave uploaded files out of the deployment. |
 | `v1.48.2` | 2026-10-21 | [#253](https://github.com/dngrtech/qlsm/pull/253) | Fixed nickname lifecycle bugs in the names plugin for both minqlx and minqlxtended. |

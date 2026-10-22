@@ -32,6 +32,13 @@ class _FakeStopEvent:
         return False
 
 
+@pytest.fixture(autouse=True)
+def _no_stale_job_reconcile():
+    """Keep these tests off Redis; the reconcile has its own tests below."""
+    with patch('ui.task_logic.interrupted_job_recovery.reconcile_stale_instance_jobs'):
+        yield
+
+
 @pytest.fixture
 def run_poller(app):
     """Run `flask run-status-poller` for N cycles; returns the CLI result."""
@@ -93,3 +100,23 @@ def test_session_is_rolled_back_after_each_tick(run_poller):
         result = run_poller(cycles=2)
     assert result.exit_code == 0
     assert rollback.call_count == 2
+
+
+def test_poller_runs_stale_job_reconcile_each_cycle(run_poller):
+    with patch('ui.task_logic.server_status_poll.poll_all_hosts'), \
+            patch('ui.addons.dispatch'), \
+            patch('ui.task_logic.interrupted_job_recovery.reconcile_stale_instance_jobs') as reconcile:
+        result = run_poller(cycles=3)
+    assert result.exit_code == 0
+    assert reconcile.call_count == 3
+
+
+def test_poller_survives_reconcile_exception(run_poller):
+    with patch('ui.task_logic.server_status_poll.poll_all_hosts') as poll, \
+            patch('ui.addons.dispatch') as dispatch, \
+            patch('ui.task_logic.interrupted_job_recovery.reconcile_stale_instance_jobs',
+                  side_effect=RuntimeError('redis down')):
+        result = run_poller(cycles=2)
+    assert result.exit_code == 0
+    assert poll.call_count == 2
+    assert dispatch.call_count == 2
