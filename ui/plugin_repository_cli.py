@@ -17,15 +17,16 @@ from ui.routes.plugin_repository_routes import _repo_urls, _sync
 
 DEFAULT_PLUGIN_REPOSITORIES = (
     ('Doomsday\'s Plugins Repository', 'https://github.com/D00MSDAYDEVICE/minqlx'),
+    ('ark-ql Plugins Repository', 'https://github.com/ark-ql/minqlx-plugins'),
 )
 
 
-def seed_plugin_repositories(repositories=DEFAULT_PLUGIN_REPOSITORIES):
+def seed_plugin_repositories(repositories=None):
     """Add each (name, url) not already present by name or URL. A repository
     whose first sync fails is still added, carrying the error; the Sync
     button retries the GitHub resolution. Returns the names added."""
     added = []
-    for name, url in repositories:
+    for name, url in (DEFAULT_PLUGIN_REPOSITORIES if repositories is None else repositories):
         existing = PluginRepository.query.all()
         if any(r.name.lower() == name.lower() or url.rstrip('/') in _repo_urls(r) for r in existing):
             continue

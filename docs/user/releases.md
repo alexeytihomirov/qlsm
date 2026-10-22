@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.50.0` | 2026-10-22 | [#259](https://github.com/dngrtech/qlsm/pull/259) | New installs also list the **ark-ql Plugins Repository** plugin repository under **Settings → Plugin Repositories**. |
 | `v1.49.0` | 2026-10-22 | [#258](https://github.com/dngrtech/qlsm/pull/258) | Added the `lgacc` plugin: after each kill or death, shows you your lightning gun accuracy for that life and your opponent's, visible only to you. `!lgacc` toggles it and `!lgacc enemy` toggles the enemy line. |
 | `v1.48.5` | 2026-10-22 | [#255](https://github.com/dngrtech/qlsm/pull/255) | Instances no longer stay stuck or flip to Error when a worker restart interrupts a job; the real server state is now detected. |
 | `v1.48.4` | 2026-10-22 | [#257](https://github.com/dngrtech/qlsm/pull/257) | Save is now held while any file upload is in progress on the Configuration Files, Plugins and Factories tabs. |
