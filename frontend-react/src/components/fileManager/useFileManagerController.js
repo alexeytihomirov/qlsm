@@ -60,6 +60,7 @@ export function useFileManagerController({
   const [binaryDescription, setBinaryDescription] = useState('');
   const [actionError, setActionError] = useState(null);
   const pendingLocalPathsRef = useRef(new Set());
+  const inFlightUploadsRef = useRef(new Set());
   const pendingRemovedPathsRef = useRef(new Set());
   const prevResetCountRef = useRef(adapter.resetCount ?? 0);
   const emptyCheckedFiles = useMemo(() => new Set(), []);
@@ -84,6 +85,10 @@ export function useFileManagerController({
     .map(item => item.name), [files]);
 
   const flushEdits = useCallback(async () => {
+    // Save must not snapshot (and delete) the draft while an upload batch is still running.
+    while (inFlightUploadsRef.current.size > 0) {
+      await Promise.allSettled([...inFlightUploadsRef.current]);
+    }
     for (const [path, content] of Object.entries(editedContent)) {
       await adapter.writeContent(path, content);
     }
@@ -281,7 +286,7 @@ export function useFileManagerController({
     }
   }, [adapter, capabilities, checkable, expandFolder, newModalMode, newModalTargetDir, onCheck, selectPath, selectedFile]);
 
-  const handleUpload = useCallback(async (input, targetDir = null) => {
+  const runUpload = useCallback(async (input, targetDir = null) => {
     const files = input == null
       ? []
       : (input instanceof File ? [input] : Array.from(input));
@@ -330,6 +335,14 @@ export function useFileManagerController({
       setActionError(null);
     }
   }, [adapter, capabilities, checkable, expandFolder, onCheck, selectPath, selectedFile]);
+
+  const handleUpload = useCallback((input, targetDir = null) => {
+    const promise = runUpload(input, targetDir);
+    inFlightUploadsRef.current.add(promise);
+    const done = () => inFlightUploadsRef.current.delete(promise);
+    promise.then(done, done);
+    return promise;
+  }, [runUpload]);
 
   const openRenameModal = useCallback((item) => {
     setRenameTarget({ kind: item.type, path: item.path });
