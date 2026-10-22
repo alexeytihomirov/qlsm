@@ -112,6 +112,10 @@
       "origin": "upstream",
       "sha256": "3c25fb1445230e4cc1aea4e7c4eb61151348c674d4df0f8c393d87840e73d6b5"
     },
+    "lgacc.py": {
+      "origin": "qlsm",
+      "sha256": "e09b4287593bb5bcfb6cf7629bde88e8b11373d6d7b0f38286d74c68aef8de5e"
+    },
     "linodefw.py": {
       "origin": "upstream",
       "sha256": "c38f8ee93400892268847b9d8beb29b6fe5fc1da24bf4bb8c58f8b577238f148"

@@ -21,6 +21,7 @@ upstream skips them. Their minqlx originals live in `ql-assets/data/minqlx-plugi
 | `player_info.py` | Does **not** carry the iouonegirl abstract base across. That base installs itself at import by downloading from a minqlx plugin repository; the one helper this plugin used from it is inlined. |
 | `commands.py` | `!plugins` / `!lc`. Unrelated to upstream's `votecommands.py`, which adds `/pass` and `/veto`. |
 | `reset_acc.py` | Needs no engine patch here — `gclient_t` is writable memory. On minqlxtended v1.0.2+ that includes the per-weapon WEAPONS arrays too (`shots_fired`/`shots_hit` gained a real setter), so the end-of-match weapon breakdown resets along with the aggregate accuracy. |
+| `lgacc.py` | Private per-life LG accuracy after each kill/death (`!lgacc`, `!lgacc enemy`). Read-only: reads the per-weapon `shots_fired`/`shots_hit` arrays at the LG index and never resets them. |
 | `suppress_join_msg.py` | Suppresses the "joined the battle" centre-print. |
 
 `serverchecker.py`, `reset_acc.py` and `suppress_join_msg.py` are baseline-only: present
