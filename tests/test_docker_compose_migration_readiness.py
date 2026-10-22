@@ -21,3 +21,9 @@ def test_database_consumers_wait_for_migration_owning_web_service():
         assert services[consumer]["depends_on"]["web"] == {
             "condition": "service_healthy"
         }
+
+
+def test_worker_has_stop_grace_period():
+    # RQ warm shutdown finishes the running job on SIGTERM; Docker's default
+    # 10s would SIGKILL an Ansible run mid-flight.
+    assert _load_compose()["services"]["worker"]["stop_grace_period"] == "5m"
