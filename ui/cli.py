@@ -16,6 +16,7 @@ def register_cli_commands(app):
         """Daemon: polls game server status from game host Redis via SSH every 15s."""
         from ui import db
         from ui.addons import dispatch
+        from ui.task_logic.interrupted_job_recovery import reconcile_stale_instance_jobs
         from ui.task_logic.server_status_poll import poll_all_hosts
 
         stop_event = threading.Event()
@@ -33,6 +34,10 @@ def register_cli_commands(app):
                 poll_all_hosts()
             except Exception as e:
                 logger.error(f"Poll cycle failed: {e}", exc_info=True)
+            try:
+                reconcile_stale_instance_jobs()
+            except Exception as e:
+                logger.error(f"Stale instance job reconcile failed: {e}", exc_info=True)
             try:
                 dispatch('poller.tick')
             except Exception as e:

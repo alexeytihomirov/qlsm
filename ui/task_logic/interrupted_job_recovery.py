@@ -7,8 +7,12 @@ never reported as successfully configured: the log says the config is unconfirme
 """
 import logging
 import os
+from datetime import datetime, timezone
 
-from ui import db
+from rq.exceptions import NoSuchJobError
+from rq.job import Job
+
+from ui import db, rq
 from ui.models import InstanceStatus, QLInstance
 from ui.task_logic.common import append_log
 from ui.task_logic.service_runtime import probe_host_runtime
@@ -91,3 +95,43 @@ def recover_interrupted_instance(instance_id, job_id, lock_token, reason):
     if lock_token:
         release_lock('instance', instance_id, lock_token)
     return True
+
+
+def _started_jobs():
+    """Yield every job in the default queue's started registry."""
+    queue = rq.get_queue()
+    for job_id in queue.started_job_registry.get_job_ids():
+        try:
+            yield Job.fetch(job_id, connection=queue.connection)
+        except NoSuchJobError:
+            continue
+
+
+def _as_utc(moment):
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
+
+
+def reconcile_stale_instance_jobs(now=None):
+    """Recover instance jobs whose worker heartbeat stopped.
+
+    RQ only declares a dead worker's job abandoned after several minutes. A job
+    whose heartbeat is older than STALE_HEARTBEAT_SECONDS is handed to
+    recover_interrupted_instance now; recovery is idempotent, so RQ's later
+    failure callback for the same job is a no-op. Returns how many jobs were
+    handed over.
+    """
+    from ui.task_logic.job_failure_handlers import instance_job_failure_handler
+
+    now = now or datetime.now(timezone.utc)
+    handed_over = 0
+    for job in _started_jobs():
+        if job.failure_callback != instance_job_failure_handler or not job.args:
+            continue
+        last_seen = job.last_heartbeat or job.started_at
+        if last_seen is None or (now - _as_utc(last_seen)).total_seconds() <= STALE_HEARTBEAT_SECONDS:
+            continue
+        handed_over += 1
+        recover_interrupted_instance(
+            job.args[0], job.id, (job.meta or {}).get('lock_token'), "worker heartbeat lost"
+        )
+    return handed_over
