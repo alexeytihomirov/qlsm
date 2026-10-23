@@ -119,6 +119,12 @@ class lgacc(minqlx.Plugin):
         return now[0] - base[0], now[1] - base[1]
 
     def handle_kill(self, victim, killer, data):
+        # kill events are dispatched from the ZMQ stats thread; all engine
+        # access (counter reads, tell) must run on the game thread.
+        self._process_kill(victim, killer)
+
+    @minqlx.next_frame
+    def _process_kill(self, victim, killer):
         if killer is None or killer.steam_id == victim.steam_id:
             self._snapshot(victim.id)
             return
