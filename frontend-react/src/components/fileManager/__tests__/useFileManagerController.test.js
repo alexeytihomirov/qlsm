@@ -592,3 +592,61 @@ describe('useFileManagerController nested folder creation', () => {
     expect(adapter.renameFolder).toHaveBeenCalledWith('a/old', 'a/new');
   });
 });
+
+describe('useFileManagerController flushEdits vs in-flight uploads', () => {
+  it('waits for the running upload batch before resolving', async () => {
+    const adapter = createAdapter([]);
+    const releases = [];
+    adapter.upload.mockImplementation((file) =>
+      new Promise(resolve => { releases.push(() => resolve({ path: file.name, content: '' })); }));
+
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.cfg'] },
+    }));
+
+    let uploadDone = false;
+    let flushDone = false;
+    let uploadPromise;
+    let flushPromise;
+    act(() => {
+      uploadPromise = result.current.handleUpload([new File(['a'], 'one.cfg'), new File(['b'], 'two.cfg')])
+        .then(() => { uploadDone = true; });
+    });
+    act(() => {
+      flushPromise = result.current.flushEdits().then(() => { flushDone = true; });
+    });
+
+    await act(async () => { releases[0](); });
+    await waitFor(() => expect(releases).toHaveLength(2));
+    expect(flushDone).toBe(false);
+
+    await act(async () => { releases[1](); await uploadPromise; await flushPromise; });
+    expect(uploadDone).toBe(true);
+    expect(flushDone).toBe(true);
+  });
+});
+
+describe('useFileManagerController onUploadingChange', () => {
+  it('reports busy while a batch runs and idle once it settles', async () => {
+    const adapter = createAdapter([]);
+    let release;
+    adapter.upload.mockImplementation((file) =>
+      new Promise(resolve => { release = () => resolve({ path: file.name, content: '' }); }));
+    const onUploadingChange = vi.fn();
+
+    const { result } = renderHook(() => useFileManagerController({
+      adapter,
+      capabilities: { allowedExtensions: ['.cfg'] },
+      onUploadingChange,
+    }));
+
+    let uploadPromise;
+    act(() => { uploadPromise = result.current.handleUpload(new File(['a'], 'one.cfg')); });
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { release(); await uploadPromise; });
+    expect(onUploadingChange).toHaveBeenLastCalledWith(false);
+    expect(onUploadingChange).toHaveBeenCalledTimes(2);
+  });
+});

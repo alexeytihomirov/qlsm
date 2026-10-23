@@ -97,7 +97,7 @@ class branding(minqlx.Plugin):
         if self.get_cvar("qlx_connectMessage") != None:
             if player not in self.playerConnectedYetList:
                 self.playerConnectedYetList.append(player)
-                return "{}\n^7This server is running ^4branding.py^7. ^2http://github.com/tjone270/Quake-Live^7.\n".format(self.get_cvar("qlx_connectMessage"))
+                return self.get_cvar("qlx_connectMessage")
         
     def player_loaded(self, player):
         if self.get_cvar("qlx_loadedMessage") != None:

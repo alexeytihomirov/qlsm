@@ -17,6 +17,19 @@ Open from host row **Actions** in the Servers page.
 - **Re-run Host Setup**: re-applies the host configuration playbook on an existing host.
 - **Delete / Remove**: removes host from management (or destroys cloud host).
 
+## Rename A Host
+
+Open **View Details** and click the pencil next to the host name. Enter the new name and save.
+
+- **Cloud hosts**: the machine's hostname is renamed too.
+- **Standalone hosts**: by default only the name inside QLSM changes; the machine's own hostname and `/etc/hosts` are left alone, since the machine isn't QLSM's. Tick **Also rename the machine itself** under the name field if you want QLSM to change them as well.
+
+The rename runs as a background task; other host actions wait until it finishes. If it fails, the host shows **Error** and the reason is in [Host Logs](host-logs.md).
+
+## Notifications
+
+The bell in the top navbar collects notifications from QLSM and from installed addons (for example a host monitoring addon reporting a slow host). The badge shows the unread count and refreshes every 30 seconds while the tab is visible. Open the bell to see the latest 20; clicking one marks it read and opens its page, and **Mark all read** clears the badge. Read state is shared by all users, and notifications are deleted 30 days after their last update.
+
 ## What QLFilter Is
 
 QLFilter is a host-level anti-DDoS filter. It uses eBPF/XDP to drop reflection garbage (DNS, SSDP, and similar noise) at the network driver level before it ever reaches QLDS. One installation covers all instances on the host.

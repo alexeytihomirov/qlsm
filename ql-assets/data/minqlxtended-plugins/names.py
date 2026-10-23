@@ -20,6 +20,8 @@
 import minqlxtended
 import re
 
+VERSION = "1.1.0"
+
 _re_remove_excessive_colors = re.compile(r"(?:\^.)+(\^.)")
 _name_key = "minqlx:players:{}:colored_name"
 
@@ -36,8 +38,7 @@ class names(minqlxtended.Plugin):
         # looked up yet. handle_userinfo runs on the game thread for every userinfo change,
         # and a client can send those as often as it likes.
         self.registered_names = {}
-        # Steam ids whose next userinfo change is one this plugin just caused. Per player,
-        # or one registration swallows whichever other change arrives next.
+        # Steam ids currently receiving a synchronous name assignment from us.
         self.name_set = set()
 
     @minqlxtended.hook("player_connect")
@@ -46,7 +47,7 @@ class names(minqlxtended.Plugin):
 
     @minqlxtended.hook("player_loaded")
     def handle_player_loaded(self, player):
-        # The one read per session; handle_userinfo works from the cache after this.
+        # Normal session hydration; reloaded online clients hydrate lazily instead.
         db_name = self.db.get(_name_key.format(player.steam_id))
         self.registered_names[player.steam_id] = db_name
         if db_name:
@@ -61,25 +62,28 @@ class names(minqlxtended.Plugin):
 
     @minqlxtended.hook("userinfo")
     def handle_userinfo(self, player, changed, infostring):
-        # Make sure we're not doing anything if our script set the name.
-        if player.steam_id in self.name_set:
-            self.name_set.discard(player.steam_id)
+        if "name" not in changed:
             return
-
-        if "name" in changed:
-            current_clean = self.clean_text(changed["name"])
-            # From the cache. `registered` is None both for no registered name and for one
-            # not read yet, after a mid-session reload.
-            registered = self.registered_names.get(player.steam_id)
-            if registered is None or player.steam_id not in self.steam_names:
-                self.steam_names[player.steam_id] = current_clean
-            elif self.steam_names[player.steam_id] == current_clean:
+        sid = player.steam_id
+        if sid in self.name_set:
+            self.name_set.discard(sid)
+            return
+        current_clean = self.clean_text(changed["name"])
+        baseline = self.steam_names.setdefault(sid, current_clean)
+        if sid not in self.registered_names:
+            self.registered_names[sid] = self.db.get(_name_key.format(sid))
+        registered = self.registered_names[sid]
+        if registered is None:
+            self.steam_names[sid] = current_clean
+        elif baseline == current_clean:
+            if not self._qlx_enforceSteamName or self.clean_text(registered).lower() == current_clean.lower():
                 changed["name"] = registered
                 return changed
-            else:
-                del self.db[_name_key.format(player.steam_id)]
-                self.registered_names[player.steam_id] = None
-                player.tell("Your registered name has been reset.")
+        else:
+            self.steam_names[sid] = current_clean
+            del self.db[_name_key.format(sid)]
+            self.registered_names[sid] = None
+            player.tell("Your registered name has been reset.")
 
     @minqlxtended.command(("name", "setname"), client_cmd_perm=0, usage="<name>")
     def cmd_name(self, player, msg, channel):
@@ -111,6 +115,8 @@ class names(minqlxtended.Plugin):
             player.tell("Blank names cannot be used. Sorry for the inconvenience.")
             return minqlxtended.Return.STOP_ALL
 
+        # Preserve an existing original-client baseline across alias commands.
+        self.steam_names.setdefault(player.steam_id, player.clean_name)
         name = "^7" + name
         self._assign_name(player, name)
         self.db[name_key] = name
@@ -119,7 +125,7 @@ class names(minqlxtended.Plugin):
         return minqlxtended.Return.STOP_ALL
 
     def _assign_name(self, player, name):
-        """Set a player's name and flag the userinfo event it causes as ours."""
+        """Ignore only our synchronous name event, never a later client change."""
         # An assignment matching the client's current userinfo diffs to nothing, so no
         # userinfo event is raised and the flag would sit in name_set until the player's
         # next name change, then swallow it.
@@ -127,7 +133,10 @@ class names(minqlxtended.Plugin):
             return
 
         self.name_set.add(player.steam_id)
-        player.name = name
+        try:
+            player.name = name
+        finally:
+            self.name_set.discard(player.steam_id)
 
     def clean_excessive_colors(self, name):
         """Removes excessive colors and only keeps the ones that matter."""

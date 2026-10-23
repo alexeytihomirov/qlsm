@@ -45,14 +45,14 @@ UPSTREAM_BY_RUNTIME = {
 # QLSM's own plugins, ported to each runtime's API -- not upstream code, so a
 # file with no previous manifest entry must not default to origin='upstream'.
 # Mirrors QLSM_PLUGINS in tests/test_minqlxtended_plugin_baseline.py; both
-# runtimes carry ports of the same seven files.
+# runtimes carry ports of the same eight files.
 QLSM_PLUGINS_BY_RUNTIME = {
     'minqlxtended': {
-        'commands.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
+        'commands.py', 'lgacc.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
         'serverchecker.py', 'specqueue.py', 'suppress_join_msg.py',
     },
     'minqlx': {
-        'commands.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
+        'commands.py', 'lgacc.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
         'serverchecker.py', 'specqueue.py', 'suppress_join_msg.py',
     },
 }

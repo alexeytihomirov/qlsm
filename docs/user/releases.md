@@ -6,6 +6,15 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.50.1` | 2026-10-22 | [#260](https://github.com/dngrtech/qlsm/pull/260) | Fixed `setup-worktree.sh` failing on macOS and picking an unsupported Python version. |
+| `v1.50.0` | 2026-10-22 | [#259](https://github.com/dngrtech/qlsm/pull/259) | New installs also list the **ark-ql Plugins Repository** plugin repository under **Settings → Plugin Repositories**. |
+| `v1.49.0` | 2026-10-22 | [#258](https://github.com/dngrtech/qlsm/pull/258) | Added the `lgacc` plugin: after each kill or death, shows you your lightning gun accuracy for that life and your opponent's, visible only to you. `!lgacc` toggles it and `!lgacc enemy` toggles the enemy line. |
+| `v1.48.5` | 2026-10-22 | [#255](https://github.com/dngrtech/qlsm/pull/255) | Instances no longer stay stuck or flip to Error when a worker restart interrupts a job; the real server state is now detected. |
+| `v1.48.4` | 2026-10-22 | [#257](https://github.com/dngrtech/qlsm/pull/257) | Save is now held while any file upload is in progress on the Configuration Files, Plugins and Factories tabs. |
+| `v1.48.3` | 2026-10-21 | [#254](https://github.com/dngrtech/qlsm/pull/254) | Fixed Save not waiting for in-progress plugin uploads, which could leave uploaded files out of the deployment. |
+| `v1.48.2` | 2026-10-21 | [#253](https://github.com/dngrtech/qlsm/pull/253) | Fixed nickname lifecycle bugs in the names plugin for both minqlx and minqlxtended. |
+| `v1.48.1` | 2026-10-21 | [#252](https://github.com/dngrtech/qlsm/pull/252) | Autokick now rejects players whose nickname matches the regex patterns when they connect. |
+| `v1.48.0` | 2026-10-20 | [#251](https://github.com/dngrtech/qlsm/pull/251) | Added stored notifications, a navbar bell, and addon hooks, navigation, and menu status extensions; improved standalone host onboarding, setup error handling, and plugin helper-package updates. |
 | `v1.47.9` | 2026-10-13 | [#250](https://github.com/dngrtech/qlsm/pull/250) | Increased and made configurable the web request-thread pool so open Socket.IO connections do not exhaust the previous 12-thread capacity and stall the Servers page. |
 | `v1.47.8` | 2026-10-13 | [#247](https://github.com/dngrtech/qlsm/pull/247) | Fixed live status and player counts not showing for game hosts running Python 3.14. |
 | `v1.47.7` | 2026-10-12 | [#249](https://github.com/dngrtech/qlsm/pull/249) | Fixed the **Restart QLSM** reminder disappearing after dismissing the prompt or reinstalling an addon at the same version; a **Restart QLSM** button now stays in the top bar until QLSM restarts. |

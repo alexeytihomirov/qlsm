@@ -337,7 +337,7 @@ def test_factories_directory_matches_the_minqlx_default():
 # preset's scripts/, so their ports ship here. reset_acc and suppress_join_msg joined
 # them when the preset became the source the import dialog offers replacements from; see
 # BASELINE_ONLY. Every name here is checked for drift against the baseline below.
-PRESET_VISIBLE_PORTS = ['commands.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
+PRESET_VISIBLE_PORTS = ['commands.py', 'lgacc.py', 'myFun.py', 'player_info.py', 'reset_acc.py',
                         'specqueue.py', 'suppress_join_msg.py']
 
 

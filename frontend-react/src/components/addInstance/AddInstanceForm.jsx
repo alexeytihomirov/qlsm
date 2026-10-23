@@ -20,6 +20,7 @@ import {
   PLUGIN_CAPS,
   PluginCvarsModal,
   useDraftAdapter,
+  useUploadBusy,
   useStateAdapter,
 } from '../fileManager';
 import {
@@ -220,6 +221,7 @@ function AddInstanceForm({
   const [pluginNoticeDismissed, setPluginNoticeDismissed] = useState(false);
   const [cvarsModalTarget, setCvarsModalTarget] = useState(null); // { label, cvars } | null
   const pluginsManagerRef = useRef(null);
+  const { uploading, track: trackUploads } = useUploadBusy();
   const [draftPreset, setDraftPreset] = useState(defaultPresetNameForRuntime(initialHostRuntime));
   // Bare filenames the operator accepted a runtime replacement for, from the
   // preset compatibility dialog. Sent to the draft seed so the server writes
@@ -1210,6 +1212,7 @@ function AddInstanceForm({
 
   const localHandleSubmit = async (e) => {
     e.preventDefault();
+    if (uploading) return;
     if (serverCfgHasLintErrors) { setInternalFormError("Please fix errors in server.cfg before submitting."); return; }
     setInternalFormError(null);
 
@@ -1376,6 +1379,7 @@ function AddInstanceForm({
             <div className={activeMainTab === 'config' ? 'flex-1 min-h-0' : 'hidden'}>
               <FileManager
                 adapter={configsAdapter}
+                onUploadingChange={trackUploads('config')}
                 capabilities={CONFIG_CAPS}
                 defaultSelectedPath="server.cfg"
                 onExpandEditor={handleExpandEditor}
@@ -1392,6 +1396,7 @@ function AddInstanceForm({
                 <FileManager
                   ref={pluginsManagerRef}
                   adapter={pluginsAdapter}
+                  onUploadingChange={trackUploads('plugins')}
                   capabilities={PLUGIN_CAPS}
                   checkable
                   checkedFiles={checkedPlugins}
@@ -1415,6 +1420,7 @@ function AddInstanceForm({
             <div className={activeMainTab === 'factories' ? 'flex-1 min-h-0' : 'hidden'}>
               <FileManager
                 adapter={factoriesAdapter}
+                onUploadingChange={trackUploads('factories')}
                 capabilities={FACTORY_CAPS}
                 checkable
                 checkedFiles={checkedFactories}
@@ -1505,7 +1511,7 @@ function AddInstanceForm({
           </button>
           <button
             type="submit"
-            disabled={isLoadingSubmit || serverCfgHasLintErrors}
+            disabled={isLoadingSubmit || serverCfgHasLintErrors || uploading}
             className="btn btn-primary"
           >
             {isLoadingSubmit ? (

@@ -120,7 +120,7 @@ class branding(minqlxtended.Plugin):
     def handle_player_connect(self, player, is_bot):
         if (self._qlx_connectMessage) and (player.steam_id not in self.connected_players):
             self.connected_players.add(player.steam_id)
-            return f"{self._qlx_connectMessage}\n^7This server is running ^4branding.py^7. ^2http://github.com/tjone270/Quake-Live^7.\n"
+            return self._qlx_connectMessage
 
     @minqlxtended.hook("player_loaded")
     def handle_player_loaded(self, player):

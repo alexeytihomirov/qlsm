@@ -21,6 +21,7 @@ upstream skips them. Their minqlx originals live in `ql-assets/data/minqlx-plugi
 | `player_info.py` | Does **not** carry the iouonegirl abstract base across. That base installs itself at import by downloading from a minqlx plugin repository; the one helper this plugin used from it is inlined. |
 | `commands.py` | `!plugins` / `!lc`. Unrelated to upstream's `votecommands.py`, which adds `/pass` and `/veto`. |
 | `reset_acc.py` | Needs no engine patch here — `gclient_t` is writable memory. On minqlxtended v1.0.2+ that includes the per-weapon WEAPONS arrays too (`shots_fired`/`shots_hit` gained a real setter), so the end-of-match weapon breakdown resets along with the aggregate accuracy. |
+| `lgacc.py` | Private per-life LG accuracy after each kill/death (`!lgacc`, `!lgacc enemy`). Read-only: reads the per-weapon `shots_fired`/`shots_hit` arrays at the LG index and never resets them. |
 | `suppress_join_msg.py` | Suppresses the "joined the battle" centre-print. |
 
 `serverchecker.py`, `reset_acc.py` and `suppress_join_msg.py` are baseline-only: present
@@ -36,7 +37,7 @@ ships exactly those four.
 
 ## Locally patched upstream files
 
-Eight files here started as upstream and now carry QLSM patches. They keep
+Nine files here started as upstream and now carry QLSM patches. They keep
 `"origin": "upstream"` — that field records **lineage**, not whether the bytes still
 match, and `tests/test_minqlxtended_plugin_baseline.py` asserts all 33 upstream
 filenames are marked that way. So the manifest cannot tell you which files diverge, and
@@ -54,15 +55,17 @@ diff it against ours, and reapply. None of them is large.
 | `dictionary.py` | Per-player `DEFINE_COOLDOWN` before `!define` forks its HTTP worker. |
 | `infectedmm.py` | The delayed warmup callback re-checks gametype and `_loaded` before adding the mastermind bot. |
 | `leaverban.py` | `handle_game_start` filters bots out of `players_start`, matching the rest of the file. |
+| `names.py` | v1.1.0: maintain accepted client baselines, check enforcement eligibility on every restore, lazily hydrate reloaded online players, and bound synchronous self-assignment guards. |
 | `vpnblock.py` | `_update_cache`'s four messages go through `_msg_next_frame` instead of calling `self.msg()` from the worker thread. |
 
-All but `branding.py` came from the review recorded in
-`docs/findings/2026-08-27-minqlxtended-upstream-plugin-review.md`. The other 25 upstream
+All but `branding.py` and `names.py` came from the review recorded in
+`docs/findings/2026-08-27-minqlxtended-upstream-plugin-review.md`. The other 24 upstream
 files are byte-identical to the pinned commit.
 
 > The copies in `configs/presets/_builtin/default-minqlxtended/scripts/` must be updated
 > alongside these. `test_preset_scripts_match_the_baseline_ports` only pins the six QLSM
-> ports, so drift in an upstream file's preset copy is not caught by any test.
+> ports. `tests/test_builtin_preset_plugin_drift.py` additionally checks all shared
+> upstream and QLSM plugin copies for byte-identical content.
 
 ## Re-vendoring against a newer upstream
 

@@ -34,7 +34,7 @@ UPSTREAM_PLUGINS = [
 # the pinned upstream commit must skip them. Listed rather than derived from the
 # manifest, so that a port silently reclassified as upstream fails here.
 QLSM_PLUGINS = [
-    'commands.py', 'myFun.py', 'player_info.py', 'reset_acc.py', 'serverchecker.py',
+    'commands.py', 'lgacc.py', 'myFun.py', 'player_info.py', 'reset_acc.py', 'serverchecker.py',
     'specqueue.py', 'suppress_join_msg.py',
 ]
 

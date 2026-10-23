@@ -131,6 +131,9 @@ services:
       web:
         condition: service_healthy
     command: flask rq worker
+    # RQ warm shutdown finishes the running job on SIGTERM; Ansible runs take
+    # ~1 min, so Docker's default 10s would SIGKILL them mid-flight.
+    stop_grace_period: 5m
     volumes:
       - ./data:/app/data
       - ./terraform/ssh-keys:/app/terraform/ssh-keys

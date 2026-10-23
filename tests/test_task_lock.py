@@ -311,3 +311,25 @@ class TestBackupMaintenanceLockContext:
                 redis_client.values['maintenance_lock:backup'] = 'replacement-owner'
 
         assert redis_client.values['maintenance_lock:backup'] == 'replacement-owner'
+
+
+class TestLockSuperseded:
+    def test_false_when_owned(self, mock_redis):
+        mock_redis.get.return_value = 'tok-a'
+        assert task_lock.lock_superseded('instance', 1, 'tok-a') is False
+
+    def test_true_when_other_token(self, mock_redis):
+        mock_redis.get.return_value = 'tok-b'
+        assert task_lock.lock_superseded('instance', 1, 'tok-a') is True
+
+    def test_true_when_other_token_as_bytes(self, mock_redis):
+        mock_redis.get.return_value = b'tok-b'
+        assert task_lock.lock_superseded('instance', 1, 'tok-a') is True
+
+    def test_false_when_key_missing(self, mock_redis):
+        mock_redis.get.return_value = None
+        assert task_lock.lock_superseded('instance', 1, 'tok-a') is False
+
+    def test_false_when_token_none(self, mock_redis):
+        mock_redis.get.return_value = 'tok-b'
+        assert task_lock.lock_superseded('instance', 1, None) is False
