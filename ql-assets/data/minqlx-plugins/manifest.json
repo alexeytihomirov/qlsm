@@ -114,7 +114,7 @@
     },
     "lgacc.py": {
       "origin": "qlsm",
-      "sha256": "34fa7f98fc16fbf2e1ced642e8b36f96286bae5fe52a9b55d256f3823074266d"
+      "sha256": "a9ebb496f2e35ed6124267b030673187a085edfdbe705941161dfddba54fbbe0"
     },
     "linodefw.py": {
       "origin": "upstream",
@@ -194,7 +194,7 @@
     },
     "reset_acc.py": {
       "origin": "qlsm",
-      "sha256": "3dc3b7b3dff90477f4daa47c67e71368d513c28dd3cc394a990b8486228458df"
+      "sha256": "9e7b6ee6e5cceee60013ff6f99853eba8232e452c3ba5ba241b846b9a04928ab"
     },
     "restartserver.py": {
       "origin": "upstream",

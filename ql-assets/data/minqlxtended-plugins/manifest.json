@@ -62,7 +62,7 @@
     },
     "lgacc.py": {
       "origin": "qlsm",
-      "sha256": "c2fd25f865f705c3559aa7f736f72911e4e3e10bb74d226acb5ba5598729e09e"
+      "sha256": "15d7aa9988d1aad6efdfbca37ab02d509cedda205ceebd4106bc14e0b31f4857"
     },
     "log.py": {
       "origin": "upstream",
@@ -110,7 +110,7 @@
     },
     "reset_acc.py": {
       "origin": "qlsm",
-      "sha256": "1af867d66956c41b905d1c25a10599e6290345bd8284639ee4583f0c2634e6b2"
+      "sha256": "73dfab3181dc73b6c0ef0e436e80e317799f3c38605c9d1dc6af19feaf7d2804"
     },
     "scores.py": {
       "origin": "upstream",

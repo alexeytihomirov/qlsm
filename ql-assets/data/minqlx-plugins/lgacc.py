@@ -119,6 +119,12 @@ class lgacc(minqlx.Plugin):
         return now[0] - base[0], now[1] - base[1]
 
     def handle_kill(self, victim, killer, data):
+        # kill events are dispatched from the ZMQ stats thread; all engine
+        # access (counter reads, tell) must run on the game thread.
+        self._process_kill(victim, killer)
+
+    @minqlx.next_frame
+    def _process_kill(self, victim, killer):
         if killer is None or killer.steam_id == victim.steam_id:
             self._snapshot(victim.id)
             return
@@ -138,6 +144,8 @@ class lgacc(minqlx.Plugin):
     def _send(self, player, own, enemy):
         if not self._pref(player, "own") or not (own[0] or enemy[0]):
             return
+        # Full-width percent sign: the QL client treats an ASCII % in printed
+        # text as a format code, which corrupts client state (view/movement).
         if self._pref(player, "enemy"):
-            player.tell("^7Enemy: ^1{}%".format(_pct(enemy[1], enemy[0])))
-        player.tell("^7You: ^3{}%".format(_pct(own[1], own[0])))
+            player.tell("^7Enemy: ^1{}％".format(_pct(enemy[1], enemy[0])))
+        player.tell("^7You: ^3{}％".format(_pct(own[1], own[0])))
