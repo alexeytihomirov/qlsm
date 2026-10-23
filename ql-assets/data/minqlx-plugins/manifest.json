@@ -114,7 +114,7 @@
     },
     "lgacc.py": {
       "origin": "qlsm",
-      "sha256": "34fa7f98fc16fbf2e1ced642e8b36f96286bae5fe52a9b55d256f3823074266d"
+      "sha256": "a9ebb496f2e35ed6124267b030673187a085edfdbe705941161dfddba54fbbe0"
     },
     "linodefw.py": {
       "origin": "upstream",
