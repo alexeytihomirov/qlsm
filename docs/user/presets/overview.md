@@ -88,6 +88,11 @@ Use **Load Preset** in the deploy form or in **Edit Config** to open the Preset 
 
 Loading a preset overwrites the current draft with the saved config files, plugin file tree, plugin selections, factory files, factory selections, and admin list. A preset saved before admins were included leaves the current admin list alone.
 
+The server hostname (`sv_hostname`) is the one exception in `server.cfg`:
+
+- In **Edit Config**, the instance keeps its own hostname. The preset's `sv_hostname` line is rewritten to the current hostname.
+- In the deploy form, a hostname you typed (in the field or on the `sv_hostname` line) is kept the same way, even if it matches the one already filled in. If you never edited it, it takes the preset's hostname.
+
 - Built-in presets (e.g., `default`) are always available and cannot be deleted or downloaded.
 - User-created presets can be downloaded, renamed, or deleted from the row menu on this tab.
 

@@ -69,6 +69,11 @@ const getFactoryLinterSource = (fileName) => (
   fileName?.toLowerCase().endsWith('.factories') ? FACTORY_LINTER_SOURCE : null
 );
 const getServerHostname = (serverCfg = '') => serverCfg.match(/set sv_hostname "([^"]*)"/)?.[1] || '';
+const withServerHostname = (serverCfg = '', hostname) => (
+  /set sv_hostname "([^"]*)"/.test(serverCfg)
+    ? serverCfg.replace(/set sv_hostname "([^"]*)"/, () => `set sv_hostname "${hostname}"`)
+    : `${serverCfg}\nset sv_hostname "${hostname}"`
+);
 const setsEqual = (a, b) => a.size === b.size && [...a].every(value => b.has(value));
 
 // Mapping between frontend config keys and backend preset API keys
@@ -622,6 +627,11 @@ function EditInstanceConfigModal({
         const raw = newConfigs[file] ?? presetData[presetKey] ?? '';
         newConfigs[file] = file === 'server.cfg' ? stripManagedCvars(raw) : raw;
       });
+      // The instance keeps its own hostname: a preset carries settings, not
+      // the server's identity, so its sv_hostname is replaced with the current one.
+      if (serverHostname) {
+        newConfigs['server.cfg'] = withServerHostname(newConfigs['server.cfg'], serverHostname);
+      }
       resetConfigs(newConfigs, presetData.config_folders || []);
       // checked_factories: null = legacy preset (use all factory files); [] or [...] = explicit selection
       const factoriesToLoad = presetData.checked_factories != null
@@ -676,8 +686,9 @@ function EditInstanceConfigModal({
         setFactoryServerTree([]);
       }
 
-      const nextHostname = getServerHostname(newConfigs['server.cfg']);
-      setServerHostname(nextHostname);
+      if (!serverHostname) {
+        setServerHostname(getServerHostname(newConfigs['server.cfg']));
+      }
       setSelectedPresetId(presetId);
       setIsDirty(true);
 
@@ -689,7 +700,7 @@ function EditInstanceConfigModal({
   // pluginTree: partitionCheckedPaths folds in a plugin's depends_on from the
   // tree, so a stale [] silently degrades a preset load to the pre-manifest
   // behaviour of dropping those dependencies.
-  }, [hostLanRateUsesHook, hostOsType, hostRuntime, originalLanRateEnabled, pluginTree, resetConfigs, resetFactories, showSuccess]);
+  }, [hostLanRateUsesHook, hostOsType, hostRuntime, originalLanRateEnabled, pluginTree, resetConfigs, resetFactories, serverHostname, showSuccess]);
 
   const handleLoadPreset = useCallback(async (presetId) => {
     setPresetError(null);

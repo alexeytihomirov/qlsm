@@ -56,6 +56,13 @@ const CONFIG_FILES = ['server.cfg', 'mappool.txt', 'access.txt', 'workshop.txt']
 const NET_PORT_REGEX = /^(set\s+net_port\s+").*(".*)/m;
 const HOSTNAME_REGEX = /^(set\s+sv_hostname\s+").*(".*)/m;
 
+function withServerHostname(serverCfg, hostname) {
+  if (!serverCfg) return `set sv_hostname "${hostname}"`;
+  return HOSTNAME_REGEX.test(serverCfg)
+    ? serverCfg.replace(HOSTNAME_REGEX, (_m, head, tail) => `${head}${hostname}${tail}`)
+    : `${serverCfg}\nset sv_hostname "${hostname}"`;
+}
+
 const CONFIG_LANGUAGE_MAP = {
   'server.cfg': qlcfgLanguage,
   'mappool.txt': qlmappoolLanguage,
@@ -254,6 +261,9 @@ function AddInstanceForm({
   const initialSelectedHostIdRef = useRef('');
   const initialPortRef = useRef('');
   const initialHostnameRef = useRef('');
+  // Set when the operator edits the hostname (field or sv_hostname line), so a
+  // preset load keeps it even when it equals the value the form filled in.
+  const hostnameTypedRef = useRef(false);
   const initialLanRateEnabledRef = useRef(false);
   const initialConfigContentsRef = useRef(normalizeConfigMap(initialData.defaultConfigContents || createEmptyConfigMap()));
   const initialCheckedPluginsRef = useRef(initialPluginSeed.selectable);
@@ -572,6 +582,7 @@ function AddInstanceForm({
     // Default to empty; overwritten by handleHostChange with the auto-selected port when startHostId is set
     initialPortRef.current = '';
     initialHostnameRef.current = initialHostnameFromCfg;
+    hostnameTypedRef.current = false;
     initialLanRateEnabledRef.current = false;
 
     setName('');
@@ -717,9 +728,7 @@ function AddInstanceForm({
   useEffect(() => {
     if (hostname !== '' && hostname !== prevHostnameRef.current && !isUpdatingFromServerCfg.current) {
       const currentServerCfg = configContentsRef.current['server.cfg'] || '';
-      const nextServerCfg = currentServerCfg
-        ? (HOSTNAME_REGEX.test(currentServerCfg) ? currentServerCfg.replace(HOSTNAME_REGEX, `$1${hostname}$2`) : `${currentServerCfg}\nset sv_hostname "${hostname}"`)
-        : `set sv_hostname "${hostname}"`;
+      const nextServerCfg = withServerHostname(currentServerCfg, hostname);
       if (nextServerCfg !== currentServerCfg) {
         syncConfigFile('server.cfg', nextServerCfg);
       }
@@ -764,10 +773,16 @@ function AddInstanceForm({
       // Extract hostname and port from preset server.cfg, patching newConfigs before setting state
       let newInitialHostname = hostnameRef.current;
       let newInitialPort = portRef.current;
+      // A hostname the operator typed wins over the preset's; an untouched one follows the preset.
+      const keepTypedHostname = hostnameTypedRef.current && hostnameRef.current !== '';
+
+      if (keepTypedHostname) {
+        newConfigs['server.cfg'] = withServerHostname(newConfigs['server.cfg'], hostnameRef.current);
+      }
 
       if (newConfigs['server.cfg']) {
         const hostnameMatch = newConfigs['server.cfg'].match(/^set\s+sv_hostname\s+"([^"]*)"/m);
-        if (hostnameMatch && hostnameMatch[1]) {
+        if (!keepTypedHostname && hostnameMatch && hostnameMatch[1]) {
           newInitialHostname = hostnameMatch[1];
           isUpdatingFromServerCfg.current = true;
           setHostname(newInitialHostname);
@@ -1107,7 +1122,7 @@ function AddInstanceForm({
     syncConfigFile(fileName, newContent);
     if (fileName === 'server.cfg') {
       const hostnameMatch = newContent.match(/^set\s+sv_hostname\s+"([^"]*)"/m);
-      if (hostnameMatch && hostnameMatch[1] !== hostnameRef.current) { isUpdatingFromServerCfg.current = true; setHostname(hostnameMatch[1]); setTimeout(() => isUpdatingFromServerCfg.current = false, 0); }
+      if (hostnameMatch && hostnameMatch[1] !== hostnameRef.current) { hostnameTypedRef.current = true; isUpdatingFromServerCfg.current = true; setHostname(hostnameMatch[1]); setTimeout(() => isUpdatingFromServerCfg.current = false, 0); }
       const portMatch = newContent.match(/^set\s+net_port\s+"(\d+)"/m);
       if (portMatch && portMatch[1] !== portRef.current) { const portVal = portMatch[1]; if (availablePortsRef.current.includes(parseInt(portVal, 10))) { isUpdatingPortFromServerCfg.current = true; setPort(portVal); setTimeout(() => isUpdatingPortFromServerCfg.current = false, 0); } }
     }
@@ -1287,7 +1302,7 @@ function AddInstanceForm({
   return (
     <form onSubmit={localHandleSubmit} className="flex flex-col flex-grow min-h-0 pt-4">
       <div className="flex-shrink-0 mb-6">
-        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => setHostname(e.target.value)} />
+        <InstanceBasicInfoForm name={name} onNameChange={(e) => setName(e.target.value)} selectedHostId={selectedHostId} onHostChange={handleHostChange} hosts={initialData.hosts || []} port={port} onPortChange={setPort} availablePorts={availablePorts} loadingPorts={loadingPorts} redisDb={redisDb} onRedisDbChange={setRedisDb} redisDbOptions={redisDbOptions} hostname={hostname} onHostnameChange={(e) => { hostnameTypedRef.current = true; setHostname(e.target.value); }} />
         <InstanceOptionsRow
           lanRateEnabled={lanRateEnabled}
           onLanRateChange={setLanRateEnabled}
