@@ -114,7 +114,10 @@ class lgacc(minqlx.Plugin):
         if base is None:
             return None
         # Counters below the baseline were zeroed (reset_acc, new match).
-        if now[0] < base[0] or now[1] < base[1]:
+        # More hits than shots since the baseline means the same thing: the
+        # counters were zeroed and have since climbed past a stale baseline.
+        if (now[0] < base[0] or now[1] < base[1]
+                or now[1] - base[1] > now[0] - base[0]):
             base = (0, 0)
         return now[0] - base[0], now[1] - base[1]
 
