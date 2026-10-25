@@ -6,6 +6,7 @@ QLSM uses `v<major>.<minor>.<patch>` tags. Every merged pull request is listed a
 
 | Version | Date | PR | Changes |
 | --- | --- | --- | --- |
+| `v1.50.4` | 2026-10-25 | [#262](https://github.com/dngrtech/qlsm/pull/262) | `setup-worktree.sh` now lists the default plugin repositories on new worktrees. |
 | `v1.50.3` | 2026-10-23 | [#261](https://github.com/dngrtech/qlsm/pull/261) | Fixed the `lgacc` plugin's accuracy messages leaving players stuck or glitching after a death, and its numbers going wrong when `reset_acc` auto-reset is on. |
 | `v1.50.2` | 2026-10-23 | [#256](https://github.com/dngrtech/qlsm/pull/256) | Loading a preset keeps the server hostname. |
 | `v1.50.1` | 2026-10-22 | [#260](https://github.com/dngrtech/qlsm/pull/260) | Fixed `setup-worktree.sh` failing on macOS and picking an unsupported Python version. |
