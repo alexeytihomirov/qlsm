@@ -175,6 +175,8 @@ log "Syncing built-in presets."
 python -m flask sync-builtin-presets
 
 if [[ "$first_run" -eq 1 ]]; then
+    log "Seeding default plugin repositories."
+    python -m flask seed-plugin-repositories || warn "Seeding plugin repositories failed (needs network); run 'flask seed-plugin-repositories' later."
     default_admin_user="${DEFAULT_ADMIN_USER:-admin}"
     log "Creating default admin user '$default_admin_user' with password 'admin'."
     if ! python -m flask create-default-admin "$default_admin_user"; then
