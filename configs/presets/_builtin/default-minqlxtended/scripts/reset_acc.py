@@ -91,6 +91,11 @@ class reset_acc(minqlxtended.Plugin):
         # {steam_id: threading.Timer}
         self._pending_timers = {}
 
+        # A load or reload starts empty; pick up players already connected,
+        # otherwise their auto-reset stays off until they reconnect.
+        for p in self.players():
+            self.handle_loaded(p)
+
     # -------------------------------------------------------------------------
     # Redis persistence
     # -------------------------------------------------------------------------

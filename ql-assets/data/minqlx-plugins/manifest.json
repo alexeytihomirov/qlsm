@@ -194,7 +194,7 @@
     },
     "reset_acc.py": {
       "origin": "qlsm",
-      "sha256": "9e7b6ee6e5cceee60013ff6f99853eba8232e452c3ba5ba241b846b9a04928ab"
+      "sha256": "f9329f59b7ef0dc678cadc243d67ec32d7a668246647de6a0d0f02f62f98f11b"
     },
     "restartserver.py": {
       "origin": "upstream",

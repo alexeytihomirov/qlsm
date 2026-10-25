@@ -110,7 +110,7 @@
     },
     "reset_acc.py": {
       "origin": "qlsm",
-      "sha256": "73dfab3181dc73b6c0ef0e436e80e317799f3c38605c9d1dc6af19feaf7d2804"
+      "sha256": "24b7ebcbc7cd01f238a1c5949b5748edb3c10de273ef6ff3e9ec8e587614f2c5"
     },
     "scores.py": {
       "origin": "upstream",
