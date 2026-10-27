@@ -4,7 +4,7 @@ import { Layers, X } from 'lucide-react';
 import BulkPluginUpdatesTab from './BulkPluginUpdatesTab';
 import BulkPresetApplyTab from './BulkPresetApplyTab';
 
-// One entry per bulk action tab: { id, label }. The body of the active tab is chosen by id below.
+// One entry per bulk action tab: { id, label }. The active tab's body is shown by id below.
 const TABS = [
     { id: 'plugins', label: 'Update plugins' },
     { id: 'preset', label: 'Apply preset' },
@@ -48,8 +48,15 @@ function BulkActionsModal({ isOpen, onClose, hosts }) {
                             ))}
                         </div>
 
-                        {tab === 'plugins' && <BulkPluginUpdatesTab isOpen={isOpen} hosts={hosts} onClose={onClose} />}
-                        {tab === 'preset' && <BulkPresetApplyTab isOpen={isOpen} hosts={hosts} onClose={onClose} />}
+                        {/* Both tabs stay mounted and the inactive one is hidden: a
+                            remount would re-run the plugin checks and re-tick what
+                            was already sent, and drop the preset previews. */}
+                        <div role="tabpanel" hidden={tab !== 'plugins'}>
+                            <BulkPluginUpdatesTab isOpen={isOpen} hosts={hosts} onClose={onClose} />
+                        </div>
+                        <div role="tabpanel" hidden={tab !== 'preset'}>
+                            <BulkPresetApplyTab isOpen={isOpen} hosts={hosts} onClose={onClose} />
+                        </div>
                     </Dialog.Panel>
                 </div>
             </div>
