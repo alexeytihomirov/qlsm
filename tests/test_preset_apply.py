@@ -12,9 +12,11 @@ from ui import preset_apply
 from ui.preset_apply import (
     MANAGED_CVARS,
     build_preset_target,
+    diff_preset_target,
     merge_keep_cvars,
     qlx_plugin_names,
     strip_managed_cvars,
+    target_hash,
 )
 
 FRONTEND_QLCFG = os.path.join(
@@ -350,3 +352,131 @@ def test_missing_preset_folder_is_an_apply_error(env):
     with pytest.raises(preset_apply.PresetApplyError) as err:
         build_preset_target(instance, preset, None, [])
     assert err.value.status == 500
+
+
+# --- diff and hash ---------------------------------------------------------------
+
+def _materialize(instance, target):
+    """Write the target into the instance's config dir the way save_instance_config does."""
+    import shutil
+    from ui.routes.draft_routes import _get_draft_scripts_path
+    from ui.routes.instance_routes import _sync_configs_to_disk, _sync_factories_to_disk
+    payload = target['payload']
+    config_dir = os.path.join('configs', instance.host.name, str(instance.id))
+    _sync_configs_to_disk(config_dir, payload['configs'], payload['config_folders'])
+    _sync_factories_to_disk(os.path.join(config_dir, 'factories'), payload['factories'])
+    shutil.copytree(_get_draft_scripts_path(payload['draft_id']),
+                    os.path.join(config_dir, 'scripts'), dirs_exist_ok=True)
+
+
+def test_diff_reports_server_cfg_change(env):
+    host = _host()
+    instance = _instance(host, server_cfg='set sv_hostname "My Server"\nset g_motd "old"',
+                         qlx_plugins='a, b', lan_rate_enabled=False, ld_preload_hooks='x.so')
+    preset = _preset(
+        env, configs={'server.cfg': 'set g_motd "new"'}, scripts={'a.py': '# a\n'},
+        factories={'one.factories': '[]'}, checked_plugins=['a.py'], enabled_hooks=['y.so'],
+        lan_rate_enabled=True,
+        admins=[{'steam_id64': '76561198000000001', 'level': 5}])
+    with patch.object(preset_apply, 'read_live_admins',
+                      return_value=([{'steam_id64': '76561198000000003', 'level': 4}], {}, None)):
+        target = build_preset_target(instance, preset, None, [])
+    diff = diff_preset_target(instance, target)
+
+    by_path = {entry['path']: entry for entry in diff['files']}
+    assert by_path['server.cfg']['change'] == 'modified'
+    assert '-set g_motd "old"' in by_path['server.cfg']['diff']
+    assert '+set g_motd "new"' in by_path['server.cfg']['diff']
+    assert by_path['factories/one.factories']['change'] == 'added'
+    assert by_path['scripts/a.py']['change'] == 'added'
+    assert diff['plugins'] == {'before': ['a', 'b'], 'after': ['a']}
+    assert diff['hooks'] == {'before': ['x.so'], 'after': ['y.so']}
+    assert diff['admins'] == {'add': [{'steam_id64': '76561198000000001', 'level': 5}],
+                              'remove': ['76561198000000003']}
+    assert diff['lan_rate'] == {'before': False, 'after': True}
+    assert diff['unchanged'] is False
+
+
+def test_identical_target_is_unchanged(env):
+    host = _host()
+    instance = _instance(host, qlx_plugins='a', lan_rate_enabled=False)
+    preset = _preset(env, configs={'server.cfg': 'set g_motd "x"'}, scripts={'a.py': '# a\n'},
+                     factories={'one.factories': '[]'}, checked_plugins=['a.py'],
+                     enabled_hooks=[], lan_rate_enabled=False,
+                     admins=[{'steam_id64': '76561198000000001', 'level': 5}])
+    same = ([{'steam_id64': '76561198000000001', 'level': 5}], {}, None)
+    with patch.object(preset_apply, 'read_live_admins', return_value=same):
+        target = build_preset_target(instance, preset, None, [])
+    _materialize(instance, target)
+    diff = diff_preset_target(instance, target)
+    assert diff['files'] == []
+    assert diff['plugins'] == {'before': ['a'], 'after': ['a']}
+    assert diff['hooks'] == {'before': [], 'after': []}
+    assert diff['admins'] is None  # identical admin lists leave no admin_changes
+    assert diff['lan_rate'] == {'before': False, 'after': False}
+    assert diff['unchanged'] is True
+
+
+def test_unmanaged_instance_files_are_not_reported_as_removed(env):
+    host = _host()
+    instance = _instance(host)
+    preset = _preset(env, configs={'server.cfg': 'set g_motd "x"'})
+    target = build_preset_target(instance, preset, None, [])
+    _materialize(instance, target)
+    config_dir = os.path.join('configs', host.name, str(instance.id))
+    os.makedirs(os.path.join(config_dir, 'user-hooks'))
+    with open(os.path.join(config_dir, 'user-hooks', 'h.so'), 'wb') as f:
+        f.write(b'\x7fELF')
+    assert diff_preset_target(instance, target)['unchanged'] is True
+
+
+def test_legacy_preset_diff_has_no_plugin_hook_admin_lan_parts(env):
+    host = _host()
+    instance = _instance(host)
+    preset = _preset(env, configs={'server.cfg': 'set g_motd "x"'})
+    target = build_preset_target(instance, preset, None, [])
+    diff = diff_preset_target(instance, target)
+    for key in ('plugins', 'hooks', 'admins', 'lan_rate'):
+        assert diff[key] is None
+    assert diff['files']
+    assert diff['unchanged'] is False
+    _materialize(instance, target)
+    assert diff_preset_target(instance, target)['unchanged'] is True
+
+
+def test_diff_removes_leftover_scripts_and_factories(env):
+    host = _host()
+    instance = _instance(host)
+    config_dir = os.path.join('configs', host.name, str(instance.id))
+    os.makedirs(os.path.join(config_dir, 'scripts'))
+    os.makedirs(os.path.join(config_dir, 'factories'))
+    with open(os.path.join(config_dir, 'scripts', 'old.py'), 'w') as f:
+        f.write('# old\n')
+    with open(os.path.join(config_dir, 'factories', 'old.factories'), 'w') as f:
+        f.write('[]')
+    preset = _preset(env, factories={})
+    target = build_preset_target(instance, preset, None, [])
+    changes = {e['path']: e['change'] for e in diff_preset_target(instance, target)['files']}
+    assert changes['scripts/old.py'] == 'removed'
+    assert changes['factories/old.factories'] == 'removed'
+
+
+def test_target_hash_ignores_draft_id_and_changes_with_content(env):
+    host = _host()
+    instance = _instance(host)
+    preset = _preset(env, configs={'server.cfg': 'set g_motd "x"'}, scripts={'a.py': '# a\n'})
+    first = build_preset_target(instance, preset, None, [])
+    second = build_preset_target(instance, preset, None, [])
+    assert first['payload']['draft_id'] != second['payload']['draft_id']
+    assert target_hash(first) == target_hash(second)
+
+    changed_cfg = build_preset_target(instance, preset, None, [])
+    changed_cfg['payload']['configs']['server.cfg'] += '\nset a "1"'
+    assert target_hash(changed_cfg) != target_hash(first)
+
+    from ui.routes.draft_routes import _get_draft_scripts_path
+    changed_script = build_preset_target(instance, preset, None, [])
+    scripts = _get_draft_scripts_path(changed_script['payload']['draft_id'])
+    with open(os.path.join(scripts, 'a.py'), 'w') as f:
+        f.write('# changed\n')
+    assert target_hash(changed_script) != target_hash(first)
