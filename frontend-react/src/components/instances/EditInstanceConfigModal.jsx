@@ -67,6 +67,14 @@ const getFactoryLinterSource = (fileName) => (
   fileName?.toLowerCase().endsWith('.factories') ? FACTORY_LINTER_SOURCE : null
 );
 const getServerHostname = (serverCfg = '') => serverCfg.match(/set sv_hostname "([^"]*)"/)?.[1] || '';
+// Replace the first `set sv_hostname "..."` line, or append one.
+const withServerHostname = (serverCfg, hostname) => {
+  const cfg = serverCfg || '';
+  const regex = /set sv_hostname "([^"]*)"/;
+  return regex.test(cfg)
+    ? cfg.replace(regex, () => `set sv_hostname "${hostname}"`)
+    : `${cfg}\nset sv_hostname "${hostname}"`;
+};
 const setsEqual = (a, b) => a.size === b.size && [...a].every(value => b.has(value));
 
 // The admin list a preset load leaves: `changes` (a preview's admin_changes,
@@ -524,6 +532,15 @@ function EditInstanceConfigModal({
     return undefined;
   }, [isOpen, instanceId, initialInstanceName, initialTab, resetConfigs, resetFactories, loadHooks]);
 
+  // The draft is consumed (Save) or discarded (close) with the modal; a reopen
+  // must not adopt that id again.
+  useEffect(() => {
+    if (!isOpen) {
+      setPresetDraftId(null);
+      setPendingPresetPlugins(null);
+    }
+  }, [isOpen]);
+
   // Sync effect: Update serverHostname when server.cfg changes (unless it's an internal update)
   useEffect(() => {
     if (!isUpdatingFromServerCfg.current && serverCfgContent) {
@@ -540,13 +557,9 @@ function EditInstanceConfigModal({
 
     // Update server.cfg
     isUpdatingFromServerCfg.current = true;
-    readConfigContent('server.cfg').then((cfg) => {
-      const regex = /set sv_hostname "([^"]*)"/;
-      const nextCfg = regex.test(cfg || '')
-        ? cfg.replace(regex, `set sv_hostname "${newHostname}"`)
-        : `${cfg || ''}\nset sv_hostname "${newHostname}"`;
-      return writeConfigContent('server.cfg', nextCfg);
-    }).catch((err) => {
+    readConfigContent('server.cfg').then((cfg) => (
+      writeConfigContent('server.cfg', withServerHostname(cfg, newHostname))
+    )).catch((err) => {
       setSaveError(err?.message || 'Failed to update server.cfg with new hostname.');
     }).finally(() => {
       setTimeout(() => { isUpdatingFromServerCfg.current = false; }, 0);
@@ -648,14 +661,22 @@ function EditInstanceConfigModal({
   const applyPresetTarget = useCallback(async (presetId, presetName, target) => {
     setPresetError(null);
     try {
-      resetConfigs(target.configs || {}, target.config_folders || []);
+      // A hostname the operator typed before loading stays (as it did before
+      // the server built the target); otherwise the instance's own.
+      const configs = { ...(target.configs || {}) };
+      const editedHostname = serverHostname && serverHostname !== originalServerHostname;
+      if (editedHostname) {
+        configs['server.cfg'] = withServerHostname(configs['server.cfg'], serverHostname);
+      }
+      resetConfigs(configs, target.config_folders || []);
       resetFactories(target.factories || {});
-      // Absent checked_plugins = the preset never recorded a selection: the
-      // server keeps the instance's qlx_plugins, so the ticks stay as they are.
-      pluginsSyncedRef.current = true;
       setDroppedPluginCount(0);
       setPluginNoticeDismissed(false);
+      // Absent checked_plugins = the preset never recorded a selection: the
+      // server keeps the instance's qlx_plugins, so the ticks stay as they are
+      // -- and an instance sync still waiting for its tree still runs.
       if (Array.isArray(target.checked_plugins)) {
+        pluginsSyncedRef.current = true;
         if (target.checked_plugins.length > 0) {
           setPendingPresetPlugins({ draftId: target.draft_id, names: target.checked_plugins });
         } else {
@@ -687,7 +708,9 @@ function EditInstanceConfigModal({
         setFactoryServerTree([]);
       }
 
-      setServerHostname(target.hostname || getServerHostname(target.configs?.['server.cfg']));
+      if (!editedHostname) {
+        setServerHostname(target.hostname || getServerHostname(configs['server.cfg']));
+      }
       setSelectedPresetId(presetId);
       setIsDirty(true);
 
@@ -696,7 +719,7 @@ function EditInstanceConfigModal({
     } catch (err) {
       setPresetError(err.message || `Failed to load preset ${presetId}.`);
     }
-  }, [loadedAdminEntries, originalLanRateEnabled, resetConfigs, resetFactories, showSuccess]);
+  }, [loadedAdminEntries, originalLanRateEnabled, originalServerHostname, resetConfigs, resetFactories, serverHostname, showSuccess]);
 
   const previewPreset = useCallback((presetId, acceptedPaths) => previewPresetApply(instanceId, {
     preset_id: Number(presetId),

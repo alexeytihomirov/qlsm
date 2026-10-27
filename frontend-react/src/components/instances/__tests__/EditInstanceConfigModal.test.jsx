@@ -32,6 +32,8 @@ const mocks = vi.hoisted(() => ({
   // Every existingDraftId the plugin draft adapter was rendered with: shows
   // which server-made draft the Plugins tab works on.
   draftAdapterExistingDraftIds: [],
+  // The same, only for renders where the workspace is active (would adopt it).
+  draftAdapterActiveDraftIds: [],
   // instance_tabs an installed addon contributes; empty unless a test sets it.
   addonMounts: [],
   addonPanelSubmit: vi.fn(),
@@ -264,8 +266,9 @@ vi.mock('../../fileManager', () => ({
       </div>
     );
   }),
-  useDraftAdapter: ({ existingDraftId } = {}) => {
+  useDraftAdapter: ({ existingDraftId, active } = {}) => {
     mocks.draftAdapterExistingDraftIds.push(existingDraftId);
+    if (active) mocks.draftAdapterActiveDraftIds.push(existingDraftId);
     const workspace = mocks.useDraftWorkspace();
     return {
       ...workspace,
@@ -404,6 +407,7 @@ describe('EditInstanceConfigModal preset saving', () => {
     mocks.hooksTabProps = [];
     mocks.addonMounts = [];
     mocks.draftAdapterExistingDraftIds = [];
+    mocks.draftAdapterActiveDraftIds = [];
     if (!EditInstanceConfigModal) {
       ({ default: EditInstanceConfigModal } = await import('../EditInstanceConfigModal'));
     }
@@ -615,6 +619,80 @@ describe('EditInstanceConfigModal preset saving', () => {
     fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
     await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalledTimes(1));
     expect(mocks.updateInstanceConfig.mock.calls[0][1].checked_plugins).toEqual(['balance']);
+  });
+
+  it('keeps the instance\'s plugins when a legacy preset is loaded before the plugin tree arrives', async () => {
+    // The instance's qlx_plugins are only ticked once a tree is in; a legacy
+    // load before that must not cancel that sync, or Save sends [].
+    let treeReady = false;
+    mocks.useDraftWorkspace.mockImplementation(() => ({
+      ...baseDraftWorkspace,
+      tree: treeReady ? [{ type: 'file', name: 'balance.py', path: 'balance.py' }] : [],
+    }));
+    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset'));
+
+    render(
+      <EditInstanceConfigModal isOpen={true} onClose={vi.fn()} instanceId={1} instanceName="Test123" onConfigSaved={vi.fn()} />
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+    await waitFor(() => expect(mocks.showSuccess).toHaveBeenCalledWith('Preset "legacy-preset" loaded successfully.'));
+
+    // The (adopted) draft's tree arrives now; any render picks it up.
+    treeReady = true;
+    fireEvent.click(screen.getByRole('button', { name: /plugins/i }));
+    await waitFor(() => {
+      const props = mocks.fileManagerProps.filter(p => p.binaryContext?.contextType === 'instance').at(-1);
+      expect([...(props?.checkedFiles ?? [])]).toEqual(['balance.py']);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+    await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalledTimes(1));
+    expect(mocks.updateInstanceConfig.mock.calls[0][1].checked_plugins).toEqual(['balance']);
+  });
+
+  it('keeps a hostname typed before the preset load in the field and in server.cfg', async () => {
+    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('named-preset', {
+      configs: { ...DEFAULT_TARGET_CONFIGS, 'server.cfg': 'set sv_hostname "Test123"\nset g_motd "from preset"' },
+    }));
+
+    render(
+      <EditInstanceConfigModal isOpen={true} onClose={vi.fn()} instanceId={1} instanceName="Test123" onConfigSaved={vi.fn()} />
+    );
+
+    const hostnameField = await screen.findByLabelText(/server hostname/i);
+    fireEvent.change(hostnameField, { target: { value: 'Edited Name' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+    await waitFor(() => expect(mocks.showSuccess).toHaveBeenCalledWith('Preset "named-preset" loaded successfully.'));
+
+    expect(screen.getByLabelText(/server hostname/i)).toHaveValue('Edited Name');
+    fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
+    await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalledTimes(1));
+    const payload = mocks.updateInstanceConfig.mock.calls[0][1];
+    expect(payload.hostname).toBe('Edited Name');
+    expect(payload.configs['server.cfg']).toBe('set sv_hostname "Edited Name"\nset g_motd "from preset"');
+  });
+
+  it('does not adopt a loaded preset\'s draft again after the modal is closed and reopened', async () => {
+    const props = { onClose: vi.fn(), instanceId: 1, instanceName: 'Test123', onConfigSaved: vi.fn() };
+    const { rerender } = render(<EditInstanceConfigModal isOpen={true} {...props} />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
+    await waitFor(() => expect(mocks.showSuccess).toHaveBeenCalledWith('Preset "my-preset" loaded successfully.'));
+    expect(mocks.draftAdapterActiveDraftIds.at(-1)).toBe('preset-draft-1');
+
+    rerender(<EditInstanceConfigModal isOpen={false} {...props} />);
+    const seenBeforeReopen = mocks.draftAdapterActiveDraftIds.length;
+    rerender(<EditInstanceConfigModal isOpen={true} {...props} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /load preset/i })).toBeInTheDocument());
+
+    expect(mocks.draftAdapterActiveDraftIds.slice(seenBeforeReopen)).not.toContain('preset-draft-1');
   });
 
   it('shows the modal while the admin read is still running and the preset waits for it', async () => {
