@@ -10,10 +10,15 @@ so one implementation serves the editor and the bulk apply. The result's
 On top of the browser's rules, the cvars in `keep_cvars` keep the server's own
 server.cfg lines (see `merge_keep_cvars`).
 """
+import hashlib
+import json
 import os
 import re
+import shutil
+import tempfile
 
 from ui.lan_rate_policy import would_enable_unsupported_lan_rate
+from ui.pending_changes import diff_snapshots, snapshot_dir
 from ui.preset_keep_cvars import LAUNCH_ARG_EXCLUDED, collect_keep_cvars
 from ui.routes.preset_api_routes import read_preset_payload
 from ui.runtime import host_runtime
@@ -370,3 +375,111 @@ def build_preset_target(instance, preset, accepted_replacements, keep_cvars):
         'keep_cvars': keep,
         'needs_decision': _needs_decision(compatibility, accepted),
     }
+
+
+def _instance_config_dir(instance):
+    return os.path.join('configs', instance.host.name, str(instance.id))
+
+
+def _csv(value):
+    return [part.strip() for part in (value or '').split(',') if part.strip()]
+
+
+def _target_files(instance, payload, work_dir):
+    """Changed files in the instance's config dir once `payload` is saved.
+
+    The save is replayed on a copy of the dir with save_instance_config's own
+    helpers, so files it leaves alone (user-hooks/, other folders) never show
+    up and the access.txt rewrite is part of the "after" side.
+    """
+    from ui.routes.draft_routes import _get_draft_scripts_path
+    from ui.routes.instance_routes import _sync_configs_to_disk, _sync_factories_to_disk
+
+    current_dir = _instance_config_dir(instance)
+    copy_dir = os.path.join(work_dir, 'config')
+    if os.path.isdir(current_dir):
+        shutil.copytree(current_dir, copy_dir, ignore=shutil.ignore_patterns('user-hooks'))
+    else:
+        os.makedirs(copy_dir)
+    before = snapshot_dir(copy_dir)
+
+    _sync_configs_to_disk(copy_dir, payload['configs'], payload.get('config_folders'))
+    if 'factories' in payload:
+        _sync_factories_to_disk(os.path.join(copy_dir, 'factories'), payload['factories'])
+    draft_scripts = _get_draft_scripts_path(payload['draft_id']) if payload.get('draft_id') else None
+    if draft_scripts and os.path.exists(draft_scripts):
+        scripts_dir = os.path.join(copy_dir, 'scripts')
+        shutil.rmtree(scripts_dir, ignore_errors=True)
+        shutil.copytree(draft_scripts, scripts_dir)
+    return diff_snapshots(before, snapshot_dir(copy_dir))
+
+
+def _admin_part(changes):
+    if changes is None:
+        return None
+    return {
+        'add': [c for c in changes if int(c['level']) > 0],
+        'remove': [c['steam_id64'] for c in changes if int(c['level']) == 0],
+    }
+
+
+def _before_after(before, after):
+    return None if after is None else {'before': before, 'after': list(after)}
+
+
+def diff_preset_target(instance, target):
+    """What loading `target` (from build_preset_target) would change on `instance`.
+
+    Keys: `files` (diff_snapshots entries, paths relative to the instance's
+    config dir), `plugins` / `hooks` (`{before, after}` lists), `admins`
+    (`{add: [{steam_id64, level}], remove: [steam_id64]}`, from the payload's
+    admin_changes), `lan_rate` (`{before, after}` bools), `unchanged`. A part
+    the payload leaves untouched is None. Needs an app context.
+    """
+    from ui.routes.instance_hooks_routes import _enabled_list
+
+    payload = target['payload']
+    work_dir = tempfile.mkdtemp()
+    try:
+        files = _target_files(instance, payload, work_dir)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+    plugins = _before_after(_csv(instance.qlx_plugins), payload.get('checked_plugins'))
+    hooks = _before_after(_enabled_list(instance), payload.get('enabled_hooks'))
+    admins = _admin_part(payload.get('admin_changes'))
+    lan_rate = None
+    if payload.get('lan_rate_enabled') is not None:
+        lan_rate = {'before': bool(instance.lan_rate_enabled), 'after': bool(payload['lan_rate_enabled'])}
+
+    parts = [p for p in (plugins, hooks, lan_rate) if p is not None]
+    unchanged = (
+        not files
+        and all(p['before'] == p['after'] for p in parts)
+        and not (admins and (admins['add'] or admins['remove']))
+    )
+    return {
+        'files': files,
+        'plugins': plugins,
+        'hooks': hooks,
+        'admins': admins,
+        'lan_rate': lan_rate,
+        'unchanged': unchanged,
+    }
+
+
+def target_hash(target):
+    """sha256 of the target: its payload without the (random) draft_id, and the
+    content of the draft's scripts, so two previews of the same state agree."""
+    from ui.routes.draft_routes import _get_draft_scripts_path
+
+    payload = target['payload']
+    body = {key: value for key, value in payload.items() if key != 'draft_id'}
+    digest = hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8'))
+    scripts = {}
+    if payload.get('draft_id'):
+        for rel, entry in snapshot_dir(_get_draft_scripts_path(payload['draft_id'])).items():
+            scripts[rel] = entry['sha256']
+    digest.update(json.dumps(scripts, sort_keys=True, separators=(',', ':')).encode('utf-8'))
+    return digest.hexdigest()
