@@ -90,6 +90,12 @@ describe('BulkPresetApplyTab', () => {
     mocks.applyPresetToInstance.mockResolvedValue({ message: 'queued' });
   });
 
+  // apply_compatibility's rule: a decision is needed until the operator sent
+  // an accepted_replacements list (even []), and only for a stripped entry
+  // that has a replacement.
+  const needsDecision = (body, compat) => body.accepted_replacements == null
+    && compat.stripped.some(e => e.replacement);
+
   it('the keep_cvars list is the union with sources', async () => {
     mocks.getPresetKeepCvars.mockImplementation(async (id) => (id === 11
       ? [{ cvar: 'sv_tags', sources: ['launch args'] }, { cvar: 'net_port', sources: ['launch args'] }]
@@ -156,8 +162,10 @@ describe('BulkPresetApplyTab', () => {
     // until x.py is accepted.
     mocks.previewPresetApply.mockImplementation(async (id, body) => {
       if (id === 11) return preview(id);
-      const decided = (body.accepted_replacements || []).includes('x.py');
-      return preview(id, { compatibility, needs_decision: !decided, preview_hash: decided ? `d${id}` : `h${id}` });
+      const decided = body.accepted_replacements != null;
+      return preview(id, {
+        compatibility, needs_decision: needsDecision(body, compatibility), preview_hash: decided ? `d${id}` : `h${id}`,
+      });
     });
     await renderTab();
     tick('a1');
@@ -238,6 +246,118 @@ describe('BulkPresetApplyTab', () => {
     await waitFor(() => expect(mocks.applyPresetToInstance).toHaveBeenCalledWith(11, {
       preset_id: 5, keep_cvars: [], restart: false, preview_hash: 'h11',
     }));
+  });
+
+  it('a stripped plugin without a replacement is asked about, and confirming with nothing ticked applies', async () => {
+    const noReplacement = {
+      ...compatibility,
+      stripped: [{ path: 'mine.py', replacement: null, kind: 'custom', verdict: 'incompatible', reasons: ['custom plugin'] }],
+    };
+    mocks.previewPresetApply.mockImplementation(async (id, body) => (id === 21
+      ? preview(id, { compatibility: noReplacement, needs_decision: needsDecision(body, noReplacement) })
+      : preview(id)));
+    await renderTab();
+    tick('a1');
+    tick('b1');
+    await preview_();
+
+    expect(await screen.findByText(/won.t carry over/i)).toBeTruthy();
+    expect(screen.getByText('mine.py')).toBeTruthy();
+    const row = screen.getByTestId('preset-row-21');
+    expect(within(row).getByText('needs decision')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+
+    const decided = { preset_id: 5, keep_cvars: [], accepted_replacements: [] };
+    await waitFor(() => expect(mocks.previewPresetApply).toHaveBeenCalledWith(21, decided));
+    await waitFor(() => expect(within(screen.getByTestId('preset-row-21')).queryByText('needs decision')).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: /^apply$/i }));
+    await waitFor(() => expect(mocks.applyPresetToInstance).toHaveBeenCalledTimes(2));
+    expect(mocks.applyPresetToInstance).toHaveBeenCalledWith(21, { ...decided, restart: true, preview_hash: 'h21' });
+  });
+
+  it('unticking a replacement re-previews with [] and the server is applied', async () => {
+    mocks.previewPresetApply.mockImplementation(async (id, body) => (id === 21
+      ? preview(id, { compatibility, needs_decision: needsDecision(body, compatibility) })
+      : preview(id)));
+    await renderTab();
+    tick('b1');
+    await preview_();
+
+    await screen.findByText(/won.t carry over/i);
+    const replace = screen.getByLabelText(/version of x\.py instead/);
+    expect(replace.checked).toBe(true);
+    fireEvent.click(replace);
+    fireEvent.click(screen.getByRole('button', { name: /load preset/i }));
+
+    const decided = { preset_id: 5, keep_cvars: [], accepted_replacements: [] };
+    await waitFor(() => expect(mocks.previewPresetApply).toHaveBeenCalledWith(21, decided));
+    await screen.findByText('server.cfg');
+    fireEvent.click(screen.getByRole('button', { name: /^apply$/i }));
+    await waitFor(() => expect(mocks.applyPresetToInstance).toHaveBeenCalledWith(21, {
+      ...decided, restart: true, preview_hash: 'h21',
+    }));
+  });
+
+  it('a server whose cvars failed to load blocks Preview until Retry loads them', async () => {
+    let fail = true;
+    mocks.getPresetKeepCvars.mockImplementation(async (id) => {
+      if (id === 21 && fail) throw { error: { message: 'SSH unreachable' } };
+      return [{ cvar: `qlx_id${id}`, sources: ['addon:x'] }];
+    });
+    await renderTab();
+    tick('a1');
+    tick('b1');
+
+    expect(await screen.findByText(/SSH unreachable/)).toBeTruthy();
+    const button = screen.getByRole('button', { name: /^preview$/i });
+    expect(button.disabled).toBe(true);
+
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: /^retry$/i }));
+    await screen.findByLabelText('Keep qlx_id21');
+    await waitFor(() => expect(button.disabled).toBe(false));
+    expect(screen.queryByText(/SSH unreachable/)).toBeNull();
+    expect(mocks.getPresetKeepCvars.mock.calls.filter(([id]) => id === 21)).toHaveLength(2);
+    expect(mocks.getPresetKeepCvars.mock.calls.filter(([id]) => id === 11)).toHaveLength(1);
+
+    fireEvent.click(button);
+    const body = { preset_id: 5, keep_cvars: ['qlx_id11', 'qlx_id21'] };
+    await waitFor(() => expect(mocks.previewPresetApply).toHaveBeenCalledWith(21, body));
+  });
+
+  it('a stale row is not sent again by Apply', async () => {
+    mocks.applyPresetToInstance.mockImplementation(async (id) => {
+      if (id === 11) throw { error: { message: STALE }, status: 409 };
+      return { message: 'queued' };
+    });
+    await renderTab();
+    tick('a1');
+    tick('b1');
+    await preview_();
+    await waitFor(() => expect(screen.getAllByText('server.cfg').length).toBe(2));
+
+    const apply = screen.getByRole('button', { name: /^apply$/i });
+    fireEvent.click(apply);
+    await waitFor(() => expect(screen.getByTestId('preset-result-11').textContent).toBe('preview again'));
+    await waitFor(() => expect(screen.getByTestId('preset-result-21').textContent).toBe('queued'));
+    expect(apply.disabled).toBe(true);
+    expect(mocks.applyPresetToInstance).toHaveBeenCalledTimes(2);
+  });
+
+  it('switching tabs keeps the previews and does not preview again', async () => {
+    await renderTab();
+    tick('a1');
+    await preview_();
+    await screen.findByText('server.cfg');
+
+    fireEvent.click(screen.getByRole('tab', { name: /update plugins/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /apply preset/i }));
+
+    expect(screen.getByText('server.cfg')).toBeTruthy();
+    expect(screen.getByLabelText('Server a1').checked).toBe(true);
+    expect(mocks.previewPresetApply).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /^apply$/i }).disabled).toBe(false);
   });
 
   it('a stale hash row says preview again', async () => {

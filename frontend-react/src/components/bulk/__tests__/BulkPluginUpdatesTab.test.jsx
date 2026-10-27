@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
   checkAllPresetPluginUpdates: vi.fn(),
   applyPresetPluginUpdates: vi.fn(),
   getDeferRestartsSetting: vi.fn(),
+  // The Apply preset tab stays mounted (hidden) next to this one.
+  getPresets: vi.fn(),
+  getPresetKeepCvars: vi.fn(),
+  previewPresetApply: vi.fn(),
+  applyPresetToInstance: vi.fn(),
 }));
 
 vi.mock('../../../services/api', () => mocks);
@@ -47,6 +52,28 @@ describe('BulkPluginUpdatesTab', () => {
     mocks.checkAllPresetPluginUpdates.mockResolvedValue(presets);
     mocks.applyPluginUpdates.mockResolvedValue({ message: 'queued' });
     mocks.applyPresetPluginUpdates.mockResolvedValue({ message: 'ok', data: {} });
+    mocks.getPresets.mockResolvedValue([]);
+  });
+
+  it('switching to Apply preset and back keeps the checks, the ticks and the results', async () => {
+    mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1 ? hostCheck(11, 'x.py') : hostCheck(22, 'y.py')));
+    renderModal();
+    await screen.findByText('y.py');
+    fireEvent.click(screen.getByLabelText(/^b\.py/));
+    fireEvent.click(screen.getByRole('button', { name: /update selected/i }));
+    await waitFor(() => expect(screen.getByTestId('apply-result-host-2').textContent).toBe('queued'));
+
+    fireEvent.click(screen.getByRole('tab', { name: /apply preset/i }));
+    expect(screen.queryByRole('button', { name: /update selected/i })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: /update plugins/i }));
+
+    expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
+    expect(mocks.checkAllPresetPluginUpdates).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('apply-result-host-2').textContent).toBe('queued');
+    expect(screen.getByTestId('apply-result-preset-7').textContent).toBe('ok');
+    // The sent host stays unticked, and so does the file unticked by hand.
+    expect(screen.getByLabelText(/y\.py/).checked).toBe(false);
+    expect(screen.getByLabelText(/^b\.py/).checked).toBe(false);
   });
 
   it('lists hosts and presets with their outdated files', async () => {

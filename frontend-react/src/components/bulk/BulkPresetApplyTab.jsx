@@ -72,7 +72,7 @@ function RowStatus({ row }) {
     if (row.phase === 'previewing') return <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />;
     if (row.phase === 'error') return <span className="text-xs text-red-500">{row.reason}</span>;
     if (row.phase === 'blocked') return <span className="text-xs text-amber-500">{row.reason}</span>;
-    if (row.preview.needs_decision) return <span className="text-xs text-amber-500">needs decision</span>;
+    if (row.awaiting || row.preview.needs_decision) return <span className="text-xs text-amber-500">needs decision</span>;
     if (row.preview.diff?.unchanged) return <span className="text-xs text-[var(--text-muted)]">no changes</span>;
     return null;
 }
@@ -166,6 +166,15 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
     const keepLoading = tickedServers.some(s => (keepByServer[s.inst.id]?.phase || 'loading') === 'loading');
     const keepErrors = tickedServers.filter(s => keepByServer[s.inst.id]?.phase === 'error');
 
+    // Dropping the failed entries makes the fetch effect load them again.
+    const retryKeep = () => {
+        setKeepByServer(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(id => { if (next[id]?.phase === 'error') delete next[id]; });
+            return next;
+        });
+    };
+
     // Any change to what would be sent makes the previews (and their hashes) stale.
     const inputKey = JSON.stringify([presetId, tickedServers.map(s => s.inst.id), keepCvars]);
     useEffect(() => {
@@ -231,7 +240,7 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
         ...(accepted ? { accepted_replacements: accepted } : {}),
     });
 
-    const previewServers = async (servers, body, onRow) => {
+    const previewServers = async (servers, body) => {
         setPending(n => n + 1);
         setRows(prev => {
             const next = { ...prev };
@@ -246,7 +255,6 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
             } catch (err) {
                 row = { phase: 'error', reason: errorText(err, 'Preview failed') };
             }
-            row = onRow ? onRow(row) : row;
             done[s.inst.id] = row;
             setRows(prev => ({ ...prev, [s.inst.id]: row }));
         });
@@ -259,29 +267,44 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
         setResults({});
         setQuestions([]);
         const done = await previewServers(servers, bodyFor());
-        // One question per runtime, for the servers that need a decision.
+        // One question per runtime, for every server whose preset plugins get
+        // stripped (as the editor asks whenever the list is not empty, so a
+        // plugin with no replacement is never dropped silently). The group's
+        // dialog lists the stripped entries of all its servers.
         const groups = new Map();
         servers.forEach(s => {
             const row = done[s.inst.id];
-            if (row?.phase !== 'ready' || !row.preview.needs_decision) return;
+            const stripped = row?.phase === 'ready' ? row.preview.compatibility?.stripped || [] : [];
+            if (stripped.length === 0) return;
             const runtime = runtimeLabel(s.host.runtime);
-            if (!groups.has(runtime)) groups.set(runtime, { runtime, compatibility: row.preview.compatibility, servers: [] });
-            groups.get(runtime).servers.push(s);
+            if (!groups.has(runtime)) {
+                groups.set(runtime, { runtime, compatibility: { ...row.preview.compatibility, stripped: [] }, servers: [] });
+            }
+            const group = groups.get(runtime);
+            stripped.forEach(entry => {
+                if (!group.compatibility.stripped.some(e => e.path === entry.path)) group.compatibility.stripped.push(entry);
+            });
+            group.servers.push(s);
         });
-        setQuestions(Array.from(groups.values()));
+        const asked = Array.from(groups.values());
+        // Not appliable until their runtime's question is answered.
+        setRows(prev => {
+            const next = { ...prev };
+            asked.forEach(q => q.servers.forEach(s => { next[s.inst.id] = { ...next[s.inst.id], awaiting: true }; }));
+            return next;
+        });
+        setQuestions(asked);
     };
 
     const question = questions[0];
 
+    // The ticked paths (possibly none) are the decision: the re-preview with
+    // an explicit accepted_replacements list never needs one again.
     const handleConfirmCompatibility = async (tickedPaths) => {
         const q = question;
         if (!q) return;
         setQuestions(prev => prev.slice(1));
-        await previewServers(q.servers, bodyFor(Array.from(tickedPaths || [])), (row) => (
-            row.phase === 'ready' && row.preview.needs_decision
-                ? { phase: 'blocked', reason: 'Plugin compatibility still needs a decision, not applied' }
-                : row
-        ));
+        await previewServers(q.servers, bodyFor(Array.from(tickedPaths || [])));
     };
 
     const handleCancelCompatibility = () => {
@@ -301,10 +324,14 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
 
     const applyJobs = tickedServers.filter(s => {
         const row = rows[s.inst.id];
+        const result = results[s.inst.id];
+        // A sent row is never sent twice; a stale one needs a new preview first.
         return row?.phase === 'ready'
+            && !row.awaiting
             && !row.preview.needs_decision
             && !row.preview.diff?.unchanged
-            && !results[s.inst.id]?.ok;
+            && !result?.ok
+            && !result?.stale;
     });
 
     const handleApply = async () => {
@@ -320,7 +347,12 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
                 });
                 result = { ok: true, text: 'queued' };
             } catch (err) {
-                result = { ok: false, text: applyErrorText(err), title: errorText(err, '') };
+                result = {
+                    ok: false,
+                    stale: err?.error?.message === STALE_HASH,
+                    text: applyErrorText(err),
+                    title: errorText(err, ''),
+                };
             }
             setResults(prev => ({ ...prev, [inst.id]: result }));
         });
@@ -383,7 +415,7 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
                             {active && (host.instances || []).map(inst => {
                                 const row = ticked.has(inst.id) ? rows[inst.id] : null;
                                 const result = results[inst.id];
-                                const showDiff = row?.phase === 'ready' && !row.preview.needs_decision && !row.preview.diff?.unchanged;
+                                const showDiff = row?.phase === 'ready' && !row.awaiting && !row.preview.needs_decision && !row.preview.diff?.unchanged;
                                 return (
                                     <div key={inst.id} data-testid={`preset-row-${inst.id}`} className="mt-2 ml-2">
                                         <div className="flex items-center gap-2">
@@ -424,6 +456,9 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
                         {keepErrors.map(s => (
                             <div key={s.inst.id} className="text-xs text-red-500">{s.inst.name}: {keepByServer[s.inst.id].error}</div>
                         ))}
+                        {keepErrors.length > 0 && (
+                            <button type="button" className="btn btn-secondary mt-1" onClick={retryKeep}>Retry</button>
+                        )}
                         <ul className="space-y-1">
                             {keepList.map(entry => (
                                 <li key={entry.cvar.toLowerCase()} className="flex items-center gap-2 text-xs">
@@ -459,14 +494,16 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
                     <input type="checkbox" checked={restart} disabled={busy} onChange={() => setRestart(r => !r)} />
                     Restart servers to apply
                 </label>
-                <button type="button" onClick={onClose} className="btn btn-secondary">
+                <button type="button" onClick={onClose} className="btn btn-secondary" disabled={applying}>
                     Close
                 </button>
+                {/* A server whose own cvars did not load would get only the
+                    others' as keep_cvars, so it is retried before a preview. */}
                 <button
                     type="button"
                     onClick={handlePreview}
                     className="btn btn-secondary"
-                    disabled={!selectedPreset || tickedServers.length === 0 || keepLoading || busy}
+                    disabled={!selectedPreset || tickedServers.length === 0 || keepLoading || keepErrors.length > 0 || busy}
                 >
                     Preview
                 </button>
