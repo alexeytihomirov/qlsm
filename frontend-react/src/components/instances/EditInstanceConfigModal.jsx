@@ -2,19 +2,17 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { X, LoaderCircle, Zap, AlertTriangle, Settings, Code2, LayoutGrid, Save, FolderOpen, RotateCw, Webhook, Crown } from 'lucide-react';
 import { python } from '@codemirror/lang-python';
-import { getInstanceConfig, updateInstanceConfig, getInstanceById, getPresets, getPresetById, createPreset, updatePreset, getFactoryTree, getFactoryContent, fetchInstanceHooks, getInstanceAdmins, getDeferRestartsSetting } from '../../services/api';
-import { getBinaryMeta, saveBinaryMeta } from '../../services/draftApi';
+import { getInstanceConfig, updateInstanceConfig, getInstanceById, getPresets, previewPresetApply, createPreset, updatePreset, getFactoryTree, getFactoryContent, fetchInstanceHooks, getInstanceAdmins, getDeferRestartsSetting } from '../../services/api';
+import { discardDraft, getBinaryMeta, saveBinaryMeta } from '../../services/draftApi';
 import ExpandedEditorModal from '../ExpandedEditorModal';
 import ConfirmationModal from '../ConfirmationModal';
 import PresetManagerModal from '../presetManager/PresetManagerModal';
 import PresetCompatibilityDialog from '../presetManager/PresetCompatibilityDialog';
-import { combineAcceptedPaths, mergeReplacements } from '../../utils/presetCompatibility';
 import { FileManager, CONFIG_CAPS, PLUGIN_CAPS, FACTORY_CAPS, PluginCvarsModal, useStateAdapter, useDraftAdapter, useUploadBusy } from '../fileManager';
 import SubfolderPluginNotice from '../fileManager/SubfolderPluginNotice';
 import {
   applyPluginDependencies,
   collectDependencyFilenames,
-  partitionCheckedPaths,
   resolveRootPluginPaths,
   toQlxPluginNames,
 } from '../fileManager/pluginSelection';
@@ -69,19 +67,22 @@ const getFactoryLinterSource = (fileName) => (
   fileName?.toLowerCase().endsWith('.factories') ? FACTORY_LINTER_SOURCE : null
 );
 const getServerHostname = (serverCfg = '') => serverCfg.match(/set sv_hostname "([^"]*)"/)?.[1] || '';
-const withServerHostname = (serverCfg = '', hostname) => (
-  /set sv_hostname "([^"]*)"/.test(serverCfg)
-    ? serverCfg.replace(/set sv_hostname "([^"]*)"/, () => `set sv_hostname "${hostname}"`)
-    : `${serverCfg}\nset sv_hostname "${hostname}"`
-);
 const setsEqual = (a, b) => a.size === b.size && [...a].every(value => b.has(value));
 
-// Mapping between frontend config keys and backend preset API keys
-const CONFIG_KEY_MAP = {
-  'server.cfg': 'server_cfg',
-  'mappool.txt': 'mappool_txt',
-  'access.txt': 'access_txt',
-  'workshop.txt': 'workshop_txt'
+// The admin list a preset load leaves: `changes` (a preview's admin_changes,
+// level 0 = revoke) applied to the server's list, so Save diffs back to them.
+const applyAdminChanges = (entries, changes) => {
+  const levels = new Map(changes.map((change) => [change.steam_id64, Number(change.level)]));
+  const next = (entries || [])
+    .filter((entry) => levels.get(entry.steam_id64) !== 0)
+    .map((entry) => (levels.has(entry.steam_id64) ? { ...entry, level: levels.get(entry.steam_id64) } : entry));
+  const present = new Set(next.map((entry) => entry.steam_id64));
+  changes.forEach((change) => {
+    if (Number(change.level) !== 0 && !present.has(change.steam_id64)) {
+      next.push({ steam_id64: change.steam_id64, level: Number(change.level) });
+    }
+  });
+  return next;
 };
 
 function EditInstanceConfigModal({
@@ -152,7 +153,7 @@ function EditInstanceConfigModal({
   const [presetManagerTab, setPresetManagerTab] = useState('load');
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [savedPresetForDownload, setSavedPresetForDownload] = useState(null);
-  const [pendingPreset, setPendingPreset] = useState(null); // { id, data } awaiting compat confirmation
+  const [pendingPreset, setPendingPreset] = useState(null); // { id, name, compatibility } awaiting compat confirmation
 
   // Scripts tab state
   const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'config' | 'scripts' | 'factories' | 'hooks' | 'admins'
@@ -162,11 +163,13 @@ function EditInstanceConfigModal({
   const [checkedPlugins, setCheckedPlugins] = useState(new Set());
   const [initialCheckedPlugins, setInitialCheckedPlugins] = useState(new Set());
   const [scriptHostName, setScriptHostName] = useState(null);
-  const [draftPreset, setDraftPreset] = useState(null); // null = seed from instance; string = seed from preset
-  // Bare filenames the operator accepted a runtime replacement for, from the
-  // preset compatibility dialog. Sent to the draft seed so the server writes
-  // the replacement files. Cleared whenever the draft seed resets.
-  const [acceptedReplacements, setAcceptedReplacements] = useState([]);
+  // Name of the loaded preset (factories are read from its directory), and the
+  // scripts draft its server preview made -- the Plugins tab works on that
+  // draft and Save copies it. null = the instance's own.
+  const [loadedPresetName, setLoadedPresetName] = useState(null);
+  const [presetDraftId, setPresetDraftId] = useState(null);
+  // qlx_plugins names of a loaded preset, ticked once its draft's tree arrives.
+  const [pendingPresetPlugins, setPendingPresetPlugins] = useState(null); // { draftId, names }
   const [rawQlxPlugins, setRawQlxPlugins] = useState([]); // bare plugin names from instance
   const [droppedPluginCount, setDroppedPluginCount] = useState(0);
   const [pluginNoticeDismissed, setPluginNoticeDismissed] = useState(false);
@@ -191,12 +194,12 @@ function EditInstanceConfigModal({
   // When a preset is loaded, read factory content from the preset directory;
   // otherwise read from the instance's deployed factories directory.
   const readFactoryContent = useCallback(async (path) => {
-    const params = draftPreset
-      ? { preset: draftPreset }
+    const params = loadedPresetName
+      ? { preset: loadedPresetName }
       : { host: scriptHostName, instanceId };
     const data = await getFactoryContent(path, params);
     return data.content || '';
-  }, [draftPreset, scriptHostName, instanceId]);
+  }, [loadedPresetName, scriptHostName, instanceId]);
 
   const factoriesAdapter = useStateAdapter({
     initialFiles: {},
@@ -210,13 +213,12 @@ function EditInstanceConfigModal({
   const hostPool = useHostPoolStatus(hostId, { enabled: activeMainTab === 'scripts', showError });
 
   const pluginsAdapter = useDraftAdapter({
-    source: draftPreset ? 'preset' : 'instance',
-    preset: draftPreset || undefined,
-    host: draftPreset ? undefined : scriptHostName,
-    instanceId: draftPreset ? undefined : instanceId,
+    source: 'instance',
+    host: scriptHostName,
+    instanceId,
     targetRuntime: hostRuntime,
-    acceptedReplacements,
-    active: isOpen && (draftPreset != null || scriptHostName != null),
+    existingDraftId: presetDraftId || undefined,
+    active: isOpen && (presetDraftId != null || scriptHostName != null),
   });
   const {
     hasChanges: configsHaveChanges,
@@ -309,6 +311,17 @@ function EditInstanceConfigModal({
     }
   }, [rawQlxPlugins, pluginTree]);
 
+  // A loaded preset's plugin names, resolved against its own draft's tree
+  // (not the instance's, which may still be showing) once that tree is in.
+  useEffect(() => {
+    if (!pendingPresetPlugins) return;
+    if (pluginDraftId !== pendingPresetPlugins.draftId || pluginTree.length === 0) return;
+    const { paths, droppedNames } = resolveRootPluginPaths(pluginTree, pendingPresetPlugins.names);
+    setPendingPresetPlugins(null);
+    setCheckedPlugins(new Set(paths));
+    setDroppedPluginCount(droppedNames.length);
+  }, [pendingPresetPlugins, pluginDraftId, pluginTree]);
+
   // Linter for server.cfg — no port validation in edit mode, but shows managed-cvar info tooltips
   const qlCfgLinterSource = useCallback(() => createQlCfgLinter([], () => {}), []);
   const getLinterSource = (fileName) => {
@@ -400,8 +413,9 @@ function EditInstanceConfigModal({
         // Reset scripts state
         setActiveMainTab(initialTab);
         setScriptHostName(null);
-        setDraftPreset(null);
-        setAcceptedReplacements([]);
+        setLoadedPresetName(null);
+        setPresetDraftId(null);
+        setPendingPresetPlugins(null);
         setHookAvailable([]);
         setHookMissing([]);
         setHookSystem([]);
@@ -628,125 +642,103 @@ function EditInstanceConfigModal({
     pluginsHaveChanges,
   ]);
 
-  const applyPresetData = useCallback(async (presetId, presetData, acceptedPaths = []) => {
+  // Fill the form from a preset preview's target (a PUT .../config body the
+  // server built: managed cvars blanked, the instance's hostname and per-server
+  // cvars kept, factories filtered, LAN rate clamped, plugin names filtered).
+  const applyPresetTarget = useCallback(async (presetId, presetName, target) => {
     setPresetError(null);
     try {
-      const newConfigs = { ...(presetData.configs || {}) };
-      CONFIG_FILES_ORDER.forEach(file => {
-        const presetKey = CONFIG_KEY_MAP[file] || file;
-        const raw = newConfigs[file] ?? presetData[presetKey] ?? '';
-        newConfigs[file] = file === 'server.cfg' ? stripManagedCvars(raw) : raw;
-      });
-      // The instance keeps its own hostname: a preset carries settings, not
-      // the server's identity, so its sv_hostname is replaced with the current one.
-      if (serverHostname) {
-        newConfigs['server.cfg'] = withServerHostname(newConfigs['server.cfg'], serverHostname);
-      }
-      resetConfigs(newConfigs, presetData.config_folders || []);
-      // checked_factories: null = legacy preset (use all factory files); [] or [...] = explicit selection
-      const factoriesToLoad = presetData.checked_factories != null
-        ? Object.fromEntries(
-            presetData.checked_factories
-              .filter(f => presetData.factories?.[f] !== undefined)
-              .map(f => [f, presetData.factories[f]])
-          )
-        : (presetData.factories || {});
-      resetFactories(factoriesToLoad);
-      const { selectable, dropped } = partitionCheckedPaths(presetData.checked_plugins || [], pluginTree);
-      setCheckedPlugins(selectable);
-      setDroppedPluginCount(dropped.length);
+      resetConfigs(target.configs || {}, target.config_folders || []);
+      resetFactories(target.factories || {});
+      // Absent checked_plugins = the preset never recorded a selection: the
+      // server keeps the instance's qlx_plugins, so the ticks stay as they are.
+      pluginsSyncedRef.current = true;
+      setDroppedPluginCount(0);
       setPluginNoticeDismissed(false);
-      // acceptedPaths defaults to [] (a plain default, not a speculative clear
-      // elsewhere) so a no-dialog load carries nothing forward, and both state
-      // updates land in the same render as the one re-seed this load causes.
-      setDraftPreset(presetData.name);
-      setAcceptedReplacements(acceptedPaths);
-      if (presetData.enabled_hooks !== undefined && presetData.enabled_hooks !== null) {
-        setHookEnabledOrder(presetData.enabled_hooks);
+      if (Array.isArray(target.checked_plugins)) {
+        if (target.checked_plugins.length > 0) {
+          setPendingPresetPlugins({ draftId: target.draft_id, names: target.checked_plugins });
+        } else {
+          setPendingPresetPlugins(null);
+          setCheckedPlugins(new Set());
+        }
+      }
+      setLoadedPresetName(presetName);
+      setPresetDraftId(target.draft_id || null);
+      if (Array.isArray(target.enabled_hooks)) {
+        setHookEnabledOrder(target.enabled_hooks);
         setHooksLoaded(true);
       }
-      // A null/absent admins means the preset never recorded a list (every
-      // preset written before this feature) -- leave the current list alone.
-      if (Array.isArray(presetData.admins)) {
-        setAdminEntries(presetData.admins);
+      // Absent admin_changes = the preset has no admin list (or it matches the
+      // server's): leave the current list alone.
+      if (Array.isArray(target.admin_changes)) {
+        setAdminEntries(applyAdminChanges(loadedAdminEntries, target.admin_changes));
       }
-      // lan_rate_enabled: null/undefined = the preset pre-dates this feature —
-      // leave the instance's current LAN rate toggle untouched. Clamp to false
-      // when the preset wants it on but the host can't support it — this modal
-      // has no reactive auto-disable effect like AddInstanceForm, so an
-      // unclamped true here would leave the toggle on AND locked (unable to be
-      // switched off through the gated manual-toggle handler). Use
-      // canEnableLanRate (not isLanRateSupported) so an already-enabled
-      // legacy-host instance stays enabled when the preset agrees — matching
-      // the same leniency the manual-toggle gate (canToggleLanRate) applies.
-      if (presetData.lan_rate_enabled != null) {
-        const canEnable = canEnableLanRate({
-          host: { os_type: hostOsType, lan_rate_uses_hook: hostLanRateUsesHook, runtime: hostRuntime },
-          currentEnabled: originalLanRateEnabled,
-        });
-        const nextLanRate = presetData.lan_rate_enabled && !canEnable ? false : presetData.lan_rate_enabled;
-        setLanRateEnabled(nextLanRate);
-        if (nextLanRate !== originalLanRateEnabled) setRestartAfterSave(true);
+      // Absent = the preset pre-dates the setting; leave the toggle untouched.
+      if (typeof target.lan_rate_enabled === 'boolean') {
+        setLanRateEnabled(target.lan_rate_enabled);
+        if (target.lan_rate_enabled !== originalLanRateEnabled) setRestartAfterSave(true);
       }
 
       // Refresh the factory tree to show the preset's available factories
       try {
-        setFactoryServerTree(await getFactoryTree({ preset: presetData.name }) || []);
+        setFactoryServerTree(await getFactoryTree({ preset: presetName }) || []);
       } catch {
         setFactoryServerTree([]);
       }
 
-      if (!serverHostname) {
-        setServerHostname(getServerHostname(newConfigs['server.cfg']));
-      }
+      setServerHostname(target.hostname || getServerHostname(target.configs?.['server.cfg']));
       setSelectedPresetId(presetId);
       setIsDirty(true);
 
       setIsPresetManagerOpen(false);
-      showSuccess(`Preset "${presetData.name}" loaded successfully.`);
+      showSuccess(`Preset "${presetName}" loaded successfully.`);
     } catch (err) {
       setPresetError(err.message || `Failed to load preset ${presetId}.`);
     }
-  // pluginTree: partitionCheckedPaths folds in a plugin's depends_on from the
-  // tree, so a stale [] silently degrades a preset load to the pre-manifest
-  // behaviour of dropping those dependencies.
-  }, [hostLanRateUsesHook, hostOsType, hostRuntime, originalLanRateEnabled, pluginTree, resetConfigs, resetFactories, serverHostname, showSuccess]);
+  }, [loadedAdminEntries, originalLanRateEnabled, resetConfigs, resetFactories, showSuccess]);
+
+  const previewPreset = useCallback((presetId, acceptedPaths) => previewPresetApply(instanceId, {
+    preset_id: Number(presetId),
+    keep_draft: true,
+    ...(acceptedPaths ? { accepted_replacements: acceptedPaths } : {}),
+  }), [instanceId]);
 
   const handleLoadPreset = useCallback(async (presetId) => {
     setPresetError(null);
+    const presetName = presets.find((preset) => String(preset.id) === String(presetId))?.name || `#${presetId}`;
     try {
-      const presetData = await getPresetById(presetId, { targetRuntime: hostRuntime });
-      if (presetData.compatibility?.stripped?.length) {
-        setPendingPreset({ id: presetId, data: presetData });
+      const preview = await previewPreset(presetId);
+      if (preview.compatibility?.stripped?.length) {
+        // The operator decides first; the re-preview with the answer makes
+        // its own draft, so this one is not kept.
+        if (preview.target?.draft_id) discardDraft(preview.target.draft_id).catch(() => {});
+        setPendingPreset({ id: presetId, name: presetName, compatibility: preview.compatibility });
         return;
       }
-      // No decision left for the operator, but a cross-runtime load still has
-      // replacements the backend applied on its own -- every standard plugin
-      // this preset carried unmodified. They have to travel to the draft here
-      // too, or the filter deletes those files and writes nothing back.
-      const auto = combineAcceptedPaths(presetData);
-      await applyPresetData(presetId, mergeReplacements(presetData, auto), auto);
+      await applyPresetTarget(presetId, presetName, preview.target);
     } catch (err) {
-      setPresetError(err.message || `Failed to load preset ${presetId}.`);
+      setPresetError(err?.error?.message || err?.message || `Failed to load preset ${presetId}.`);
     }
-  }, [applyPresetData, hostRuntime]);
+  }, [applyPresetTarget, presets, previewPreset]);
 
   const handleConfirmPresetCompatibility = useCallback(async (tickedPaths) => {
     if (!pendingPreset) return;
-    const { id, data } = pendingPreset;
+    const { id, name } = pendingPreset;
     setPendingPreset(null);
-    // What the operator ticked, plus what was swapped without asking.
-    const acceptedPaths = combineAcceptedPaths(data, tickedPaths);
-    // applyPresetData sets both draftPreset and acceptedReplacements together
-    // (see its own body) -- the accepted list is an argument to "apply this
-    // preset", not ambient state some other codepath clears speculatively. A
-    // cancelled load therefore calls nothing here at all, leaving whatever
-    // preset is currently active, and its accepted replacements, untouched.
-    await applyPresetData(id, mergeReplacements(data, acceptedPaths), acceptedPaths);
-  }, [applyPresetData, pendingPreset]);
+    // What the operator ticked; the server adds what it swapped without
+    // asking. A cancelled load calls nothing here, so the active preset's
+    // draft (and the replacements accepted for it) stays untouched.
+    try {
+      const preview = await previewPreset(id, Array.from(tickedPaths || []));
+      await applyPresetTarget(id, name, preview.target);
+    } catch (err) {
+      setPresetError(err?.error?.message || err?.message || `Failed to load preset ${id}.`);
+    }
+  }, [applyPresetTarget, pendingPreset, previewPreset]);
 
   const handleCancelPresetCompatibility = useCallback(() => {
-    const cancelledName = pendingPreset?.data?.name;
+    const cancelledName = pendingPreset?.name;
     setPendingPreset(null);
     setIsPresetManagerOpen(false);
     if (cancelledName) {
@@ -1466,7 +1458,7 @@ function EditInstanceConfigModal({
 
       <PresetCompatibilityDialog
         isOpen={Boolean(pendingPreset)}
-        compatibility={pendingPreset?.data?.compatibility}
+        compatibility={pendingPreset?.compatibility}
         onConfirm={handleConfirmPresetCompatibility}
         onCancel={handleCancelPresetCompatibility}
       />
