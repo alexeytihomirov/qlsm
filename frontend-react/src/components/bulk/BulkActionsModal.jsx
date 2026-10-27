@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { Layers, X } from 'lucide-react';
 import BulkPluginUpdatesTab from './BulkPluginUpdatesTab';
+import BulkPresetApplyTab from './BulkPresetApplyTab';
 
 // One entry per bulk action tab: { id, label }. The body of the active tab is chosen by id below.
 const TABS = [
     { id: 'plugins', label: 'Update plugins' },
+    { id: 'preset', label: 'Apply preset' },
 ];
 
 function BulkActionsModal({ isOpen, onClose, hosts }) {
@@ -47,6 +49,7 @@ function BulkActionsModal({ isOpen, onClose, hosts }) {
                         </div>
 
                         {tab === 'plugins' && <BulkPluginUpdatesTab isOpen={isOpen} hosts={hosts} onClose={onClose} />}
+                        {tab === 'preset' && <BulkPresetApplyTab isOpen={isOpen} hosts={hosts} onClose={onClose} />}
                     </Dialog.Panel>
                 </div>
             </div>
