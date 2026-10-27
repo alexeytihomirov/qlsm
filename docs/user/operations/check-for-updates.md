@@ -51,6 +51,17 @@ Click **Update Selected** to apply your choices.
 - **"Common pool check failed"** in the modal means QLSM couldn't read the host's plugin pool, usually because the host is unreachable. The per-instance results are still accurate, because QLSM reads those locally.
 - If refreshing the common plugin pool fails, the host goes to **Error** and no instance files are changed. Check [Host Logs](host-logs.md) for the reason.
 
+## Bulk actions: Update plugins
+
+To check every host at once, click **Bulk actions** in the header of the **Servers** page and stay on the **Update plugins** tab. Opening the dialog runs the same check as above on every **Active** host, and on every user preset, once. It does not re-run the check while the dialog stays open.
+
+- Each host and preset has its own box with the same choices as the single-host window: the **Common plugin pool**, the changed files of each instance, and **Restart to apply** per instance. Everything outdated is ticked at first, and **Restart to apply** starts off for stopped instances and for every instance when **Defer restarts** is on in Settings.
+- A host that already matches says **up to date**. Presets that already match are not listed.
+- Click **Update Selected** to send the ticked updates. Up to four hosts or presets are processed at a time.
+- Each host or preset reports on its own row. A failure on one row does not stop the others. A host that was sent shows **queued** and is unticked, so a second click does not send it again. Updating a file replaces the copy, including your edits, exactly as in the single-host window; untick files you want to keep.
+
+Verify the result the same way as for a single host, under [Verification](#verification).
+
 ## Presets
 
 A preset keeps its own copies of the plugins it was saved with, and every new instance created from it gets those copies. Check them the same way:

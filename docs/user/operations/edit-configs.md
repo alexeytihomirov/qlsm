@@ -237,6 +237,20 @@ A hostname you typed into the **Hostname** field before loading is kept as well.
 
 A preset saved before QLSM recorded its plugin selection has no plugin list to load, so the server's plugins are left as they are.
 
+## Bulk actions: Apply preset
+
+**Bulk actions** in the header of the **Servers** page, tab **Apply preset**, loads one preset into many servers at once. It works like [Load Preset](#load-preset) for each server, with a preview before anything is changed.
+
+1. Choose a preset, then tick the servers. A host box selects all of its servers. Only servers on **Active** hosts can be ticked.
+2. **Keep each server's own value of** lists the cvars each server keeps instead of taking the preset's value, with the source next to each name (for example an addon or a plugin manifest with `"per_server": true`; see [Load Preset](#load-preset) for the rules). The list is the union over the ticked servers. Untick a cvar to let the preset overwrite it, or type a name and click **Add** to keep one more. `qlx_plugins` is never kept.
+3. Click **Preview**. QLSM builds the result for each server and shows what would change: plugins and hooks added or removed, admins, 99k LAN rate, and changed files. A server the preset would not change says **no changes** and is skipped.
+4. If the preset's plugins may not suit a server's runtime, QLSM asks the compatibility question once for each runtime, not once per server. Cancelling it leaves those servers unapplied, and they show why.
+5. Tick or untick **Restart servers to apply** (it starts off when **Defer restarts** is on in Settings; stopped servers are never started), then click **Apply**.
+
+Changing the preset, the ticked servers or the kept cvars discards the previews, so preview again before applying. Up to four servers are previewed or applied at a time.
+
+Each server reports on its own row, and a failure on one does not stop the others: **queued** means the change was sent, **busy** means the server is already being changed, and **preview again** means the preset or the server changed after the preview, so no changes were made. Run **Preview** again, then **Apply**.
+
 ## Factories
 
 The **Factories** tab controls factory files included in the deployment bundle.
