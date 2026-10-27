@@ -316,7 +316,8 @@ def build_preset_target(instance, preset, accepted_replacements, keep_cvars):
     no decision yet, any list (even empty) is the decision and the unticked
     replacements are declined. `keep_cvars`:
     cvars whose server.cfg lines stay the instance's own; None means the
-    collected list. Creates a scripts draft (the payload's `draft_id`). Raises
+    collected list. Creates a scripts draft (the payload's `draft_id`) unless the
+    preset is legacy (no checked_plugins list). Raises
     PresetApplyError. Needs an app context.
     """
     from ui.routes.draft_routes import _get_draft_scripts_path, create_draft_workspace
@@ -356,20 +357,21 @@ def build_preset_target(instance, preset, accepted_replacements, keep_cvars):
             wanted = False
         payload['lan_rate_enabled'] = wanted
 
-    draft_id, error = create_draft_workspace({
-        'source': 'preset',
-        'preset': preset.name,
-        'target_runtime': runtime,
-        'accepted_replacements': accepted,
-    })
-    if error:
-        raise _draft_error(error)
-    payload['draft_id'] = draft_id
-
     # None (no checked_plugins.json, or not a list) is no selection at all:
-    # the instance keeps its qlx_plugins, as apply_compatibility reads it.
+    # the instance keeps its qlx_plugins, as apply_compatibility reads it, and
+    # its scripts/ too, so a legacy preset gets no draft (a draft would
+    # replace scripts/ on save).
     checked = _checked_with_replacements(preset_payload, accepted)
     if isinstance(checked, list):
+        draft_id, error = create_draft_workspace({
+            'source': 'preset',
+            'preset': preset.name,
+            'target_runtime': runtime,
+            'accepted_replacements': accepted,
+        })
+        if error:
+            raise _draft_error(error)
+        payload['draft_id'] = draft_id
         payload['checked_plugins'] = qlx_plugin_names(
             checked, _get_draft_scripts_path(draft_id), runtime)
 

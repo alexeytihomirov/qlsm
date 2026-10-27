@@ -600,12 +600,13 @@ describe('EditInstanceConfigModal preset saving', () => {
 
   it('keeps the instance\'s checked plugins when the preset records no selection', async () => {
     // A legacy preset (checked_plugins null): the server leaves qlx_plugins
-    // alone and omits the field, so the modal keeps what was ticked.
+    // and scripts/ alone and sends neither the field nor a draft, so the modal
+    // keeps what was ticked and its own instance draft.
     mocks.useDraftWorkspace.mockReturnValue({
       ...baseDraftWorkspace,
       tree: [{ type: 'file', name: 'balance.py', path: 'balance.py' }],
     });
-    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset'));
+    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset', { draft_id: undefined }));
 
     render(
       <EditInstanceConfigModal isOpen={true} onClose={vi.fn()} instanceId={1} instanceName="Test123" onConfigSaved={vi.fn()} />
@@ -616,9 +617,13 @@ describe('EditInstanceConfigModal preset saving', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
     await waitFor(() => expect(mocks.showSuccess).toHaveBeenCalledWith('Preset "legacy-preset" loaded successfully.'));
 
+    expect(mocks.draftAdapterActiveDraftIds.at(-1)).toBeUndefined();
+    expect(mocks.discardDraft).not.toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole('button', { name: /save configuration/i }));
     await waitFor(() => expect(mocks.updateInstanceConfig).toHaveBeenCalledTimes(1));
     expect(mocks.updateInstanceConfig.mock.calls[0][1].checked_plugins).toEqual(['balance']);
+    expect(mocks.updateInstanceConfig.mock.calls[0][1].draft_id).toBe('draft-123');
   });
 
   it('keeps the instance\'s plugins when a legacy preset is loaded before the plugin tree arrives', async () => {
@@ -629,7 +634,7 @@ describe('EditInstanceConfigModal preset saving', () => {
       ...baseDraftWorkspace,
       tree: treeReady ? [{ type: 'file', name: 'balance.py', path: 'balance.py' }] : [],
     }));
-    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset'));
+    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset', { draft_id: undefined }));
 
     render(
       <EditInstanceConfigModal isOpen={true} onClose={vi.fn()} instanceId={1} instanceName="Test123" onConfigSaved={vi.fn()} />
@@ -640,7 +645,7 @@ describe('EditInstanceConfigModal preset saving', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm load preset/i }));
     await waitFor(() => expect(mocks.showSuccess).toHaveBeenCalledWith('Preset "legacy-preset" loaded successfully.'));
 
-    // The (adopted) draft's tree arrives now; any render picks it up.
+    // The instance draft's tree arrives now; any render picks it up.
     treeReady = true;
     fireEvent.click(screen.getByRole('button', { name: /plugins/i }));
     await waitFor(() => {
@@ -894,7 +899,7 @@ describe('EditInstanceConfigModal preset saving', () => {
       qlx_plugins: '',
     });
     // No recorded value: the server leaves lan_rate_enabled out of the target.
-    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset'));
+    mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset', { draft_id: undefined }));
 
     render(
       <EditInstanceConfigModal
@@ -2051,7 +2056,7 @@ describe('EditInstanceConfigModal preset saving', () => {
     });
 
     it('a preset with no admin list leaves the current one alone', async () => {
-      mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset'));
+      mocks.previewPresetApply.mockResolvedValue(mockPresetPreview('legacy-preset', { draft_id: undefined }));
       renderModal();
       await screen.findByRole('button', { name: 'set-admins' });
       fireEvent.click(screen.getByRole('button', { name: 'set-admins' }));
