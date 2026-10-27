@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from tests.test_addon_registry import addon_app, write_addon  # noqa: F401
-from ui import preset_keep_cvars
+from ui import plugin_manifest, preset_keep_cvars
 from ui.preset_keep_cvars import collect_keep_cvars
 
 BUILDER = 'ui.preset_keep_cvars._build_qlds_args_string'
@@ -56,7 +56,8 @@ def test_addon_hook_contributes_with_its_label(addon_app, in_tmp):  # noqa: F811
     ''')
     app = build()
     from ui.addons import registry
-    with app.app_context(), patch(BUILDER, return_value=''),             patch.object(registry, '_gates_open', return_value=True):
+    with app.app_context(), patch(BUILDER, return_value=''), \
+            patch.object(registry, '_gates_open', return_value=True):
         result = collect_keep_cvars(_instance(), {})
     assert result == [{'cvar': 'qlx_statsHubServerId', 'sources': ['addon:stats']}]
 
@@ -95,3 +96,27 @@ def test_qlx_plugins_is_never_kept(app_context, in_tmp):
     _write_plugin(str(scripts), 'myplugin', [{'cvar': 'QLX_Plugins', 'per_server': True}])
     with patch(BUILDER, return_value='+set qlx_plugins "a"'):
         assert collect_keep_cvars(_instance(plugins='myplugin'), {}) == []
+
+
+def _write_pool_manifest(root, name, cvars):
+    pool = root / plugin_manifest.MINQLX_PLUGINS_POOL_DIR
+    os.makedirs(pool, exist_ok=True)
+    with open(pool / (name + '.ql-plugin.json'), 'w', encoding='utf-8') as f:
+        json.dump({'cvars': cvars}, f)
+
+
+def test_enabled_pool_only_plugin_is_collected(app_context, in_tmp):
+    _write_pool_manifest(in_tmp, 'poolplugin', [{'cvar': 'qlx_poolId', 'per_server': True}])
+    with patch(BUILDER, return_value=''):
+        result = collect_keep_cvars(_instance(plugins='poolplugin'), {})
+    assert result == [{'cvar': 'qlx_poolId', 'sources': ['plugin:poolplugin.py']}]
+
+
+def test_checked_pool_only_plugin_is_collected(app_context, in_tmp):
+    _write_pool_manifest(in_tmp, 'poolplugin', [{'cvar': 'qlx_poolId', 'per_server': True}])
+    preset = in_tmp / 'presets' / 'p1'
+    os.makedirs(preset / 'scripts')
+    payload = {'path': str(preset), 'checked_plugins': ['poolplugin.py']}
+    with patch(BUILDER, return_value=''):
+        result = collect_keep_cvars(_instance(), payload)
+    assert result == [{'cvar': 'qlx_poolId', 'sources': ['plugin:poolplugin.py']}]
