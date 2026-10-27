@@ -76,14 +76,24 @@ def test_preview_returns_diff_and_hash_and_leaves_no_draft(client, headers, setu
     assert _draft_ids() == before
 
 
-def test_preview_keep_draft_returns_target_and_draft(client, headers, setup):
-    instance, preset = setup
+def test_preview_keep_draft_returns_target_and_draft(client, headers, env):  # noqa: F811
+    instance = _instance(_host())
+    preset = _preset(env, scripts={'a.py': '# a\n'}, checked_plugins=['a.py'])
     before = _draft_ids()
     response = _preview(client, headers, instance, preset, keep_draft=True)
     assert response.status_code == 200, response.get_json()
     target = response.get_json()['data']['target']
     assert target['draft_id']
     assert _draft_ids() - before == {target['draft_id']}
+
+
+def test_preview_keep_draft_of_a_legacy_preset_has_no_draft(client, headers, setup):
+    instance, preset = setup
+    before = _draft_ids()
+    response = _preview(client, headers, instance, preset, keep_draft=True)
+    assert response.status_code == 200, response.get_json()
+    assert 'draft_id' not in response.get_json()['data']['target']
+    assert _draft_ids() == before
 
 
 def test_preview_hash_is_stable(client, headers, setup):

@@ -685,6 +685,8 @@ function EditInstanceConfigModal({
         }
       }
       setLoadedPresetName(presetName);
+      // No draft_id = a legacy preset: the server leaves scripts/ as they are,
+      // so the Plugins tab goes on with the instance's own draft.
       setPresetDraftId(target.draft_id || null);
       if (Array.isArray(target.enabled_hooks)) {
         setHookEnabledOrder(target.enabled_hooks);

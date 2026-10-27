@@ -645,7 +645,7 @@ Server-side "Load preset" for one instance, the same result as loading the prese
 }
 ```
 
-`target` is a `PUT /instances/<id>/config` body. It carries a `draft_id` only with `keep_draft: true`, so the editor can save it; otherwise the draft is deleted before the response.
+`target` is a `PUT /instances/<id>/config` body. It carries a `draft_id` only with `keep_draft: true`, so the editor can save it; otherwise the draft is deleted before the response. A legacy preset (no recorded `checked_plugins`) makes no draft at all: the target has no `draft_id`, so the instance keeps its `scripts/` as well as its `qlx_plugins`.
 
 `POST /instances/<id>/apply-preset` takes the same body plus `restart` (bool) and `preview_hash` (the preview's). It rebuilds the target and saves it like `PUT /instances/<id>/config` (202 on success, `restart` passed through, 409 when another operation holds the instance). It returns 422 `Plugin compatibility needs a decision` when a replacement still needs the operator's decision (`accepted_replacements` omitted; any list, even `[]`, counts as the decision), and 409 `Preset or server changed since the preview. Preview again.` when the rebuilt target no longer hashes to `preview_hash`. Both preview and apply return 400 for a malformed body, 404 for an unknown instance or preset, and 409 while the host is being set up.
 

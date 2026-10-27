@@ -235,7 +235,7 @@ def test_legacy_preset_leaves_plugins_factories_hooks_admins_lan_rate_alone(env)
     for key in ('checked_plugins', 'enabled_hooks', 'admin_changes', 'lan_rate_enabled'):
         assert key not in payload
     assert payload['factories'] == {'one.factories': '[]', 'two.factories': '[1]'}
-    assert payload['draft_id']
+    assert 'draft_id' not in payload
     assert target['compatibility'] is None
     assert target['needs_decision'] is False
 
@@ -384,8 +384,9 @@ def _materialize(instance, target):
     config_dir = os.path.join('configs', instance.host.name, str(instance.id))
     _sync_configs_to_disk(config_dir, payload['configs'], payload['config_folders'])
     _sync_factories_to_disk(os.path.join(config_dir, 'factories'), payload['factories'])
-    shutil.copytree(_get_draft_scripts_path(payload['draft_id']),
-                    os.path.join(config_dir, 'scripts'), dirs_exist_ok=True)
+    if payload.get('draft_id'):
+        shutil.copytree(_get_draft_scripts_path(payload['draft_id']),
+                        os.path.join(config_dir, 'scripts'), dirs_exist_ok=True)
 
 
 def test_diff_reports_server_cfg_change(env):
@@ -474,17 +475,34 @@ def test_diff_removes_leftover_scripts_and_factories(env):
         f.write('# old\n')
     with open(os.path.join(config_dir, 'factories', 'old.factories'), 'w') as f:
         f.write('[]')
-    preset = _preset(env, factories={})
+    preset = _preset(env, factories={}, checked_plugins=[])
     target = build_preset_target(instance, preset, None, [])
     changes = {e['path']: e['change'] for e in diff_preset_target(instance, target)['files']}
     assert changes['scripts/old.py'] == 'removed'
     assert changes['factories/old.factories'] == 'removed'
 
 
+def test_legacy_preset_sends_no_draft_and_leaves_scripts(env):
+    host = _host()
+    instance = _instance(host, qlx_plugins='old')
+    scripts_dir = os.path.join('configs', host.name, str(instance.id), 'scripts')
+    os.makedirs(scripts_dir)
+    with open(os.path.join(scripts_dir, 'old.py'), 'w') as f:
+        f.write('# old\n')
+    preset = _preset(env, configs={'server.cfg': 'set g_motd "x"'}, scripts={'a.py': '# a\n'})
+    target = build_preset_target(instance, preset, None, [])
+    assert 'draft_id' not in target['payload']
+    assert 'checked_plugins' not in target['payload']
+    diff = diff_preset_target(instance, target)
+    assert not [e for e in diff['files'] if e['path'].startswith('scripts/')]
+    assert diff['plugins'] is None
+
+
 def test_target_hash_ignores_draft_id_and_changes_with_content(env):
     host = _host()
     instance = _instance(host)
-    preset = _preset(env, configs={'server.cfg': 'set g_motd "x"'}, scripts={'a.py': '# a\n'})
+    preset = _preset(env, configs={'server.cfg': 'set g_motd "x"'}, scripts={'a.py': '# a\n'},
+                     checked_plugins=['a.py'])
     first = build_preset_target(instance, preset, None, [])
     second = build_preset_target(instance, preset, None, [])
     assert first['payload']['draft_id'] != second['payload']['draft_id']
@@ -519,7 +537,7 @@ def _add_instance_hook(instance, name):
 def test_hook_without_a_file_is_dropped_like_the_save_does(env):
     host = _host()
     instance = _instance(host)
-    preset = _preset(env, enabled_hooks=['ghost.so'])
+    preset = _preset(env, enabled_hooks=['ghost.so'], checked_plugins=[])
     target = build_preset_target(instance, preset, None, [])
     _materialize(instance, target)
     diff = diff_preset_target(instance, target)
@@ -530,7 +548,7 @@ def test_hook_without_a_file_is_dropped_like_the_save_does(env):
 def test_stored_hook_whose_file_is_missing_is_a_change(env):
     host = _host()
     instance = _instance(host, ld_preload_hooks='ghost.so')
-    preset = _preset(env, enabled_hooks=['ghost.so'])
+    preset = _preset(env, enabled_hooks=['ghost.so'], checked_plugins=[])
     target = build_preset_target(instance, preset, None, [])
     _materialize(instance, target)
     diff = diff_preset_target(instance, target)
@@ -541,7 +559,7 @@ def test_stored_hook_whose_file_is_missing_is_a_change(env):
 def test_hook_file_from_the_preset_is_added_and_enabled(env):
     host = _host()
     instance = _instance(host)
-    preset = _preset(env, enabled_hooks=['new.so'])
+    preset = _preset(env, enabled_hooks=['new.so'], checked_plugins=[])
     _add_preset_hook(preset, 'new.so')
     target = build_preset_target(instance, preset, None, [])
     _materialize(instance, target)
@@ -555,7 +573,7 @@ def test_hook_file_already_on_the_instance_wins_over_the_preset(env):
     host = _host()
     instance = _instance(host, ld_preload_hooks='h.so')
     _add_instance_hook(instance, 'h.so')
-    preset = _preset(env, enabled_hooks=['h.so'])
+    preset = _preset(env, enabled_hooks=['h.so'], checked_plugins=[])
     _add_preset_hook(preset, 'h.so', b'\x7fELF-other')
     target = build_preset_target(instance, preset, None, [])
     _materialize(instance, target)
@@ -567,7 +585,7 @@ def test_hook_file_already_on_the_instance_wins_over_the_preset(env):
 def test_target_hash_changes_with_a_preset_hook_binary(env):
     host = _host()
     instance = _instance(host)
-    preset = _preset(env)
+    preset = _preset(env, checked_plugins=[])
     _add_preset_hook(preset, 'h.so', b'\x7fELF-1')
     first = target_hash(build_preset_target(instance, preset, None, []))
     assert target_hash(build_preset_target(instance, preset, None, [])) == first
