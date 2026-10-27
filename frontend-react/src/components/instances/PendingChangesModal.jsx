@@ -40,7 +40,6 @@ function DiffBlock({ diff }) {
     <pre className="mt-2 max-h-80 overflow-auto rounded border border-[var(--surface-border)] bg-theme-elevated p-2 text-xs font-mono leading-5">
       {lines.map((line, index) => (
         // Index keys are fine: the list is static for the modal's lifetime.
-        // eslint-disable-next-line react/no-array-index-key
         <div key={index} className={`whitespace-pre-wrap break-all ${diffLineClass(line)}`}>{line || ' '}</div>
       ))}
     </pre>
