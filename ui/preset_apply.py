@@ -386,19 +386,27 @@ def _csv(value):
 
 
 def _target_files(instance, payload, work_dir):
-    """Changed files in the instance's config dir once `payload` is saved.
+    """(changed files, hooks left enabled) once `payload` is saved.
 
-    The save is replayed on a copy of the dir with save_instance_config's own
-    helpers, so files it leaves alone (user-hooks/, other folders) never show
-    up and the access.txt rewrite is part of the "after" side.
+    The save is replayed on a copy of the instance's config dir with
+    save_instance_config's own helpers, so files it leaves alone (other
+    folders) never show up and the access.txt rewrite is part of the "after"
+    side. user-hooks/ is part of the copy: a preset-sourced draft adds the
+    hook files the instance lacks, and enabled_hooks is filtered against what
+    is on disk after that, exactly as the save does.
     """
-    from ui.routes.draft_routes import _get_draft_scripts_path
-    from ui.routes.instance_routes import _sync_configs_to_disk, _sync_factories_to_disk
+    from ui.routes.draft_routes import (
+        _get_draft_scripts_path, _get_draft_source, _get_draft_user_hooks_path,
+        _merge_draft_user_hooks_into_instance,
+    )
+    from ui.routes.instance_routes import (
+        _filtered_enabled_hooks, _sync_configs_to_disk, _sync_factories_to_disk,
+    )
 
     current_dir = _instance_config_dir(instance)
     copy_dir = os.path.join(work_dir, 'config')
     if os.path.isdir(current_dir):
-        shutil.copytree(current_dir, copy_dir, ignore=shutil.ignore_patterns('user-hooks'))
+        shutil.copytree(current_dir, copy_dir)
     else:
         os.makedirs(copy_dir)
     before = snapshot_dir(copy_dir)
@@ -406,12 +414,19 @@ def _target_files(instance, payload, work_dir):
     _sync_configs_to_disk(copy_dir, payload['configs'], payload.get('config_folders'))
     if 'factories' in payload:
         _sync_factories_to_disk(os.path.join(copy_dir, 'factories'), payload['factories'])
-    draft_scripts = _get_draft_scripts_path(payload['draft_id']) if payload.get('draft_id') else None
-    if draft_scripts and os.path.exists(draft_scripts):
-        scripts_dir = os.path.join(copy_dir, 'scripts')
-        shutil.rmtree(scripts_dir, ignore_errors=True)
-        shutil.copytree(draft_scripts, scripts_dir)
-    return diff_snapshots(before, snapshot_dir(copy_dir))
+    hooks_dir = os.path.join(copy_dir, 'user-hooks')
+    draft_id = payload.get('draft_id')
+    if draft_id:
+        draft_scripts = _get_draft_scripts_path(draft_id)
+        if os.path.exists(draft_scripts):
+            scripts_dir = os.path.join(copy_dir, 'scripts')
+            shutil.rmtree(scripts_dir, ignore_errors=True)
+            shutil.copytree(draft_scripts, scripts_dir)
+        if _get_draft_source(draft_id) == 'preset':
+            _merge_draft_user_hooks_into_instance(_get_draft_user_hooks_path(draft_id), hooks_dir)
+    enabled = payload.get('enabled_hooks')
+    after_hooks = None if enabled is None else _filtered_enabled_hooks(enabled, hooks_dir)
+    return diff_snapshots(before, snapshot_dir(copy_dir)), after_hooks
 
 
 def _admin_part(changes):
@@ -441,12 +456,12 @@ def diff_preset_target(instance, target):
     payload = target['payload']
     work_dir = tempfile.mkdtemp()
     try:
-        files = _target_files(instance, payload, work_dir)
+        files, enabled_hooks = _target_files(instance, payload, work_dir)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
     plugins = _before_after(_csv(instance.qlx_plugins), payload.get('checked_plugins'))
-    hooks = _before_after(_enabled_list(instance), payload.get('enabled_hooks'))
+    hooks = _before_after(_enabled_list(instance), enabled_hooks)
     admins = _admin_part(payload.get('admin_changes'))
     lan_rate = None
     if payload.get('lan_rate_enabled') is not None:
@@ -471,7 +486,7 @@ def diff_preset_target(instance, target):
 def target_hash(target):
     """sha256 of the target: its payload without the (random) draft_id, and the
     content of the draft's scripts, so two previews of the same state agree."""
-    from ui.routes.draft_routes import _get_draft_scripts_path
+    from ui.routes.draft_routes import _get_draft_scripts_path, _get_draft_user_hooks_path
 
     payload = target['payload']
     body = {key: value for key, value in payload.items() if key != 'draft_id'}
@@ -482,4 +497,10 @@ def target_hash(target):
         for rel, entry in snapshot_dir(_get_draft_scripts_path(payload['draft_id'])).items():
             scripts[rel] = entry['sha256']
     digest.update(json.dumps(scripts, sort_keys=True, separators=(',', ':')).encode('utf-8'))
+    # Hook files the save would bring in from a preset draft.
+    hooks = {}
+    if payload.get('draft_id'):
+        for rel, entry in snapshot_dir(_get_draft_user_hooks_path(payload['draft_id'])).items():
+            hooks[rel] = entry['sha256']
+    digest.update(json.dumps(hooks, sort_keys=True, separators=(',', ':')).encode('utf-8'))
     return digest.hexdigest()
