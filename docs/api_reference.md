@@ -629,7 +629,7 @@ Server-side "Load preset" for one instance, the same result as loading the prese
 
 `GET /instances/<id>/preset-keep-cvars?preset_id=<n>` returns `{"data": [{"cvar": "sv_tags", "sources": ["launch args", "addon:<id>", "plugin:<file>"]}]}`: the cvars whose `server.cfg` lines the instance keeps instead of the preset's. 404 for an unknown instance or preset.
 
-`POST /instances/<id>/preset-preview` takes `{"preset_id": 1, "accepted_replacements": [], "keep_cvars": [], "keep_draft": false}`. Only `preset_id` is required. `accepted_replacements` and `keep_cvars` must be lists of strings (omit `keep_cvars` to use the collected list). It changes nothing and returns:
+`POST /instances/<id>/preset-preview` takes `{"preset_id": 1, "accepted_replacements": [], "keep_cvars": [], "keep_draft": false}`. Only `preset_id` is required. `accepted_replacements` and `keep_cvars` must be lists of strings (omit `keep_cvars` to use the collected list). Omitting `accepted_replacements` (or `null`) means no decision has been taken yet, so `needs_decision` is true while a stripped plugin with a replacement is not auto-accepted. Sending a list, even `[]`, is the operator's decision: `needs_decision` is false, the listed paths are taken and every other replacement is declined (that plugin is dropped). It changes nothing and returns:
 
 ```json
 {
@@ -647,7 +647,7 @@ Server-side "Load preset" for one instance, the same result as loading the prese
 
 `target` is a `PUT /instances/<id>/config` body. It carries a `draft_id` only with `keep_draft: true`, so the editor can save it; otherwise the draft is deleted before the response.
 
-`POST /instances/<id>/apply-preset` takes the same body plus `restart` (bool) and `preview_hash` (the preview's). It rebuilds the target and saves it like `PUT /instances/<id>/config` (202 on success, `restart` passed through, 409 when another operation holds the instance). It returns 422 `Plugin compatibility needs a decision` when a replacement still needs the operator's decision, and 409 `Preset or server changed since the preview. Preview again.` when the rebuilt target no longer hashes to `preview_hash`. Both preview and apply return 400 for a malformed body, 404 for an unknown instance or preset, and 409 while the host is being set up.
+`POST /instances/<id>/apply-preset` takes the same body plus `restart` (bool) and `preview_hash` (the preview's). It rebuilds the target and saves it like `PUT /instances/<id>/config` (202 on success, `restart` passed through, 409 when another operation holds the instance). It returns 422 `Plugin compatibility needs a decision` when a replacement still needs the operator's decision (`accepted_replacements` omitted; any list, even `[]`, counts as the decision), and 409 `Preset or server changed since the preview. Preview again.` when the rebuilt target no longer hashes to `preview_hash`. Both preview and apply return 400 for a malformed body, 404 for an unknown instance or preset, and 409 while the host is being set up.
 
 ### Pending Changes (GET /instances/<id>/pending-changes)
 

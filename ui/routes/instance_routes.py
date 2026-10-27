@@ -1531,8 +1531,6 @@ def _preset_request(instance_id, data=None):
         if value is not None and not _string_list(value):
             return None, None, None, _bad_request(f"{key} must be a list of strings")
         params[key] = value
-    if data.get('accepted_replacements') is None:
-        params['accepted_replacements'] = []
     rejection = _reject_mutation_while_host_configuring(instance.host)
     if rejection:
         return None, None, None, rejection
