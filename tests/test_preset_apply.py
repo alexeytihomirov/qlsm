@@ -378,6 +378,7 @@ def test_diff_reports_server_cfg_change(env):
         factories={'one.factories': '[]'}, checked_plugins=['a.py'], enabled_hooks=['y.so'],
         lan_rate_enabled=True,
         admins=[{'steam_id64': '76561198000000001', 'level': 5}])
+    _add_preset_hook(preset, 'y.so')
     with patch.object(preset_apply, 'read_live_admins',
                       return_value=([{'steam_id64': '76561198000000003', 'level': 4}], {}, None)):
         target = build_preset_target(instance, preset, None, [])
@@ -480,3 +481,76 @@ def test_target_hash_ignores_draft_id_and_changes_with_content(env):
     with open(os.path.join(scripts, 'a.py'), 'w') as f:
         f.write('# changed\n')
     assert target_hash(changed_script) != target_hash(first)
+
+
+def _add_preset_hook(preset, name, data=b'\x7fELF1'):
+    hooks = os.path.join(preset.path, 'user-hooks')
+    os.makedirs(hooks, exist_ok=True)
+    with open(os.path.join(hooks, name), 'wb') as f:
+        f.write(data)
+
+
+def _add_instance_hook(instance, name):
+    hooks = os.path.join('configs', instance.host.name, str(instance.id), 'user-hooks')
+    os.makedirs(hooks, exist_ok=True)
+    with open(os.path.join(hooks, name), 'wb') as f:
+        f.write(b'\x7fELF')
+
+
+def test_hook_without_a_file_is_dropped_like_the_save_does(env):
+    host = _host()
+    instance = _instance(host)
+    preset = _preset(env, enabled_hooks=['ghost.so'])
+    target = build_preset_target(instance, preset, None, [])
+    _materialize(instance, target)
+    diff = diff_preset_target(instance, target)
+    assert diff['hooks'] == {'before': [], 'after': []}
+    assert diff['unchanged'] is True
+
+
+def test_stored_hook_whose_file_is_missing_is_a_change(env):
+    host = _host()
+    instance = _instance(host, ld_preload_hooks='ghost.so')
+    preset = _preset(env, enabled_hooks=['ghost.so'])
+    target = build_preset_target(instance, preset, None, [])
+    _materialize(instance, target)
+    diff = diff_preset_target(instance, target)
+    assert diff['hooks'] == {'before': ['ghost.so'], 'after': []}
+    assert diff['unchanged'] is False
+
+
+def test_hook_file_from_the_preset_is_added_and_enabled(env):
+    host = _host()
+    instance = _instance(host)
+    preset = _preset(env, enabled_hooks=['new.so'])
+    _add_preset_hook(preset, 'new.so')
+    target = build_preset_target(instance, preset, None, [])
+    _materialize(instance, target)
+    diff = diff_preset_target(instance, target)
+    assert {e['path']: e['change'] for e in diff['files']}['user-hooks/new.so'] == 'added'
+    assert diff['hooks'] == {'before': [], 'after': ['new.so']}
+    assert diff['unchanged'] is False
+
+
+def test_hook_file_already_on_the_instance_wins_over_the_preset(env):
+    host = _host()
+    instance = _instance(host, ld_preload_hooks='h.so')
+    _add_instance_hook(instance, 'h.so')
+    preset = _preset(env, enabled_hooks=['h.so'])
+    _add_preset_hook(preset, 'h.so', b'\x7fELF-other')
+    target = build_preset_target(instance, preset, None, [])
+    _materialize(instance, target)
+    diff = diff_preset_target(instance, target)
+    assert not [e for e in diff['files'] if e['path'].startswith('user-hooks/')]
+    assert diff['unchanged'] is True
+
+
+def test_target_hash_changes_with_a_preset_hook_binary(env):
+    host = _host()
+    instance = _instance(host)
+    preset = _preset(env)
+    _add_preset_hook(preset, 'h.so', b'\x7fELF-1')
+    first = target_hash(build_preset_target(instance, preset, None, []))
+    assert target_hash(build_preset_target(instance, preset, None, [])) == first
+    _add_preset_hook(preset, 'h.so', b'\x7fELF-2')
+    assert target_hash(build_preset_target(instance, preset, None, [])) != first
