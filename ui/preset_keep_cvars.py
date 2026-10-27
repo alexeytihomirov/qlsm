@@ -103,6 +103,20 @@ def _preset_plugin_files(preset_payload):
     return files
 
 
+def _root_plugin_names(instance, preset_payload):
+    """Enabled (qlx_plugins) and checked root plugin names, first-seen order."""
+    names = [p.strip() for p in (instance.qlx_plugins or '').split(',') if p.strip()]
+    for rel in preset_payload.get('checked_plugins') or []:
+        if not isinstance(rel, str) or '/' in rel or '\\' in rel or not rel.endswith('.py'):
+            continue
+        names.append(rel[:-3])
+    seen = []
+    for name in names:
+        if name not in seen:
+            seen.append(name)
+    return seen
+
+
 def collect_keep_cvars(instance, preset_payload):
     """Cvars to keep on `instance` when `preset_payload` is applied.
 
@@ -127,7 +141,15 @@ def collect_keep_cvars(instance, preset_payload):
         add(name, source)
 
     runtime = host_runtime(getattr(instance, 'host', None))
-    plugin_files = _instance_plugin_files(instance) + _preset_plugin_files(preset_payload or {})
+    preset_payload = preset_payload or {}
+    plugin_files = _instance_plugin_files(instance) + _preset_plugin_files(preset_payload)
+    # An enabled or checked plugin with no local copy runs from the runtime's
+    # shared pool; read_plugin_manifest resolves its manifest there by name.
+    local = {os.path.basename(path) for path in plugin_files}
+    plugin_files += [
+        f'{name}.py' for name in _root_plugin_names(instance, preset_payload)
+        if f'{name}.py' not in local
+    ]
     for path in plugin_files:
         try:
             names = _manifest_cvars(path, runtime)
