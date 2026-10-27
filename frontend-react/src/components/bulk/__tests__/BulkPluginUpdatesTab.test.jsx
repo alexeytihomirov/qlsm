@@ -118,4 +118,85 @@ describe('BulkPluginUpdatesTab', () => {
     await waitFor(() => expect(screen.getAllByText('queued').length).toBeGreaterThanOrEqual(1));
     expect(screen.getByTestId('apply-result-host-2').textContent).toBe('queued');
   });
+
+  it('re-rendering with a new hosts array keeps the ticks and does not re-check', async () => {
+    mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1 ? hostCheck(11, 'x.py') : hostCheck(22, 'y.py')));
+    const { rerender } = renderModal();
+    await screen.findByText('y.py');
+    fireEvent.click(screen.getByLabelText(/y\.py/));
+
+    rerender(<BulkActionsModal isOpen onClose={() => {}} hosts={hosts.map((h) => ({ ...h }))} />);
+
+    expect(screen.getByLabelText(/y\.py/).checked).toBe(false);
+    expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
+    expect(mocks.checkAllPresetPluginUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('an instance checkbox ticks and unticks all of its files and is indeterminate when partial', async () => {
+    mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1
+      ? { data: { common_pool_changes: [], instances: [{ id: 11, name: 'inst11', port: 1, status: 'running', selected_plugin_changes: [{ name: 'f1.py', change: 'modified' }, { name: 'f2.py', change: 'modified' }] }] } }
+      : hostCheck(22, 'y.py')));
+    renderModal();
+    await screen.findByText('f1.py');
+    const inst = screen.getByLabelText('Select all for instance inst11');
+    const f1 = screen.getByLabelText(/^f1\.py/);
+    const f2 = screen.getByLabelText(/^f2\.py/);
+    expect(inst.checked).toBe(true);
+
+    fireEvent.click(f1);
+    expect(inst.checked).toBe(false);
+    expect(inst.indeterminate).toBe(true);
+
+    fireEvent.click(inst);
+    expect(f1.checked && f2.checked).toBe(true);
+    fireEvent.click(inst);
+    expect(f1.checked || f2.checked).toBe(false);
+  });
+
+  it('a second click does not re-send a host that already succeeded', async () => {
+    mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1 ? hostCheck(11, 'x.py') : hostCheck(22, 'y.py')));
+    mocks.applyPluginUpdates.mockImplementation(async (id) => {
+      if (id === 2) throw { error: { message: 'busy' } };
+      return { message: 'queued' };
+    });
+    renderModal();
+    await screen.findByText('y.py');
+    const button = screen.getByRole('button', { name: /update selected/i });
+
+    fireEvent.click(button);
+    await screen.findByText('busy');
+    await waitFor(() => expect(button.disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.applyPluginUpdates).toHaveBeenCalledTimes(3));
+
+    expect(mocks.applyPluginUpdates.mock.calls.filter(([id]) => id === 1)).toHaveLength(1);
+    expect(mocks.applyPresetPluginUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults restart from Defer restarts and never ticks a stopped instance', async () => {
+    const check = {
+      data: {
+        common_pool_changes: [],
+        instances: [
+          { id: 11, name: 'run', port: 1, status: 'running', selected_plugin_changes: [{ name: 'r.py', change: 'modified' }] },
+          { id: 12, name: 'stop', port: 2, status: 'stopped', selected_plugin_changes: [{ name: 's.py', change: 'modified' }] },
+        ],
+      },
+    };
+    mocks.checkPluginUpdates.mockResolvedValue(check);
+
+    mocks.getDeferRestartsSetting.mockResolvedValue({ enabled: false });
+    const first = renderModal();
+    await screen.findAllByText('r.py');
+    let boxes = screen.getAllByLabelText(/restart to apply/);
+    expect(boxes.map((b) => b.checked)).toEqual([true, false, true, false]);
+    expect(boxes.filter((_, i) => i % 2 === 1).every((b) => b.disabled)).toBe(true);
+    first.unmount();
+
+    mocks.getDeferRestartsSetting.mockResolvedValue({ enabled: true });
+    renderModal();
+    await screen.findAllByText('r.py');
+    boxes = screen.getAllByLabelText(/restart to apply/);
+    expect(boxes.every((b) => !b.checked)).toBe(true);
+  });
 });

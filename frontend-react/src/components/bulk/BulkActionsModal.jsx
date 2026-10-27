@@ -3,7 +3,7 @@ import { Dialog, DialogBackdrop } from '@headlessui/react';
 import { Layers, X } from 'lucide-react';
 import BulkPluginUpdatesTab from './BulkPluginUpdatesTab';
 
-// One tab per bulk action; a tab is { id, label, render }.
+// One entry per bulk action tab: { id, label }. The body of the active tab is chosen by id below.
 const TABS = [
     { id: 'plugins', label: 'Update plugins' },
 ];

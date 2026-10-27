@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import {
     checkPluginUpdates,
@@ -59,8 +59,13 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
     const [applying, setApplying] = useState(false);
     const [applyResults, setApplyResults] = useState({}); // { 'host-1' | 'preset-7': { ok, text } }
 
-    const runChecks = useCallback(async (isCancelled) => {
-        const list = hosts || [];
+    // The checks run once per open on the hosts as they were then: the Servers
+    // page polls and replaces its host list, which must not wipe the ticks.
+    const hostsRef = useRef(hosts);
+    hostsRef.current = hosts;
+
+    const runChecks = async (isCancelled) => {
+        const list = hostsRef.current || [];
         const rows = {};
         const active = [];
         list.forEach(h => {
@@ -114,14 +119,14 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
 
         await Promise.all([presetsJob, hostsJob]);
         if (!isCancelled()) setLoading(false);
-    }, [hosts]);
+    };
 
     useEffect(() => {
         if (!isOpen) return undefined;
         let cancelled = false;
         runChecks(() => cancelled);
         return () => { cancelled = true; };
-    }, [isOpen, runChecks]);
+    }, [isOpen]);
 
     // --- selection helpers ---
 
@@ -157,6 +162,12 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
         return Boolean(poolOk) && instOk;
     };
 
+    const hostIsPartial = (hostId) => {
+        const sel = hostSel[hostId];
+        if (!sel || hostIsAllSelected(hostId)) return false;
+        return sel.pool || Object.values(sel.files).some(set => set.size > 0);
+    };
+
     const toggleHostAll = (hostId) => {
         const row = hostRows[hostId];
         if (hostIsAllSelected(hostId)) {
@@ -166,6 +177,15 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
         setHostSel(prev => {
             const base = defaultHostSelection(row.result, false);
             return { ...prev, [hostId]: { pool: base.pool, files: base.files, restart: prev[hostId].restart } };
+        });
+    };
+
+    const toggleInstanceAll = (hostId, inst) => {
+        setHostSel(prev => {
+            const cur = prev[hostId];
+            const names = changedFiles(inst).map(c => c.name);
+            const full = names.every(n => cur.files[inst.id]?.has(n));
+            return { ...prev, [hostId]: { ...cur, files: { ...cur.files, [inst.id]: full ? new Set() : new Set(names) } } };
         });
     };
 
@@ -219,6 +239,8 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
                 try {
                     await applyPluginUpdates(host.id, payload);
                     put(`host-${host.id}`, { ok: true, text: 'queued' });
+                    // Done: untick so a second click never sends this host again.
+                    setHostSel(prev => ({ ...prev, [host.id]: { ...prev[host.id], pool: false, files: {} } }));
                 } catch (err) {
                     put(`host-${host.id}`, { ok: false, text: errorText(err, 'Failed to apply plugin updates') });
                 }
@@ -227,6 +249,7 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
                 try {
                     const response = await applyPresetPluginUpdates(preset.preset_id, payload);
                     put(`preset-${preset.preset_id}`, { ok: true, text: response?.message || 'updated' });
+                    setPresetSel(prev => ({ ...prev, [preset.preset_id]: new Set() }));
                 } catch (err) {
                     put(`preset-${preset.preset_id}`, { ok: false, text: errorText(err, 'Failed to apply plugin updates') });
                 }
@@ -262,6 +285,7 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
                                     <input
                                         type="checkbox"
                                         aria-label={`Select all for ${host.name}`}
+                                        ref={(el) => { if (el) el.indeterminate = hostIsPartial(host.id); }}
                                         checked={hostIsAllSelected(host.id)}
                                         onChange={() => toggleHostAll(host.id)}
                                     />
@@ -305,7 +329,20 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
                             {sel && instances.map(inst => (
                                 <div key={inst.id} className="mt-2 ml-2">
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-medium text-[var(--text-primary)]">{inst.name} <span className="font-mono text-[var(--text-muted)]">:{inst.port}</span></span>
+                                        <span className="flex items-center gap-2 text-xs font-medium text-[var(--text-primary)]">
+                                            <input
+                                                type="checkbox"
+                                                aria-label={`Select all for instance ${inst.name}`}
+                                                ref={(el) => {
+                                                    if (!el) return;
+                                                    const n = changedFiles(inst).filter(c => sel.files[inst.id]?.has(c.name)).length;
+                                                    el.indeterminate = n > 0 && n < changedFiles(inst).length;
+                                                }}
+                                                checked={changedFiles(inst).every(c => sel.files[inst.id]?.has(c.name))}
+                                                onChange={() => toggleInstanceAll(host.id, inst)}
+                                            />
+                                            <span>{inst.name} <span className="font-mono text-[var(--text-muted)]">:{inst.port}</span></span>
+                                        </span>
                                         <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] cursor-pointer" title="Unticked: the files are synced now and the instance shows Updated until its next restart">
                                             <input
                                                 type="checkbox"
