@@ -327,6 +327,25 @@ def test_needs_decision_when_stripped_replacement_not_accepted(env):
     assert accepted['payload']['checked_plugins'] == ['a', 'b']
 
 
+def test_explicit_empty_accepted_list_is_a_decision(env):
+    host = _host()
+    instance = _instance(host)
+    preset = _preset(env, scripts={'a.py': '# a\n', 'b.py': '# b\n'},
+                     checked_plugins=['a.py', 'b.py'])
+    compatibility = {
+        'preset_runtime': 'minqlxtended', 'target_runtime': 'minqlx',
+        'stripped': [{'path': 'b.py', 'replacement': 'b.py', 'originally_checked': True}],
+        'replacements': {'b.py': '# b target\n'},
+        'auto_accepted': [],
+    }
+    with _with_compatibility(compatibility, ['a.py']):
+        declined = build_preset_target(instance, preset, [], [])
+        undecided = build_preset_target(instance, preset, None, [])
+    assert declined['needs_decision'] is False
+    assert 'b' not in declined['payload']['checked_plugins']
+    assert undecided['needs_decision'] is True
+
+
 def test_payload_passes_the_save_validators(env):
     from ui.routes.draft_routes import _draft_exists, _validate_draft_id
     from ui.routes.instance_routes import (

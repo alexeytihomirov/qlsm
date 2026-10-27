@@ -242,7 +242,10 @@ def _checked_with_replacements(preset_payload, accepted):
     return result
 
 
-def _needs_decision(compatibility, accepted):
+def _needs_decision(compatibility, accepted, decided):
+    """`decided`: the operator answered (even with no ticks); unticked replacements are declined."""
+    if decided:
+        return False
     covered = set(accepted)
     return any(
         entry.get('replacement') and entry['replacement'] not in covered
@@ -309,7 +312,9 @@ def build_preset_target(instance, preset, accepted_replacements, keep_cvars):
     """The state `instance` gets when `preset` is loaded into it.
 
     `accepted_replacements`: replacement paths the operator accepted in the
-    compatibility dialog (the auto-accepted ones are added here). `keep_cvars`:
+    compatibility dialog (the auto-accepted ones are added here); None means
+    no decision yet, any list (even empty) is the decision and the unticked
+    replacements are declined. `keep_cvars`:
     cvars whose server.cfg lines stay the instance's own; None means the
     collected list. Creates a scripts draft (the payload's `draft_id`). Raises
     PresetApplyError. Needs an app context.
@@ -373,7 +378,7 @@ def build_preset_target(instance, preset, accepted_replacements, keep_cvars):
         'compatibility': compatibility,
         'kept_cvars': kept,
         'keep_cvars': keep,
-        'needs_decision': _needs_decision(compatibility, accepted),
+        'needs_decision': _needs_decision(compatibility, accepted, accepted_replacements is not None),
     }
 
 

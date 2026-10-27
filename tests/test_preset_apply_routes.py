@@ -7,7 +7,7 @@ from flask_jwt_extended import create_access_token
 
 from ui import db
 from ui.models import HostStatus
-from tests.test_preset_apply import _host, _instance, _preset, env  # noqa: F401
+from tests.test_preset_apply import _host, _instance, _preset, _with_compatibility, env  # noqa: F401
 
 
 @pytest.fixture
@@ -137,6 +137,30 @@ def test_apply_needing_compat_decision_is_422(client, headers, setup):
     assert response.status_code == 422
     assert response.get_json()['error']['message'] == 'Plugin compatibility needs a decision'
     assert _draft_ids() == before
+
+
+def test_apply_with_declined_replacements_is_not_422(client, headers, setup):
+    instance, preset = setup
+    compatibility = {
+        'preset_runtime': 'minqlxtended', 'target_runtime': 'minqlx',
+        'stripped': [{'path': 'b.py', 'replacement': 'b.py', 'originally_checked': True}],
+        'replacements': {'b.py': '# b target\n'},
+        'auto_accepted': [],
+    }
+    with _with_compatibility(compatibility, None):
+        undecided = _preview(client, headers, instance, preset).get_json()['data']
+        decided = _preview(client, headers, instance, preset,
+                           accepted_replacements=[]).get_json()['data']
+        assert undecided['needs_decision'] is True
+        assert decided['needs_decision'] is False
+        with patch('ui.routes.instance_routes.acquire_lock', return_value=True), \
+             patch('ui.routes.instance_routes.enqueue_task',
+                   return_value=MagicMock(id='job-1')):
+            response = _apply(client, headers, instance, preset, decided['preview_hash'],
+                              accepted_replacements=[])
+            absent = _apply(client, headers, instance, preset, undecided['preview_hash'])
+    assert response.status_code == 202, response.get_json()
+    assert absent.status_code == 422
 
 
 def test_apply_on_locked_instance_is_409(client, headers, setup):
