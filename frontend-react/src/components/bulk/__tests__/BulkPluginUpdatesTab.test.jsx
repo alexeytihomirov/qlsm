@@ -7,8 +7,6 @@ import BulkActionsModal from '../BulkActionsModal';
 const mocks = vi.hoisted(() => ({
   checkPluginUpdates: vi.fn(),
   applyPluginUpdates: vi.fn(),
-  checkAllPresetPluginUpdates: vi.fn(),
-  applyPresetPluginUpdates: vi.fn(),
   getDeferRestartsSetting: vi.fn(),
   // The Apply preset tab stays mounted (hidden) next to this one.
   getPresets: vi.fn(),
@@ -35,23 +33,13 @@ const hostCheck = (instId, file) => ({
   },
 });
 
-const presets = [
-  {
-    preset_id: 7, name: 'duel', runtime: 'minqlx',
-    plugin_changes: [{ name: 'a.py', change: 'modified' }, { name: 'b.py', change: 'modified' }],
-    plugins: [{ name: 'a.py', status: 'outdated' }, { name: 'b.py', status: 'outdated' }],
-  },
-];
-
 const renderModal = () => render(<BulkActionsModal isOpen onClose={() => {}} hosts={hosts} />);
 
 describe('BulkPluginUpdatesTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getDeferRestartsSetting.mockResolvedValue({ enabled: false });
-    mocks.checkAllPresetPluginUpdates.mockResolvedValue(presets);
     mocks.applyPluginUpdates.mockResolvedValue({ message: 'queued' });
-    mocks.applyPresetPluginUpdates.mockResolvedValue({ message: 'ok', data: {} });
     mocks.getPresets.mockResolvedValue([]);
   });
 
@@ -59,7 +47,7 @@ describe('BulkPluginUpdatesTab', () => {
     mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1 ? hostCheck(11, 'x.py') : hostCheck(22, 'y.py')));
     renderModal();
     await screen.findByText('y.py');
-    fireEvent.click(screen.getByLabelText(/^b\.py/));
+    fireEvent.click(screen.getByLabelText(/^x\.py/));
     fireEvent.click(screen.getByRole('button', { name: /update selected/i }));
     await waitFor(() => expect(screen.getByTestId('apply-result-host-2').textContent).toBe('queued'));
 
@@ -68,24 +56,21 @@ describe('BulkPluginUpdatesTab', () => {
     fireEvent.click(screen.getByRole('tab', { name: /update plugins/i }));
 
     expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
-    expect(mocks.checkAllPresetPluginUpdates).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('apply-result-host-2').textContent).toBe('queued');
-    expect(screen.getByTestId('apply-result-preset-7').textContent).toBe('ok');
     // The sent host stays unticked, and so does the file unticked by hand.
     expect(screen.getByLabelText(/y\.py/).checked).toBe(false);
-    expect(screen.getByLabelText(/^b\.py/).checked).toBe(false);
+    expect(screen.getByLabelText(/^x\.py/).checked).toBe(false);
   });
 
-  it('lists hosts and presets with their outdated files', async () => {
+  it('lists hosts with their outdated files and no presets', async () => {
     mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1 ? hostCheck(11, 'x.py') : hostCheck(22, 'y.py')));
     renderModal();
 
     expect(await screen.findByText('x.py')).toBeTruthy();
     expect(screen.getByText('y.py')).toBeTruthy();
-    expect(screen.getByText('a.py')).toBeTruthy();
-    expect(screen.getByText('b.py')).toBeTruthy();
     expect(screen.getByText('alpha')).toBeTruthy();
-    expect(screen.getByText('duel')).toBeTruthy();
+    // Presets are updated on the Presets page.
+    expect(screen.queryByText(/preset \(/)).toBeNull();
     // Not ACTIVE: listed with the reason, never checked.
     expect(screen.getByText(/PROVISIONING/)).toBeTruthy();
     expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
@@ -107,17 +92,14 @@ describe('BulkPluginUpdatesTab', () => {
     expect(box.checked).toBe(false);
   });
 
-  it('apply sends one request per host and per preset with only the ticked files', async () => {
+  it('apply sends one request per host with only the ticked files', async () => {
     mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1 ? hostCheck(11, 'x.py') : hostCheck(22, 'y.py')));
     renderModal();
     await screen.findByText('y.py');
 
-    fireEvent.click(screen.getByLabelText(/^b\.py/));
     fireEvent.click(screen.getByRole('button', { name: /update selected/i }));
 
-    await waitFor(() => expect(mocks.applyPresetPluginUpdates).toHaveBeenCalledTimes(1));
-    expect(mocks.applyPresetPluginUpdates).toHaveBeenCalledWith(7, { files: ['a.py'] });
-    expect(mocks.applyPluginUpdates).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mocks.applyPluginUpdates).toHaveBeenCalledTimes(2));
     expect(mocks.applyPluginUpdates).toHaveBeenCalledWith(1, {
       update_common_pool: false,
       instances: { 11: ['x.py'] },
@@ -156,7 +138,6 @@ describe('BulkPluginUpdatesTab', () => {
 
     expect(screen.getByLabelText(/y\.py/).checked).toBe(false);
     expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
-    expect(mocks.checkAllPresetPluginUpdates).toHaveBeenCalledTimes(1);
   });
 
   it('an instance checkbox ticks and unticks all of its files and is indeterminate when partial', async () => {
@@ -197,7 +178,19 @@ describe('BulkPluginUpdatesTab', () => {
     await waitFor(() => expect(mocks.applyPluginUpdates).toHaveBeenCalledTimes(3));
 
     expect(mocks.applyPluginUpdates.mock.calls.filter(([id]) => id === 1)).toHaveLength(1);
-    expect(mocks.applyPresetPluginUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks at most two hosts at once and stops checking when the dialog closes', async () => {
+    const many = [1, 2, 3, 4, 5].map((id) => ({ id, name: `h${id}`, status: 'ACTIVE' }));
+    const pending = [];
+    mocks.checkPluginUpdates.mockImplementation(() => new Promise((resolve) => { pending.push(resolve); }));
+    const { rerender } = render(<BulkActionsModal isOpen onClose={() => {}} hosts={many} />);
+    await waitFor(() => expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2));
+
+    rerender(<BulkActionsModal isOpen={false} onClose={() => {}} hosts={many} />);
+    pending.forEach((resolve) => resolve(hostCheck(11, 'x.py')));
+    await new Promise((r) => { setTimeout(r, 20); });
+    expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
   });
 
   it('defaults restart from Defer restarts and never ticks a stopped instance', async () => {

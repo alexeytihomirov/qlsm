@@ -3,13 +3,14 @@ import { Loader2, AlertTriangle } from 'lucide-react';
 import {
     checkPluginUpdates,
     applyPluginUpdates,
-    checkAllPresetPluginUpdates,
-    applyPresetPluginUpdates,
     getDeferRestartsSetting,
 } from '../../services/api';
 import runLimited from './runLimited';
 
 const CONCURRENCY = 4;
+// Each check is an Ansible run inside the web container; more of them at once
+// slow every other request (a preset preview) down to the 30s check timeout.
+const CHECK_CONCURRENCY = 2;
 const CHANGE_LABEL = { added: 'new', modified: 'updated', removed: 'removed upstream' };
 
 // The API sends InstanceStatus values lowercase ("stopped").
@@ -18,7 +19,6 @@ const errorText = (err, fallback) => err?.error?.message || err?.message || fall
 
 const changedFiles = (inst) => (inst.selected_plugin_changes || []).filter(c => c.change !== 'removed');
 const poolChanges = (result) => (result.common_pool_changes || []).filter(c => c.change !== 'removed');
-const outdatedPresetFiles = (preset) => (preset.plugin_changes || []).map(c => c.name);
 
 // Default selection for a host check: everything outdated ticked; restart
 // ticked unless the instance is stopped or Settings > Defer restarts is on.
@@ -47,22 +47,22 @@ function ApplyResult({ id, result }) {
     );
 }
 
-// Update plugins on every ACTIVE host and every user preset in one place.
-// Each host / preset is independent: a failure is shown on its row only.
-function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
+// Update plugins on every ACTIVE host in one place. Presets are updated on
+// the Presets page. Each host is independent: a failure is shown on its row only.
+function BulkPluginUpdatesTab({ isOpen, active, hosts, onClose }) {
     const [loading, setLoading] = useState(false);
     const [hostRows, setHostRows] = useState({}); // { [hostId]: { phase, reason, result } }
     const [hostSel, setHostSel] = useState({}); // { [hostId]: { pool, files, restart } }
-    const [presets, setPresets] = useState([]);
-    const [presetError, setPresetError] = useState(null);
-    const [presetSel, setPresetSel] = useState({}); // { [presetId]: Set<filename> }
     const [applying, setApplying] = useState(false);
-    const [applyResults, setApplyResults] = useState({}); // { 'host-1' | 'preset-7': { ok, text } }
+    const [applyResults, setApplyResults] = useState({}); // { 'host-1': { ok, text } }
 
-    // The checks run once per open on the hosts as they were then: the Servers
-    // page polls and replaces its host list, which must not wipe the ticks.
+    // The checks run once per open, the first time this tab is shown, on the
+    // hosts as they were then: the Servers page polls and replaces its host
+    // list, which must not wipe the ticks.
     const hostsRef = useRef(hosts);
     hostsRef.current = hosts;
+    const checkedRef = useRef(false);
+    const openRef = useRef(0); // bumped on close: the running checks stop
 
     const runChecks = async (isCancelled) => {
         const list = hostsRef.current || [];
@@ -78,9 +78,6 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
         });
         setHostRows(rows);
         setHostSel({});
-        setPresets([]);
-        setPresetSel({});
-        setPresetError(null);
         setApplyResults({});
         setLoading(true);
 
@@ -91,20 +88,8 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
         } catch { /* keep the default */ }
         if (isCancelled()) return;
 
-        const presetsJob = checkAllPresetPluginUpdates()
-            .then((data) => {
-                if (isCancelled()) return;
-                const all = data || [];
-                setPresets(all);
-                const sel = {};
-                all.forEach(p => { sel[p.preset_id] = new Set(outdatedPresetFiles(p)); });
-                setPresetSel(sel);
-            })
-            .catch((err) => {
-                if (!isCancelled()) setPresetError(errorText(err, 'Failed to check preset plugin updates.'));
-            });
-
-        const hostsJob = runLimited(active, CONCURRENCY, async (host) => {
+        await runLimited(active, CHECK_CONCURRENCY, async (host) => {
+            if (isCancelled()) return;
             try {
                 const response = await checkPluginUpdates(host.id);
                 if (isCancelled()) return;
@@ -117,16 +102,20 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
             }
         });
 
-        await Promise.all([presetsJob, hostsJob]);
         if (!isCancelled()) setLoading(false);
     };
 
     useEffect(() => {
-        if (!isOpen) return undefined;
-        let cancelled = false;
-        runChecks(() => cancelled);
-        return () => { cancelled = true; };
-    }, [isOpen]);
+        if (!isOpen) {
+            checkedRef.current = false;
+            openRef.current += 1;
+            return;
+        }
+        if (!active || checkedRef.current) return;
+        checkedRef.current = true;
+        const open = openRef.current;
+        runChecks(() => openRef.current !== open);
+    }, [isOpen, active]);
 
     // --- selection helpers ---
 
@@ -189,22 +178,6 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
         });
     };
 
-    const togglePresetFile = (presetId, name) => {
-        setPresetSel(prev => {
-            const set = new Set(prev[presetId] || []);
-            if (set.has(name)) set.delete(name); else set.add(name);
-            return { ...prev, [presetId]: set };
-        });
-    };
-
-    const togglePresetAll = (preset) => {
-        const all = outdatedPresetFiles(preset);
-        setPresetSel(prev => {
-            const full = (prev[preset.preset_id]?.size || 0) === all.length;
-            return { ...prev, [preset.preset_id]: full ? new Set() : new Set(all) };
-        });
-    };
-
     // --- apply ---
 
     const buildHostPayload = (hostId) => {
@@ -225,48 +198,32 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
         .filter(h => hostRows[h.id]?.phase === 'ready')
         .map(h => ({ host: h, payload: buildHostPayload(h.id) }))
         .filter(j => j.payload);
-    const presetJobs = presets
-        .filter(p => (presetSel[p.preset_id]?.size || 0) > 0)
-        .map(p => ({ preset: p, payload: { files: Array.from(presetSel[p.preset_id]) } }));
-    const nothingSelected = hostJobs.length === 0 && presetJobs.length === 0;
 
     const handleApply = async () => {
         setApplying(true);
         setApplyResults({});
         const put = (key, value) => setApplyResults(prev => ({ ...prev, [key]: value }));
-        await Promise.all([
-            runLimited(hostJobs, CONCURRENCY, async ({ host, payload }) => {
-                try {
-                    await applyPluginUpdates(host.id, payload);
-                    put(`host-${host.id}`, { ok: true, text: 'queued' });
-                    // Done: untick so a second click never sends this host again.
-                    setHostSel(prev => ({ ...prev, [host.id]: { ...prev[host.id], pool: false, files: {} } }));
-                } catch (err) {
-                    put(`host-${host.id}`, { ok: false, text: errorText(err, 'Failed to apply plugin updates') });
-                }
-            }),
-            runLimited(presetJobs, CONCURRENCY, async ({ preset, payload }) => {
-                try {
-                    const response = await applyPresetPluginUpdates(preset.preset_id, payload);
-                    put(`preset-${preset.preset_id}`, { ok: true, text: response?.message || 'updated' });
-                    setPresetSel(prev => ({ ...prev, [preset.preset_id]: new Set() }));
-                } catch (err) {
-                    put(`preset-${preset.preset_id}`, { ok: false, text: errorText(err, 'Failed to apply plugin updates') });
-                }
-            }),
-        ]);
+        await runLimited(hostJobs, CONCURRENCY, async ({ host, payload }) => {
+            try {
+                await applyPluginUpdates(host.id, payload);
+                put(`host-${host.id}`, { ok: true, text: 'queued' });
+                // Done: untick so a second click never sends this host again.
+                setHostSel(prev => ({ ...prev, [host.id]: { ...prev[host.id], pool: false, files: {} } }));
+            } catch (err) {
+                put(`host-${host.id}`, { ok: false, text: errorText(err, 'Failed to apply plugin updates') });
+            }
+        });
         setApplying(false);
     };
 
     // --- render ---
 
     const hostList = hosts || [];
-    const presetsWithChanges = presets.filter(p => outdatedPresetFiles(p).length > 0);
 
     return (
         <div>
             <div className="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin pr-2">
-                {hostList.length === 0 && presets.length === 0 && !loading && (
+                {hostList.length === 0 && !loading && (
                     <p className="text-xs text-[var(--text-muted)] py-6 text-center">No hosts to check.</p>
                 )}
 
@@ -374,51 +331,9 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
                     );
                 })}
 
-                {presetError && (
-                    <div className="flex items-start gap-2 text-xs text-red-500 p-3 rounded-lg border border-red-500/30 bg-red-500/5">
-                        <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                        {presetError}
-                    </div>
-                )}
-
-                {presetsWithChanges.map(preset => {
-                    const sel = presetSel[preset.preset_id] || new Set();
-                    const files = outdatedPresetFiles(preset);
-                    return (
-                        <div key={preset.preset_id} className="p-3 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-raised)]">
-                            <div className="flex items-center gap-2 mb-2">
-                                <input
-                                    type="checkbox"
-                                    aria-label={`Select all for preset ${preset.name}`}
-                                    checked={sel.size === files.length}
-                                    onChange={() => togglePresetAll(preset)}
-                                />
-                                <span className="text-sm font-medium text-[var(--text-primary)]">{preset.name}</span>
-                                <span className="text-xs font-mono text-[var(--text-muted)]">preset ({preset.runtime})</span>
-                                <span className="ml-auto"><ApplyResult id={`preset-${preset.preset_id}`} result={applyResults[`preset-${preset.preset_id}`]} /></span>
-                            </div>
-                            <ul className="space-y-1 ml-2">
-                                {files.map(name => (
-                                    <li key={name}>
-                                        <label className="flex items-center gap-2 text-xs font-mono cursor-pointer">
-                                            <input type="checkbox" checked={sel.has(name)} onChange={() => togglePresetFile(preset.preset_id, name)} />
-                                            <span className="text-[var(--text-primary)]">{name}</span>
-                                            <span className="text-[var(--text-muted)] opacity-60">(update available)</span>
-                                        </label>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    );
-                })}
-
-                {!loading && !presetError && presets.length > 0 && presetsWithChanges.length === 0 && (
-                    <p className="text-xs text-[var(--text-muted)] text-center">Every preset already matches the plugin pool.</p>
-                )}
-
                 {loading && (
                     <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] py-2 justify-center">
-                        <Loader2 size={14} className="animate-spin" /> Checking hosts and presets...
+                        <Loader2 size={14} className="animate-spin" /> Checking hosts...
                     </div>
                 )}
             </div>
@@ -427,7 +342,7 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
                 <button type="button" onClick={onClose} className="btn btn-secondary">
                     Close
                 </button>
-                <button type="button" onClick={handleApply} className="btn btn-primary" disabled={loading || applying || nothingSelected}>
+                <button type="button" onClick={handleApply} className="btn btn-primary" disabled={loading || applying || hostJobs.length === 0}>
                     {applying ? 'Updating...' : 'Update Selected'}
                 </button>
             </div>

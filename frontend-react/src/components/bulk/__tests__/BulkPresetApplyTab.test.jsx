@@ -7,8 +7,6 @@ import BulkActionsModal from '../BulkActionsModal';
 const mocks = vi.hoisted(() => ({
   checkPluginUpdates: vi.fn(),
   applyPluginUpdates: vi.fn(),
-  checkAllPresetPluginUpdates: vi.fn(),
-  applyPresetPluginUpdates: vi.fn(),
   getDeferRestartsSetting: vi.fn(),
   getPresets: vi.fn(),
   getPresetKeepCvars: vi.fn(),
@@ -83,7 +81,6 @@ describe('BulkPresetApplyTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getDeferRestartsSetting.mockResolvedValue({ enabled: false });
-    mocks.checkAllPresetPluginUpdates.mockResolvedValue([]);
     mocks.getPresets.mockResolvedValue([{ id: 5, name: 'duel', runtime: 'minqlx' }]);
     mocks.getPresetKeepCvars.mockResolvedValue([]);
     mocks.previewPresetApply.mockImplementation(async (id) => preview(id));
