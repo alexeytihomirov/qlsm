@@ -8,9 +8,6 @@ import {
 import runLimited from './runLimited';
 
 const CONCURRENCY = 4;
-// Each check is an Ansible run inside the web container; more of them at once
-// slow every other request (a preset preview) down to the 30s check timeout.
-const CHECK_CONCURRENCY = 2;
 const CHANGE_LABEL = { added: 'new', modified: 'updated', removed: 'removed upstream' };
 
 // The API sends InstanceStatus values lowercase ("stopped").
@@ -87,7 +84,7 @@ function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
         } catch { /* keep the default */ }
         if (isCancelled()) return;
 
-        await runLimited(active, CHECK_CONCURRENCY, async (host) => {
+        await runLimited(active, CONCURRENCY, async (host) => {
             if (isCancelled()) return;
             try {
                 const response = await checkPluginUpdates(host.id);
