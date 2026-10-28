@@ -53,7 +53,7 @@ Click **Update Selected** to apply your choices.
 
 ## Bulk actions: Update plugins
 
-To check every host at once, click **Bulk actions** in the header of the **Servers** page and stay on the **Update plugins** tab. The first time the tab is shown after the dialog opens, it runs the same check as above on every **Active** host, two hosts at a time. It does not re-run the check while the dialog stays open, also when you switch to **Apply preset** and back; closing the dialog stops the hosts not checked yet. Presets are not part of this tab; update them under [Presets](#presets).
+To check every host at once, click **Bulk actions** in the header of the **Servers** page and stay on the **Update plugins** tab. Click **Check for updates** to run the same check as above on every **Active** host, two hosts at a time; nothing is checked until you click it. The results stay while the dialog is open, also when you switch to **Apply preset** and back; **Check again** runs the check anew. Closing the dialog stops the hosts not checked yet and drops the results. Presets are not part of this tab; update them under [Presets](#presets).
 
 - Each host has its own box with the same choices as the single-host window: the **Common plugin pool**, the changed files of each instance, and **Restart to apply** per instance. Everything outdated is ticked at first, and **Restart to apply** starts off for stopped instances and for every instance when **Defer restarts** is on in Settings.
 - A host that already matches says **up to date**.
