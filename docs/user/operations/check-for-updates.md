@@ -53,12 +53,12 @@ Click **Update Selected** to apply your choices.
 
 ## Bulk actions: Update plugins
 
-To check every host at once, click **Bulk actions** in the header of the **Servers** page and stay on the **Update plugins** tab. Opening the dialog runs the same check as above on every **Active** host, and on every user preset, once. It does not re-run the check while the dialog stays open, also when you switch to **Apply preset** and back.
+To check every host at once, click **Bulk actions** in the header of the **Servers** page and stay on the **Update plugins** tab. The first time the tab is shown after the dialog opens, it runs the same check as above on every **Active** host, two hosts at a time. It does not re-run the check while the dialog stays open, also when you switch to **Apply preset** and back; closing the dialog stops the hosts not checked yet. Presets are not part of this tab; update them under [Presets](#presets).
 
-- Each host and preset has its own box with the same choices as the single-host window: the **Common plugin pool**, the changed files of each instance, and **Restart to apply** per instance. Everything outdated is ticked at first, and **Restart to apply** starts off for stopped instances and for every instance when **Defer restarts** is on in Settings.
-- A host that already matches says **up to date**. Presets that already match are not listed.
-- Click **Update Selected** to send the ticked updates. Up to four hosts or presets are processed at a time.
-- Each host or preset reports on its own row. A failure on one row does not stop the others. A host that was sent shows **queued**, and a preset that was updated shows the server's message (**updated** when there is none). Either is unticked, so a second click does not send it again. Updating a file replaces the copy, including your edits, exactly as in the single-host window; untick files you want to keep.
+- Each host has its own box with the same choices as the single-host window: the **Common plugin pool**, the changed files of each instance, and **Restart to apply** per instance. Everything outdated is ticked at first, and **Restart to apply** starts off for stopped instances and for every instance when **Defer restarts** is on in Settings.
+- A host that already matches says **up to date**.
+- Click **Update Selected** to send the ticked updates. Up to four hosts are processed at a time.
+- Each host reports on its own row. A failure on one row does not stop the others. A host that was sent shows **queued** and is unticked, so a second click does not send it again. Updating a file replaces the copy, including your edits, exactly as in the single-host window; untick files you want to keep.
 
 Verify the result the same way as for a single host, under [Verification](#verification).
 

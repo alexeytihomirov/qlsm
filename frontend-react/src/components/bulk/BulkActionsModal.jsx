@@ -50,9 +50,10 @@ function BulkActionsModal({ isOpen, onClose, hosts }) {
 
                         {/* Both tabs stay mounted and the inactive one is hidden: a
                             remount would re-run the plugin checks and re-tick what
-                            was already sent, and drop the preset previews. */}
+                            was already sent, and drop the preset previews. The
+                            plugin checks start the first time their tab is shown. */}
                         <div role="tabpanel" hidden={tab !== 'plugins'}>
-                            <BulkPluginUpdatesTab isOpen={isOpen} hosts={hosts} onClose={onClose} />
+                            <BulkPluginUpdatesTab isOpen={isOpen} active={tab === 'plugins'} hosts={hosts} onClose={onClose} />
                         </div>
                         <div role="tabpanel" hidden={tab !== 'preset'}>
                             <BulkPresetApplyTab isOpen={isOpen} hosts={hosts} onClose={onClose} />

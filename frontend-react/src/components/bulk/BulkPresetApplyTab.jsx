@@ -49,7 +49,7 @@ function BeforeAfter({ label, part }) {
 function ServerDiff({ diff }) {
     const admins = diff.admins;
     return (
-        <div className="mt-2 ml-6 space-y-1">
+        <div className="mt-2 ml-6 space-y-1 text-theme-secondary">
             <BeforeAfter label="Plugins" part={diff.plugins} />
             <BeforeAfter label="Hooks" part={diff.hooks} />
             {admins && (admins.add?.length > 0 || admins.remove?.length > 0) && (
@@ -378,7 +378,7 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
                     aria-label="Preset"
                     value={presetId}
                     onChange={(e) => choosePreset(e.target.value)}
-                    className="w-full text-sm"
+                    className="select-base"
                 >
                     <option value="">Choose a preset...</option>
                     {presets.map(p => (
@@ -481,7 +481,7 @@ function BulkPresetApplyTab({ isOpen, hosts, onClose }) {
                                 value={addInput}
                                 onChange={(e) => setAddInput(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCvar(); } }}
-                                className="text-xs font-mono"
+                                className="input-base w-auto py-1 text-xs font-mono"
                             />
                             <button type="button" className="btn btn-secondary" onClick={addCvar}>Add</button>
                         </div>
