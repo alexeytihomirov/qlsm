@@ -33,7 +33,13 @@ const hostCheck = (instId, file) => ({
   },
 });
 
-const renderModal = () => render(<BulkActionsModal isOpen onClose={() => {}} hosts={hosts} />);
+const clickCheck = () => fireEvent.click(screen.getByRole('button', { name: /check for updates/i }));
+
+const renderModal = () => {
+  const result = render(<BulkActionsModal isOpen onClose={() => {}} hosts={hosts} />);
+  clickCheck();
+  return result;
+};
 
 describe('BulkPluginUpdatesTab', () => {
   beforeEach(() => {
@@ -180,11 +186,29 @@ describe('BulkPluginUpdatesTab', () => {
     expect(mocks.applyPluginUpdates.mock.calls.filter(([id]) => id === 1)).toHaveLength(1);
   });
 
+  it('opening the dialog checks nothing until Check for updates, and a reopen starts clean', async () => {
+    mocks.checkPluginUpdates.mockImplementation(async (id) => (id === 1 ? hostCheck(11, 'x.py') : hostCheck(22, 'y.py')));
+    const { rerender } = render(<BulkActionsModal isOpen onClose={() => {}} hosts={hosts} />);
+    await new Promise((r) => { setTimeout(r, 20); });
+    expect(mocks.checkPluginUpdates).not.toHaveBeenCalled();
+
+    clickCheck();
+    await screen.findByText('y.py');
+    expect(screen.getByRole('button', { name: /check again/i })).toBeTruthy();
+
+    rerender(<BulkActionsModal isOpen={false} onClose={() => {}} hosts={hosts} />);
+    rerender(<BulkActionsModal isOpen onClose={() => {}} hosts={hosts} />);
+    expect(await screen.findByRole('button', { name: /check for updates/i })).toBeTruthy();
+    expect(screen.queryByText('y.py')).toBeNull();
+    expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
+  });
+
   it('checks at most two hosts at once and stops checking when the dialog closes', async () => {
     const many = [1, 2, 3, 4, 5].map((id) => ({ id, name: `h${id}`, status: 'ACTIVE' }));
     const pending = [];
     mocks.checkPluginUpdates.mockImplementation(() => new Promise((resolve) => { pending.push(resolve); }));
     const { rerender } = render(<BulkActionsModal isOpen onClose={() => {}} hosts={many} />);
+    clickCheck();
     await waitFor(() => expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2));
 
     rerender(<BulkActionsModal isOpen={false} onClose={() => {}} hosts={many} />);

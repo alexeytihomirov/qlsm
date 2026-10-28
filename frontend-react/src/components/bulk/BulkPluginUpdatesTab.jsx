@@ -49,19 +49,18 @@ function ApplyResult({ id, result }) {
 
 // Update plugins on every ACTIVE host in one place. Presets are updated on
 // the Presets page. Each host is independent: a failure is shown on its row only.
-function BulkPluginUpdatesTab({ isOpen, active, hosts, onClose }) {
+function BulkPluginUpdatesTab({ isOpen, hosts, onClose }) {
     const [loading, setLoading] = useState(false);
     const [hostRows, setHostRows] = useState({}); // { [hostId]: { phase, reason, result } }
     const [hostSel, setHostSel] = useState({}); // { [hostId]: { pool, files, restart } }
     const [applying, setApplying] = useState(false);
     const [applyResults, setApplyResults] = useState({}); // { 'host-1': { ok, text } }
 
-    // The checks run once per open, the first time this tab is shown, on the
+    // The checks run on the Check button only (each is an Ansible run), on the
     // hosts as they were then: the Servers page polls and replaces its host
     // list, which must not wipe the ticks.
     const hostsRef = useRef(hosts);
     hostsRef.current = hosts;
-    const checkedRef = useRef(false);
     const openRef = useRef(0); // bumped on close: the running checks stop
 
     const runChecks = async (isCancelled) => {
@@ -105,17 +104,22 @@ function BulkPluginUpdatesTab({ isOpen, active, hosts, onClose }) {
         if (!isCancelled()) setLoading(false);
     };
 
+    // Closing the dialog drops the results: they are stale by the next open.
     useEffect(() => {
-        if (!isOpen) {
-            checkedRef.current = false;
-            openRef.current += 1;
-            return;
-        }
-        if (!active || checkedRef.current) return;
-        checkedRef.current = true;
+        if (isOpen) return;
+        openRef.current += 1;
+        setHostRows({});
+        setHostSel({});
+        setApplyResults({});
+        setLoading(false);
+    }, [isOpen]);
+
+    useEffect(() => () => { openRef.current += 1; }, []);
+
+    const handleCheck = () => {
         const open = openRef.current;
         runChecks(() => openRef.current !== open);
-    }, [isOpen, active]);
+    };
 
     // --- selection helpers ---
 
@@ -219,12 +223,18 @@ function BulkPluginUpdatesTab({ isOpen, active, hosts, onClose }) {
     // --- render ---
 
     const hostList = hosts || [];
+    const checked = Object.keys(hostRows).length > 0;
 
     return (
         <div>
             <div className="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin pr-2">
                 {hostList.length === 0 && !loading && (
                     <p className="text-xs text-[var(--text-muted)] py-6 text-center">No hosts to check.</p>
+                )}
+                {hostList.length > 0 && !checked && (
+                    <p className="text-xs text-[var(--text-muted)] py-6 text-center">
+                        Check every Active host for plugin updates. Each check takes a few seconds per host.
+                    </p>
                 )}
 
                 {hostList.map(host => {
@@ -341,6 +351,9 @@ function BulkPluginUpdatesTab({ isOpen, active, hosts, onClose }) {
             <div className="flex justify-end items-center gap-3 mt-6 pt-4 border-t border-[var(--surface-border)]">
                 <button type="button" onClick={onClose} className="btn btn-secondary">
                     Close
+                </button>
+                <button type="button" onClick={handleCheck} className="btn btn-secondary" disabled={loading || applying || hostList.length === 0}>
+                    {checked ? 'Check again' : 'Check for updates'}
                 </button>
                 <button type="button" onClick={handleApply} className="btn btn-primary" disabled={loading || applying || hostJobs.length === 0}>
                     {applying ? 'Updating...' : 'Update Selected'}
