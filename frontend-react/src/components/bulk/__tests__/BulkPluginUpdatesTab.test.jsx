@@ -203,18 +203,18 @@ describe('BulkPluginUpdatesTab', () => {
     expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
   });
 
-  it('checks at most two hosts at once and stops checking when the dialog closes', async () => {
-    const many = [1, 2, 3, 4, 5].map((id) => ({ id, name: `h${id}`, status: 'ACTIVE' }));
+  it('checks at most four hosts at once and stops checking when the dialog closes', async () => {
+    const many = [1, 2, 3, 4, 5, 6].map((id) => ({ id, name: `h${id}`, status: 'ACTIVE' }));
     const pending = [];
     mocks.checkPluginUpdates.mockImplementation(() => new Promise((resolve) => { pending.push(resolve); }));
     const { rerender } = render(<BulkActionsModal isOpen onClose={() => {}} hosts={many} />);
     clickCheck();
-    await waitFor(() => expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(4));
 
     rerender(<BulkActionsModal isOpen={false} onClose={() => {}} hosts={many} />);
     pending.forEach((resolve) => resolve(hostCheck(11, 'x.py')));
     await new Promise((r) => { setTimeout(r, 20); });
-    expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(2);
+    expect(mocks.checkPluginUpdates).toHaveBeenCalledTimes(4);
   });
 
   it('defaults restart from Defer restarts and never ticks a stopped instance', async () => {
